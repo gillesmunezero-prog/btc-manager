@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BTC Manager</title>
+<title>BTC Manager - Terre et Eau</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -22,7 +22,7 @@ input, select, textarea, button { font-family: inherit; }
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect } = React;
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDZJyM3vJXM9gZ5C2RNpmxu_eRvMIjwa7Q",
@@ -32,12 +32,33 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "775030733685",
   appId: "1:775030733685:web:06e9d20c8e4c1f2adb4da9"
 };
-
 if (!firebase.apps.length) { firebase.initializeApp(FIREBASE_CONFIG); }
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-const TYPES_BTC = ["BTC 14cm", "BTC 10cm", "BTC 7cm", "BTC Plein", "BTC Angle"];
+// CATALOGUE COMPLET TERRE ET EAU
+const CATALOGUE = [
+  { id: "BTC Bloc Poteaux 33x22", nom: "BTC Bloc Poteaux", dim: "33x22x9,5 cm", prix: 2.31, usage: "Construction de poteaux ou colonnes" },
+  { id: "BTC Bloc Poteaux 22x22", nom: "BTC Bloc Poteaux (compact)", dim: "22x22x9,5 cm", prix: 1.94, usage: "Petits poteaux, angles, renforts verticaux" },
+  { id: "BTC Bloc Passage Gaine", nom: "BTC Bloc Passage de gaine", dim: "22x22x9,5 cm", prix: 1.94, usage: "Passage de gaines electriques ou plomberie" },
+  { id: "BTC Bloc Chainage 29x14", nom: "BTC Bloc Chainage", dim: "29x14x9,5 cm", prix: 1.83, usage: "Chainages horizontaux, ferraillage + beton" },
+  { id: "BTC Bloc Chainage 22x22", nom: "BTC Bloc Chainage (22cm)", dim: "22x22x9,5 cm", prix: 1.94, usage: "Renforts ou passages techniques" },
+  { id: "BTC Bloc Parement 22x11", nom: "BTC Bloc Parement", dim: "22x11x9,5 cm", prix: 1.40, usage: "Parement de facade ou murs fins" },
+  { id: "BTC Bloc Parement 29x14", nom: "BTC Bloc Parement (mince)", dim: "29x14x6 cm", prix: 1.83, usage: "Revetements de murs interieurs ou exterieurs" },
+  { id: "BTC Bloc Parement 22x14", nom: "BTC Bloc de Parement", dim: "22x14x9,5 cm", prix: 1.45, usage: "Murs apparents ou decoratifs, finition esthetique" },
+  { id: "BTC Bloc Remplissage 29x14", nom: "BTC Bloc Remplissage", dim: "29x14x9,5 cm", prix: 1.94, usage: "Murs porteurs ou remplissage" },
+  { id: "BTC Bloc Remplissage 22x22", nom: "BTC Bloc Remplissage (carre)", dim: "22x22x9,5 cm", prix: 1.83, usage: "Construction standard, remplissage de mur" },
+  { id: "BTC Bloc Remplissage 30x22", nom: "BTC Bloc Remplissage (grand)", dim: "30x22x9,5 cm", prix: 2.83, usage: "Murs porteurs, cloisons et elevations diverses" },
+  { id: "BTC Bloc a Maconner", nom: "BTC Bloc a Maconner", dim: "29x14x9,5 cm", prix: 1.35, usage: "Maconnerie speciale, passage ou beton arme" }
+];
+
+const FOURNITURES = [
+  { id: "Hydrofuge", nom: "Hydrofuge", cond: "Bidon 20L", prix: 250, usage: "Traitement hydrofuge de facade" },
+  { id: "Mortier Briki", nom: "Mortier Briki", cond: "Sac 25kg", prix: 25, usage: "Mortier de montage special sans ciment pour BTC" },
+  { id: "Peinture Brique", nom: "Peinture Brique", cond: "Seau 12kg", prix: 143, usage: "Badigeon chaux pour finition et protection des briques" }
+];
+
+const TYPES_BTC = CATALOGUE.map(function(p) { return p.id; });
 const STOCK_CIBLE = 10000;
 const STOCK_ALERTE = 7500;
 
@@ -51,30 +72,28 @@ function libelleUrgence(total) {
   if (total < STOCK_CIBLE) return "A PRODUIRE";
   return "OK";
 }
+function getProduit(id) {
+  return CATALOGUE.find(function(p) { return p.id === id; }) || { nom: id, dim: "", prix: 0 };
+}
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
   const handleLogin = async () => {
     setLoading(true); setError("");
-    try {
-      await auth.signInWithEmailAndPassword(email, password);
-    } catch (e) {
-      setError("Email ou mot de passe incorrect");
-    }
+    try { await auth.signInWithEmailAndPassword(email, password); }
+    catch (e) { setError("Email ou mot de passe incorrect"); }
     setLoading(false);
   };
-
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#8B1A10,#C0392B)"}}>
-      <div style={{background:"white",borderRadius:16,padding:36,width:320,boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
+      <div style={{background:"white",borderRadius:16,padding:36,width:340,boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{fontSize:48,marginBottom:8}}>🧱</div>
           <h2 style={{color:"#C0392B",fontWeight:700}}>BTC Manager</h2>
-          <p style={{color:"#888",fontSize:13}}>Blocs de Terre Comprimee</p>
+          <p style={{color:"#888",fontSize:13}}>Terre et Eau - Mamoudzou</p>
         </div>
         {error && <div style={{background:"#FFECEC",color:"#C0392B",padding:"8px 12px",borderRadius:8,marginBottom:12,fontSize:13}}>{error}</div>}
         <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}
@@ -92,9 +111,9 @@ function Login() {
 }
 
 function DashboardDirection({ user, userData }) {
-  const [tab, setTab] = useState("production");
-  const [productions, setProductions] = useState([]);
+  const [tab, setTab] = useState("stock");
   const [stocks, setStocks] = useState({});
+  const [productions, setProductions] = useState([]);
   const [commandes, setCommandes] = useState([]);
   const [utilisateurs, setUtilisateurs] = useState([]);
   const [newEmail, setNewEmail] = useState("");
@@ -102,107 +121,85 @@ function DashboardDirection({ user, userData }) {
   const [newRole, setNewRole] = useState("chef_chantier");
   const [newNom, setNewNom] = useState("");
   const [msgUser, setMsgUser] = useState("");
-  const prix = { "BTC 14cm": 850, "BTC 10cm": 700, "BTC 7cm": 600, "BTC Plein": 750, "BTC Angle": 900 };
 
   useEffect(() => {
-    const unsubProd = db.collection("productions").orderBy("date","desc").onSnapshot(snap => {
+    var u1 = db.collection("stocks").onSnapshot(snap => {
+      var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
+    });
+    var u2 = db.collection("productions").orderBy("date","desc").onSnapshot(snap => {
       setProductions(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    const unsubStock = db.collection("stocks").onSnapshot(snap => {
-      var s = {};
-      snap.docs.forEach(d => { s[d.id] = d.data(); });
-      setStocks(s);
-    });
-    const unsubCmd = db.collection("commandes").orderBy("timestamp","desc").onSnapshot(snap => {
+    var u3 = db.collection("commandes").orderBy("timestamp","desc").onSnapshot(snap => {
       setCommandes(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    const unsubUsers = db.collection("users").onSnapshot(snap => {
+    var u4 = db.collection("users").onSnapshot(snap => {
       setUtilisateurs(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    return () => { unsubProd(); unsubStock(); unsubCmd(); unsubUsers(); };
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
-  const validerCommande = async (cmdId) => {
-    await db.collection("commandes").doc(cmdId).update({ status: "Validee", validePar: userData.nom || user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp() });
+  const validerCmd = async (id) => {
+    await db.collection("commandes").doc(id).update({ status:"Validee", validePar: userData.nom||user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp() });
   };
-  const refuserCommande = async (cmdId) => {
-    await db.collection("commandes").doc(cmdId).update({ status: "Refusee" });
+  const refuserCmd = async (id) => {
+    await db.collection("commandes").doc(id).update({ status:"Refusee" });
   };
-  const creerUtilisateur = async () => {
-    if (!newEmail || !newPassword || !newNom) { setMsgUser("Remplissez tous les champs"); return; }
+  const creerUser = async () => {
+    if (!newEmail||!newPassword||!newNom) { setMsgUser("Remplissez tous les champs"); return; }
     try {
       var res = await auth.createUserWithEmailAndPassword(newEmail, newPassword);
-      await db.collection("users").doc(res.user.uid).set({ email: newEmail, nom: newNom, role: newRole, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-      setMsgUser("Compte cree avec succes !"); setNewEmail(""); setNewPassword(""); setNewNom("");
-    } catch(e) { setMsgUser("Erreur: " + e.message); }
+      await db.collection("users").doc(res.user.uid).set({ email:newEmail, nom:newNom, role:newRole, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+      setMsgUser("Compte cree !"); setNewEmail(""); setNewPassword(""); setNewNom("");
+    } catch(e) { setMsgUser("Erreur: "+e.message); }
   };
 
-  const cmdEnAttente = commandes.filter(c => c.status === "EnAttente");
-  const cmdValidees = commandes.filter(c => c.status === "Validee");
-  const cmdLivrees = commandes.filter(c => c.status === "Livree");
+  const cmdAttente = commandes.filter(c=>c.status==="EnAttente");
+  const cmdValidees = commandes.filter(c=>c.status==="Validee");
+  const cmdLivrees = commandes.filter(c=>c.status==="Livree");
 
-  const tabStyle = (t) => ({
-    padding: "8px 14px", border: "none", cursor: "pointer", borderRadius: 8, marginRight: 6, marginBottom: 6,
-    background: tab === t ? "#C0392B" : "#F5E6D3", color: tab === t ? "white" : "#2C1810", fontWeight: tab === t ? 700 : 500, fontSize: 13
-  });
+  const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
+    background:tab===t?"#C0392B":"#F5E6D3", color:tab===t?"white":"#2C1810", fontWeight:tab===t?700:500, fontSize:13 });
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
-      <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction - {userData.nom || user.email}</span></div>
+      <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div><span style={{fontSize:20}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
-        <button style={tabStyle("production")} onClick={()=>setTab("production")}>Production</button>
-        <button style={tabStyle("stock")} onClick={()=>setTab("stock")}>Stock</button>
-        <button style={tabStyle("commandes")} onClick={()=>setTab("commandes")}>Commandes {cmdEnAttente.length>0&&<span style={{background:"#E74C3C",color:"white",borderRadius:10,padding:"1px 6px",marginLeft:4,fontSize:11}}>{cmdEnAttente.length}</span>}</button>
-        <button style={tabStyle("finance")} onClick={()=>setTab("finance")}>Finances</button>
-        <button style={tabStyle("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
+        <button style={ts("stock")} onClick={()=>setTab("stock")}>Stock</button>
+        <button style={ts("production")} onClick={()=>setTab("production")}>Production</button>
+        <button style={ts("commandes")} onClick={()=>setTab("commandes")}>
+          Commandes {cmdAttente.length>0&&<span style={{background:"#E74C3C",color:"white",borderRadius:10,padding:"1px 6px",marginLeft:4,fontSize:11}}>{cmdAttente.length}</span>}
+        </button>
+        <button style={ts("finance")} onClick={()=>setTab("finance")}>Finances</button>
+        <button style={ts("catalogue")} onClick={()=>setTab("catalogue")}>Catalogue</button>
+        <button style={ts("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
       </div>
+      <div style={{padding:"0 16px 24px"}}>
 
-      <div style={{padding:"0 16px 20px"}}>
-        {tab==="production"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Productions recentes</h3>
-            {productions.length===0?<p style={{color:"#888"}}>Aucune production enregistree.</p>:(
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead><tr style={{background:"#8B1A10",color:"white"}}>
-                    <th style={{padding:"8px",textAlign:"left"}}>Date</th><th style={{padding:"8px"}}>Type</th>
-                    <th style={{padding:"8px"}}>Quantite</th><th style={{padding:"8px"}}>Responsable</th><th style={{padding:"8px"}}>Statut</th>
-                  </tr></thead>
-                  <tbody>{productions.map((p,i)=>(
-                    <tr key={p.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
-                      <td style={{padding:"7px 8px"}}>{p.date}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center",fontWeight:600}}>{p.type}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center"}}>{p.quantite?p.quantite.toLocaleString():"-"}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center"}}>{p.responsable||"-"}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center"}}><span style={{padding:"2px 8px",borderRadius:10,fontSize:11,background:"#D5F5E3",color:"#1E8449",fontWeight:700}}>{p.statut||"En cours"}</span></td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
         {tab==="stock"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Etat du stock</h3>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-              {TYPES_BTC.map(type=>{
-                var s=stocks[type]||{};
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}}>
+              {CATALOGUE.map(prod=>{
+                var s=stocks[prod.id]||{};
                 var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
                 var couleur=couleurUrgence(total);
                 return(
-                  <div key={type} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
-                    <div style={{fontWeight:700,marginBottom:8,fontSize:14}}>{type}</div>
+                  <div key={prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
+                    <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{prod.nom}</div>
+                    <div style={{fontSize:11,color:"#999",marginBottom:8}}>{prod.dim}</div>
                     <div style={{fontSize:12,color:"#666"}}>Stock sec: <strong>{sec.toLocaleString()}</strong></div>
                     <div style={{fontSize:12,color:"#666"}}>En sechage: <strong>{sechage.toLocaleString()}</strong></div>
-                    <div style={{fontSize:13,fontWeight:700,color:couleur,marginTop:6}}>Total: {total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</div>
-                    <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:6}}>
+                    <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
                       <div style={{height:6,borderRadius:4,background:couleur,width:Math.min(100,Math.round(total/STOCK_CIBLE*100))+"%"}}></div>
                     </div>
-                    <div style={{fontSize:11,fontWeight:700,color:couleur,marginTop:4}}>{libelleUrgence(total)}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
+                      <span style={{fontSize:12,fontWeight:700,color:couleur}}>{total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span>
+                      <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(total)}</span>
+                    </div>
+                    <div style={{fontSize:11,color:"#8B1A10",fontWeight:600,marginTop:6}}>{prod.prix.toFixed(2)} EUR/u</div>
                   </div>
                 );
               })}
@@ -210,39 +207,65 @@ function DashboardDirection({ user, userData }) {
           </div>
         )}
 
+        {tab==="production"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Productions recentes</h3>
+            {productions.length===0?<p style={{color:"#888"}}>Aucune production enregistree.</p>:(
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
+                  <thead><tr style={{background:"#8B1A10",color:"white"}}>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>Date</th>
+                    <th style={{padding:"8px 10px"}}>Produit</th>
+                    <th style={{padding:"8px 10px"}}>Quantite</th>
+                    <th style={{padding:"8px 10px"}}>Phase</th>
+                    <th style={{padding:"8px 10px"}}>Responsable</th>
+                  </tr></thead>
+                  <tbody>{productions.map((p,i)=>(
+                    <tr key={p.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                      <td style={{padding:"7px 10px"}}>{p.date}</td>
+                      <td style={{padding:"7px 10px",fontWeight:600}}>{getProduit(p.type).nom}</td>
+                      <td style={{padding:"7px 10px",textAlign:"center"}}>{p.quantite?p.quantite.toLocaleString():"-"}</td>
+                      <td style={{padding:"7px 10px",textAlign:"center"}}>{p.phase==="sec"?"Stock sec":"En sechage"}</td>
+                      <td style={{padding:"7px 10px",textAlign:"center"}}>{p.responsable||"-"}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {tab==="commandes"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Commandes a valider ({cmdEnAttente.length})</h3>
-            {cmdEnAttente.length===0?<p style={{color:"#888",marginBottom:20}}>Aucune commande en attente.</p>:(
-              cmdEnAttente.map(cmd=>(
+            <h3 style={{marginBottom:12,color:"#8B1A10"}}>A valider ({cmdAttente.length})</h3>
+            {cmdAttente.length===0?<p style={{color:"#888",marginBottom:16}}>Aucune commande en attente.</p>:
+              cmdAttente.map(cmd=>(
                 <div key={cmd.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #E67E22"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
                     <div>
-                      <div style={{fontWeight:700,fontSize:15}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
-                      <div style={{fontSize:12,color:"#666",marginTop:4}}>Par: {cmd.chefNom||cmd.chefEmail||"-"} | Client: {cmd.client||"-"}</div>
-                      <div style={{fontSize:12,color:"#888"}}>{cmd.notes||""}</div>
+                      <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
+                      <div style={{fontSize:12,color:"#666",marginTop:3}}>Par: {cmd.chefNom||cmd.chefEmail||"-"} | Client: {cmd.client||"-"}</div>
+                      {cmd.notes&&<div style={{fontSize:12,color:"#888",marginTop:2}}>Note: {cmd.notes}</div>}
                     </div>
-                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                      <button onClick={()=>validerCommande(cmd.id)} style={{background:"#27AE60",color:"white",border:"none",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Valider</button>
-                      <button onClick={()=>refuserCommande(cmd.id)} style={{background:"#E74C3C",color:"white",border:"none",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Refuser</button>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>validerCmd(cmd.id)} style={{background:"#27AE60",color:"white",border:"none",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Valider</button>
+                      <button onClick={()=>refuserCmd(cmd.id)} style={{background:"#E74C3C",color:"white",border:"none",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Refuser</button>
                     </div>
                   </div>
                 </div>
               ))
-            )}
-            <h3 style={{marginBottom:10,marginTop:20,color:"#8B1A10"}}>Commandes validees ({cmdValidees.length})</h3>
-            {cmdValidees.length===0?<p style={{color:"#888",marginBottom:20}}>Aucune commande validee en attente.</p>:(
-              cmdValidees.map(cmd=>(
-                <div key={cmd.id} style={{background:"#EBF5FB",borderRadius:12,padding:14,marginBottom:10,borderLeft:"4px solid #2980B9"}}>
-                  <div style={{fontWeight:600}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
-                  <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"-"}</div>
-                </div>
-              ))
-            )}
+            }
+            <h3 style={{marginBottom:10,marginTop:20,color:"#2980B9"}}>Validees ({cmdValidees.length})</h3>
+            {cmdValidees.map(cmd=>(
+              <div key={cmd.id} style={{background:"#EBF5FB",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #2980B9"}}>
+                <div style={{fontWeight:600}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
+                <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"-"}</div>
+              </div>
+            ))}
             <h3 style={{marginBottom:10,marginTop:20,color:"#27AE60"}}>Livrees ({cmdLivrees.length})</h3>
             {cmdLivrees.map(cmd=>(
-              <div key={cmd.id} style={{background:"#EAFAF1",borderRadius:12,padding:14,marginBottom:10,borderLeft:"4px solid #27AE60"}}>
-                <div style={{fontWeight:600}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
+              <div key={cmd.id} style={{background:"#EAFAF1",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #27AE60"}}>
+                <div style={{fontWeight:600}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
                 <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"}</div>
               </div>
             ))}
@@ -251,37 +274,79 @@ function DashboardDirection({ user, userData }) {
 
         {tab==="finance"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Valeur financiere du stock</h3>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:20}}>
-              {TYPES_BTC.map(type=>{
-                var s=stocks[type]||{};
+            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Valeur financiere du stock BTC</h3>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12,marginBottom:20}}>
+              {CATALOGUE.map(prod=>{
+                var s=stocks[prod.id]||{};
                 var total=(s.sec||0)+(s.sechage||0);
-                var valeur=total*(prix[type]||0);
+                var valeur=total*prod.prix;
                 return(
-                  <div key={type} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
-                    <div style={{fontWeight:700,marginBottom:6}}>{type}</div>
-                    <div style={{fontSize:13,color:"#666"}}>Stock total: {total.toLocaleString()}</div>
-                    <div style={{fontSize:15,fontWeight:700,color:"#8B1A10",marginTop:6}}>{valeur.toLocaleString()} FCFA</div>
+                  <div key={prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
+                    <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{prod.nom}</div>
+                    <div style={{fontSize:11,color:"#999",marginBottom:6}}>{prod.dim}</div>
+                    <div style={{fontSize:12,color:"#666"}}>Stock: {total.toLocaleString()} u</div>
+                    <div style={{fontSize:13,color:"#666"}}>Prix unit.: {prod.prix.toFixed(2)} EUR</div>
+                    <div style={{fontSize:15,fontWeight:700,color:"#8B1A10",marginTop:6}}>{valeur.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
                   </div>
                 );
               })}
             </div>
-            <div style={{background:"#8B1A10",color:"white",borderRadius:12,padding:18,display:"inline-block"}}>
-              <div style={{fontSize:13,opacity:.8}}>VALEUR TOTALE DU STOCK</div>
-              <div style={{fontSize:24,fontWeight:700,marginTop:4}}>
-                {TYPES_BTC.reduce((acc,type)=>{
-                  var s=stocks[type]||{};
-                  var total=(s.sec||0)+(s.sechage||0);
-                  return acc+total*(prix[type]||0);
-                },0).toLocaleString()} FCFA
+            <div style={{background:"#8B1A10",color:"white",borderRadius:12,padding:20,display:"inline-block",marginBottom:24}}>
+              <div style={{fontSize:13,opacity:.8}}>VALEUR TOTALE STOCK BTC</div>
+              <div style={{fontSize:26,fontWeight:700,marginTop:4}}>
+                {CATALOGUE.reduce(function(acc,prod){
+                  var s=stocks[prod.id]||{}; var total=(s.sec||0)+(s.sechage||0);
+                  return acc+total*prod.prix;
+                },0).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
               </div>
+            </div>
+            <h3 style={{marginBottom:12,color:"#8B1A10"}}>Tarifs fournitures</h3>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}}>
+              {FOURNITURES.map(f=>(
+                <div key={f.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
+                  <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{f.nom}</div>
+                  <div style={{fontSize:11,color:"#999",marginBottom:4}}>{f.cond}</div>
+                  <div style={{fontSize:12,color:"#666",marginBottom:6}}>{f.usage}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:"#8B1A10"}}>{f.prix.toFixed(2)} EUR</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
+
+        {tab==="catalogue"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:6,color:"#8B1A10"}}>Catalogue BTC - Terre et Eau</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>226 Imp. Vilvilini 97600 Mamoudzou | SIRET: 93222797800016 | Tel: +262 639 57 92 44</p>
+            <h4 style={{marginBottom:10,color:"#555"}}>Blocs de Terre Comprimee ({CATALOGUE.length} references)</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:24}}>
+              {CATALOGUE.map(prod=>(
+                <div key={prod.id} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #C0392B"}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#2C1810",marginBottom:4}}>{prod.nom}</div>
+                  <div style={{fontSize:12,color:"#888",marginBottom:4}}>Dim: {prod.dim}</div>
+                  <div style={{fontSize:12,color:"#555",marginBottom:8}}>{prod.usage}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>{prod.prix.toFixed(2)} EUR/u</div>
+                </div>
+              ))}
+            </div>
+            <h4 style={{marginBottom:10,color:"#555"}}>Fournitures ({FOURNITURES.length} references)</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+              {FOURNITURES.map(f=>(
+                <div key={f.id} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#2C1810",marginBottom:4}}>{f.nom}</div>
+                  <div style={{fontSize:12,color:"#888",marginBottom:4}}>{f.cond}</div>
+                  <div style={{fontSize:12,color:"#555",marginBottom:8}}>{f.usage}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>{f.prix.toFixed(2)} EUR</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {tab==="utilisateurs"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Creer un compte</h3>
-            <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20,maxWidth:400}}>
+            <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20,maxWidth:420}}>
               <input placeholder="Nom complet" value={newNom} onChange={e=>setNewNom(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
               <input placeholder="Email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
               <input type="password" placeholder="Mot de passe" value={newPassword} onChange={e=>setNewPassword(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
@@ -291,13 +356,16 @@ function DashboardDirection({ user, userData }) {
                 <option value="resp_production">Responsable Production</option>
                 <option value="direction">Direction</option>
               </select>
-              {msgUser&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgUser.includes("succes")?"#EAFAF1":"#FFECEC",color:msgUser.includes("succes")?"#1E8449":"#C0392B"}}>{msgUser}</div>}
-              <button onClick={creerUtilisateur} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Creer le compte</button>
+              {msgUser&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgUser.includes("Compte")?"#EAFAF1":"#FFECEC",color:msgUser.includes("Compte")?"#1E8449":"#C0392B"}}>{msgUser}</div>}
+              <button onClick={creerUser} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Creer le compte</button>
             </div>
-            <h3 style={{marginBottom:10,color:"#8B1A10"}}>Comptes existants</h3>
+            <h3 style={{marginBottom:10,color:"#8B1A10"}}>Comptes existants ({utilisateurs.length})</h3>
             {utilisateurs.map(u=>(
               <div key={u.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                <div><div style={{fontWeight:600}}>{u.nom||u.email}</div><div style={{fontSize:12,color:"#888"}}>{u.email} - {u.role}</div></div>
+                <div>
+                  <div style={{fontWeight:600}}>{u.nom||u.email}</div>
+                  <div style={{fontSize:12,color:"#888"}}>{u.email} | {u.role}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -308,7 +376,7 @@ function DashboardDirection({ user, userData }) {
 }
 
 function DashboardChef({ user, userData }) {
-  const [type, setType] = useState("BTC 14cm");
+  const [type, setType] = useState(CATALOGUE[0].id);
   const [quantite, setQuantite] = useState("");
   const [client, setClient] = useState("");
   const [notes, setNotes] = useState("");
@@ -324,49 +392,48 @@ function DashboardChef({ user, userData }) {
   }, []);
 
   const passerCommande = async () => {
-    if (!quantite || !client) { setMsg("Remplissez la quantite et le client"); return; }
+    if (!quantite||!client) { setMsg("Remplissez la quantite et le client"); return; }
     try {
       await db.collection("commandes").add({
         type, quantite: parseInt(quantite), client, notes,
-        chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom || user.email,
-        status: "EnAttente",
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
+        status: "EnAttente", timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
       setMsg("Commande envoyee ! En attente de validation Direction.");
       setQuantite(""); setClient(""); setNotes("");
-    } catch(e) { setMsg("Erreur: " + e.message); }
+    } catch(e) { setMsg("Erreur: "+e.message); }
   };
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
-      <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
+      <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div><span style={{fontSize:20}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
         <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande</h3>
-        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:420,marginBottom:24}}>
+        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
           <select value={type} onChange={e=>setType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
-            {TYPES_BTC.map(t=><option key={t} value={t}>{t}</option>)}
+            {CATALOGUE.map(p=><option key={p.id} value={p.id}>{p.nom} ({p.dim})</option>)}
           </select>
-          <input type="number" placeholder="Quantite de BTC" value={quantite} onChange={e=>setQuantite(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
+          <input type="number" placeholder="Quantite" value={quantite} onChange={e=>setQuantite(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
           <input placeholder="Nom du client" value={client} onChange={e=>setClient(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
-          <textarea placeholder="Notes (optionnel)" value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:60}} />
+          <textarea placeholder="Notes (optionnel)" value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msg.includes("envoyee")?"#1A5276":"#C0392B"}}>{msg}</div>}
-          <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
+          <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Envoyer la commande</button>
         </div>
         <h3 style={{marginBottom:10,color:"#1A5276"}}>Mes commandes ({commandes.length})</h3>
-        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:(
+        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
           commandes.map(c=>(
             <div key={c.id} style={{background:"white",borderRadius:10,padding:"12px 16px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",borderLeft:"4px solid "+(c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22")}}>
-              <div style={{display:"flex",justifyContent:"space-between"}}>
-                <div style={{fontWeight:600}}>{c.type} - {c.quantite?c.quantite.toLocaleString():"-"} BTC</div>
+              <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
+                <div style={{fontWeight:600}}>{getProduit(c.type).nom} - {c.quantite?c.quantite.toLocaleString():"-"} u</div>
                 <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:c.status==="Livree"?"#EAFAF1":c.status==="Validee"?"#EBF5FB":c.status==="Refusee"?"#FFECEC":"#FEF9E7",color:c.status==="Livree"?"#1E8449":c.status==="Validee"?"#1A5276":c.status==="Refusee"?"#C0392B":"#B7950B"}}>{c.status}</span>
               </div>
-              <div style={{fontSize:12,color:"#888",marginTop:4}}>Client: {c.client||"-"}</div>
+              <div style={{fontSize:12,color:"#888",marginTop:3}}>Client: {c.client||"-"}</div>
             </div>
           ))
-        )}
+        }
       </div>
     </div>
   );
@@ -377,60 +444,60 @@ function DashboardStock({ user, userData }) {
   const [stocks, setStocks] = useState({});
 
   useEffect(() => {
-    var unsubCmd = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
+    var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
       setCommandes(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    var unsubStock = db.collection("stocks").onSnapshot(snap => {
-      var s = {};
-      snap.docs.forEach(d => { s[d.id] = d.data(); });
-      setStocks(s);
+    var u2 = db.collection("stocks").onSnapshot(snap => {
+      var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
     });
-    return () => { unsubCmd(); unsubStock(); };
+    return () => { u1(); u2(); };
   }, []);
 
   const marquerEnvoye = async (cmdId, type, quantite) => {
-    var s = stocks[type] || {};
-    var newSec = Math.max(0, (s.sec || 0) - quantite);
-    await db.collection("commandes").doc(cmdId).update({ status: "Livree", livrePar: userData.nom || user.email, livreAt: firebase.firestore.FieldValue.serverTimestamp() });
-    await db.collection("stocks").doc(type).set({ sec: newSec, sechage: s.sechage || 0 }, { merge: true });
+    var s = stocks[type]||{};
+    var newSec = Math.max(0, (s.sec||0) - quantite);
+    await db.collection("commandes").doc(cmdId).update({ status:"Livree", livrePar:userData.nom||user.email, livreAt:firebase.firestore.FieldValue.serverTimestamp() });
+    await db.collection("stocks").doc(type).set({ sec:newSec, sechage:s.sechage||0 }, { merge:true });
   };
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
-      <div style={{background:"linear-gradient(90deg,#145A32,#1E8449)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>📦</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Stock - {userData.nom||user.email}</span></div>
+      <div style={{background:"linear-gradient(90deg,#145A32,#1E8449)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div><span style={{fontSize:20}}>📦</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Stock - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:24}}>
-          {TYPES_BTC.map(type=>{
-            var s=stocks[type]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:24}}>
+          {CATALOGUE.map(prod=>{
+            var s=stocks[prod.id]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
             var couleur=couleurUrgence(total);
             return(
-              <div key={type} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
-                <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>{type}</div>
+              <div key={prod.id} style={{background:"white",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
+                <div style={{fontSize:11,color:"#999",marginBottom:6}}>{prod.dim}</div>
                 <div style={{fontSize:12,color:"#666"}}>Sec: <strong>{sec.toLocaleString()}</strong></div>
                 <div style={{fontSize:12,color:"#666"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></div>
-                <div style={{fontSize:13,fontWeight:700,color:couleur,marginTop:4}}>Total: {total.toLocaleString()}</div>
+                <div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:4}}>Total: {total.toLocaleString()}</div>
               </div>
             );
           })}
         </div>
         <h3 style={{marginBottom:10,color:"#145A32"}}>Commandes a preparer ({commandes.length})</h3>
-        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande validee en attente.</p>:(
+        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande validee en attente.</p>:
           commandes.map(cmd=>(
             <div key={cmd.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10,alignItems:"center"}}>
                 <div>
-                  <div style={{fontWeight:700,fontSize:15}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
-                  <div style={{fontSize:12,color:"#666",marginTop:4}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"Direction"}</div>
+                  <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom}</div>
+                  <div style={{fontSize:13,color:"#444",marginTop:2}}>Quantite: {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
+                  <div style={{fontSize:12,color:"#666",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"Direction"}</div>
                 </div>
                 <button onClick={()=>marquerEnvoye(cmd.id,cmd.type,cmd.quantite||0)} style={{background:"#1E8449",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>Commande envoyee ✓</button>
               </div>
             </div>
           ))
-        )}
+        }
       </div>
     </div>
   );
@@ -439,92 +506,88 @@ function DashboardStock({ user, userData }) {
 function DashboardProduction({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
-  const [saisieType, setSaisieType] = useState("");
+  const [saisieType, setSaisieType] = useState(CATALOGUE[0].id);
   const [saisieQte, setSaisieQte] = useState("");
   const [saisiePhase, setSaisiePhase] = useState("sec");
   const [msg, setMsg] = useState("");
   const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
 
   useEffect(() => {
-    var unsubStock = db.collection("stocks").onSnapshot(snap => {
-      var s = {};
-      snap.docs.forEach(d => { s[d.id] = d.data(); });
-      setStocks(s);
+    var u1 = db.collection("stocks").onSnapshot(snap => {
+      var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
     });
-    var unsubProd = db.collection("productions").onSnapshot(snap => {
+    var u2 = db.collection("productions").onSnapshot(snap => {
       setProductions(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    return () => { unsubStock(); unsubProd(); };
+    return () => { u1(); u2(); };
   }, []);
 
-  var typesParUrgence = TYPES_BTC.map(function(type) {
-    var s = stocks[type] || {};
-    var sec = s.sec || 0; var sechage = s.sechage || 0; var total = sec + sechage;
-    return { type: type, sec: sec, sechage: sechage, total: total };
-  }).sort(function(a, b) { return a.total - b.total; });
+  var typesParUrgence = CATALOGUE.map(function(prod) {
+    var s = stocks[prod.id]||{};
+    var sec = s.sec||0; var sechage = s.sechage||0; var total = sec+sechage;
+    return { prod:prod, sec:sec, sechage:sechage, total:total };
+  }).sort(function(a,b) { return a.total - b.total; });
 
-  var productionsAujourdHui = productions.filter(function(p) { return p.date === dateAujourdHui; });
+  var prodAujourdHui = productions.filter(function(p) { return p.date === dateAujourdHui; });
 
-  var enregistrerProduction = async function() {
-    if (!saisieType || !saisieQte) { setMsg("Choisissez un type et entrez la quantite"); return; }
+  var enregistrer = async function() {
+    if (!saisieType||!saisieQte) { setMsg("Choisissez un type et entrez la quantite"); return; }
     var qte = parseInt(saisieQte);
-    if (isNaN(qte) || qte <= 0) { setMsg("Quantite invalide"); return; }
+    if (isNaN(qte)||qte<=0) { setMsg("Quantite invalide"); return; }
     try {
       await db.collection("productions").add({
-        type: saisieType, quantite: qte, phase: saisiePhase,
-        date: dateAujourdHui, responsable: userData.nom || user.email,
-        responsableUid: user.uid, statut: "Valide",
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        type:saisieType, quantite:qte, phase:saisiePhase,
+        date:dateAujourdHui, responsable:userData.nom||user.email,
+        responsableUid:user.uid, statut:"Valide",
+        timestamp:firebase.firestore.FieldValue.serverTimestamp()
       });
-      var s = stocks[saisieType] || {};
-      var updateData = {};
-      if (saisiePhase === "sec") { updateData.sec = (s.sec || 0) + qte; }
-      else { updateData.sechage = (s.sechage || 0) + qte; }
-      await db.collection("stocks").doc(saisieType).set(updateData, { merge: true });
+      var s = stocks[saisieType]||{};
+      var upd = {};
+      if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
+      await db.collection("stocks").doc(saisieType).set(upd, { merge:true });
       setMsg("Production enregistree ! Stock mis a jour.");
       setSaisieQte("");
-    } catch(e) { setMsg("Erreur: " + e.message); }
+    } catch(e) { setMsg("Erreur: "+e.message); }
   };
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
-      <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>🏭</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Production - {userData.nom||user.email}</span></div>
+      <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+        <div><span style={{fontSize:20}}>🏭</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Production - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
-        <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites de production du jour - {dateAujourdHui}</h3>
-        <p style={{fontSize:12,color:"#888",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} BTC | Alerte si stock total inferieur a {STOCK_ALERTE.toLocaleString()} BTC</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12,marginBottom:24}}>
+        <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
+        <p style={{fontSize:12,color:"#888",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
           {typesParUrgence.map(function(item, idx) {
             var couleur = couleurUrgence(item.total);
-            var pct = Math.min(100, Math.round(item.total / STOCK_CIBLE * 100));
-            var manque = Math.max(0, STOCK_CIBLE - item.total);
+            var pct = Math.min(100, Math.round(item.total/STOCK_CIBLE*100));
+            var manque = Math.max(0, STOCK_CIBLE-item.total);
             return (
-              <div key={item.type} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
-                <div style={{position:"absolute",top:12,right:12,background:couleur,color:"white",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
-                <div style={{fontWeight:700,fontSize:15,marginBottom:8,paddingRight:50}}>{item.type}</div>
-                <div style={{fontSize:12,color:"#666"}}>Stock sec: <strong>{item.sec.toLocaleString()}</strong></div>
-                <div style={{fontSize:12,color:"#666"}}>En sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
-                <div style={{margin:"8px 0 4px",background:"#EEE",borderRadius:4,height:8}}>
-                  <div style={{height:8,borderRadius:4,background:couleur,width:pct+"%"}}></div>
+              <div key={item.prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
+                <div style={{position:"absolute",top:10,right:10,background:couleur,color:"white",borderRadius:16,padding:"2px 8px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
+                <div style={{fontWeight:700,fontSize:13,marginBottom:2,paddingRight:40}}>{item.prod.nom}</div>
+                <div style={{fontSize:11,color:"#999",marginBottom:6}}>{item.prod.dim}</div>
+                <div style={{fontSize:12,color:"#666"}}>Sec: <strong>{item.sec.toLocaleString()}</strong></div>
+                <div style={{fontSize:12,color:"#666"}}>Sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
+                <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
+                  <div style={{height:6,borderRadius:4,background:couleur,width:pct+"%"}}></div>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
-                  <div style={{fontSize:13,fontWeight:700,color:couleur}}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</div>
-                  <div style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
+                  <span style={{fontSize:12,fontWeight:700,color:couleur}}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</span>
                 </div>
-                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"#888",marginTop:4}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()} BTC</strong></div>}
+                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"#888",marginTop:3}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()}</strong></div>}
               </div>
             );
           })}
         </div>
-
         <h3 style={{marginBottom:14,color:"#4A235A"}}>Enregistrer une production</h3>
-        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:420,marginBottom:24}}>
+        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
           <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
-            <option value="">-- Type BTC (du plus urgent) --</option>
             {typesParUrgence.map(function(item) {
-              return <option key={item.type} value={item.type}>{item.type} (stock: {item.total.toLocaleString()})</option>;
+              return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - stock: {item.total.toLocaleString()}</option>;
             })}
           </select>
           <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
@@ -533,20 +596,20 @@ function DashboardProduction({ user, userData }) {
           </select>
           <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14}} />
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
-          <button onClick={enregistrerProduction} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Enregistrer la production</button>
+          <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
         </div>
-        <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions d'aujourd'hui ({productionsAujourdHui.length})</h3>
-        {productionsAujourdHui.length===0?<p style={{color:"#888"}}>Aucune production enregistree aujourd'hui.</p>:(
-          productionsAujourdHui.map(p=>(
+        <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
+        {prodAujourdHui.length===0?<p style={{color:"#888"}}>Aucune production enregistree aujourd'hui.</p>:
+          prodAujourdHui.map(p=>(
             <div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
-                <div style={{fontWeight:600}}>{p.type} <span style={{fontSize:12,color:"#888"}}>({p.phase==="sec"?"sec":"sechage"})</span></div>
-                <div style={{fontSize:12,color:"#666"}}>+{p.quantite?p.quantite.toLocaleString():"-"} BTC</div>
+                <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"#888"}}>({p.phase==="sec"?"sec":"sechage"})</span></div>
+                <div style={{fontSize:12,color:"#666"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
               </div>
               <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>OK</span>
             </div>
           ))
-        )}
+        }
       </div>
     </div>
   );
@@ -562,9 +625,8 @@ function App() {
       if (u) {
         try {
           var doc = await db.collection("users").doc(u.uid).get();
-          if (doc.exists) { setUserData(doc.data()); }
-          else { setUserData({ role: "inconnu" }); }
-        } catch(e) { setUserData({ role: "inconnu" }); }
+          setUserData(doc.exists ? doc.data() : { role:"inconnu" });
+        } catch(e) { setUserData({ role:"inconnu" }); }
         setUser(u);
       } else {
         setUser(null); setUserData(null);
@@ -577,27 +639,25 @@ function App() {
   if (loading) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#8B1A10,#C0392B)"}}>
       <div style={{color:"white",textAlign:"center"}}>
-        <div style={{fontSize:48,marginBottom:12}}>🧱</div>
+        <div style={{fontSize:52,marginBottom:12}}>🧱</div>
         <div style={{fontSize:18,fontWeight:700}}>BTC Manager</div>
-        <div style={{fontSize:13,opacity:.8,marginTop:4}}>Chargement...</div>
+        <div style={{fontSize:13,opacity:.8,marginTop:4}}>Terre et Eau - Mamoudzou</div>
       </div>
     </div>
   );
 
   if (!user) return <Login />;
-
   if (!userData) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDF6E3"}}>
-      <div style={{textAlign:"center",color:"#888"}}><div style={{fontSize:40}}>⏳</div><p style={{marginTop:8}}>Chargement du profil...</p></div>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center",color:"#888"}}><div style={{fontSize:40}}>⏳</div><p>Chargement...</p></div>
     </div>
   );
 
   var role = userData.role ? userData.role.trim().toLowerCase() : "";
-
-  if (role === "direction") return <DashboardDirection user={user} userData={userData} />;
-  if (role === "chef_chantier") return <DashboardChef user={user} userData={userData} />;
-  if (role === "resp_stock") return <DashboardStock user={user} userData={userData} />;
-  if (role === "resp_production") return <DashboardProduction user={user} userData={userData} />;
+  if (role==="direction") return <DashboardDirection user={user} userData={userData} />;
+  if (role==="chef_chantier") return <DashboardChef user={user} userData={userData} />;
+  if (role==="resp_stock") return <DashboardStock user={user} userData={userData} />;
+  if (role==="resp_production") return <DashboardProduction user={user} userData={userData} />;
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDF6E3"}}>
@@ -615,4 +675,4 @@ function App() {
 ReactDOM.render(<App />, document.getElementById("root"));
 </script>
 </body>
-</html>
+  </html>
