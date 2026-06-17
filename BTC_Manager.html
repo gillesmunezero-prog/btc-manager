@@ -76,6 +76,7 @@ function getProduit(id) {
   return CATALOGUE.find(function(p) { return p.id === id; }) || { nom: id, dim: "", prix: 0 };
 }
 
+
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -110,6 +111,7 @@ function Login() {
   );
 }
 
+
 function DashboardDirection({ user, userData }) {
   const [tab, setTab] = useState("stock");
   const [stocks, setStocks] = useState({});
@@ -121,8 +123,14 @@ function DashboardDirection({ user, userData }) {
   const [newRole, setNewRole] = useState("chef_chantier");
   const [newNom, setNewNom] = useState("");
   const [msgUser, setMsgUser] = useState("");
+  const [chantiers, setChantiers] = useState([]);
+  const [ficheOuverte, setFicheOuverte] = useState(null);
 
   useEffect(() => {
+    var u5 = db.collection("chantiers").onSnapshot(snap => {
+      var allCh = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
+      setChantiers(allCh);
+    });
     var u1 = db.collection("stocks").onSnapshot(snap => {
       var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
     });
@@ -135,7 +143,7 @@ function DashboardDirection({ user, userData }) {
     var u4 = db.collection("users").onSnapshot(snap => {
       setUtilisateurs(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    return () => { u1(); u2(); u3(); u4(); };
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   const validerCmd = async (id) => {
@@ -162,6 +170,7 @@ function DashboardDirection({ user, userData }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
+      {ficheOuverte && <FicheChantier chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
       <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div><span style={{fontSize:20}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
@@ -174,6 +183,7 @@ function DashboardDirection({ user, userData }) {
         </button>
         <button style={ts("finance")} onClick={()=>setTab("finance")}>Finances</button>
         <button style={ts("catalogue")} onClick={()=>setTab("catalogue")}>Catalogue</button>
+        <button style={ts("chantiers")} onClick={()=>setTab("chantiers")}>Chantiers ({chantiers.length})</button>
         <button style={ts("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
       </div>
       <div style={{padding:"0 16px 24px"}}>
@@ -343,6 +353,43 @@ function DashboardDirection({ user, userData }) {
           </div>
         )}
 
+        {tab==="chantiers"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Chantiers en cours</h3>
+            {chantiers.length===0?<p style={{color:"#888"}}>Aucun chantier enregistre.</p>:
+              chantiers.map(function(ch) {
+                var cmdCh = commandes.filter(function(c){return c.chantierId===ch.id;});
+                var recu = cmdCh.filter(function(c){return c.status==="Livree";}).reduce(function(a,c){return a+(c.quantite||0);},0);
+                var cmdTotal = cmdCh.reduce(function(a,c){return a+(c.quantite||0);},0);
+                var besoinTotal = Object.values(ch.besoins||{}).reduce(function(a,v){return a+v;},0);
+                var reste = Math.max(0, besoinTotal - recu);
+                var pct = besoinTotal>0?Math.min(100,Math.round(recu/besoinTotal*100)):0;
+                return (
+                  <div key={ch.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#C0392B")}}>
+                    <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:700,fontSize:15}}>{ch.nom}</div>
+                        <div style={{fontSize:13,color:"#555",marginTop:2}}>Client: {ch.client} | Chef: {ch.chefNom||"-"}</div>
+                        {ch.adresse&&<div style={{fontSize:12,color:"#888"}}>{ch.adresse}</div>}
+                        <div style={{display:"flex",gap:12,marginTop:8,fontSize:12,flexWrap:"wrap"}}>
+                          <span>Besoin total: <strong>{besoinTotal.toLocaleString()}</strong></span>
+                          <span style={{color:"#2980B9"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong></span>
+                          <span style={{color:"#27AE60"}}>Recu: <strong>{recu.toLocaleString()}</strong></span>
+                          <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong></span>
+                        </div>
+                        <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:8}}>
+                          <div style={{height:8,borderRadius:4,background:pct===100?"#27AE60":"#C0392B",width:pct+"%"}}></div>
+                        </div>
+                        <div style={{fontSize:11,color:"#888",marginTop:3}}>{pct}% livre</div>
+                      </div>
+                      <button onClick={()=>setFicheOuverte(ch)} style={{background:"#8B1A10",color:"white",border:"none",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Voir la fiche</button>
+                    </div>
+                  </div>
+                );
+              })
+            }
+          </div>
+        )}
         {tab==="utilisateurs"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Creer un compte</h3>
@@ -375,65 +422,264 @@ function DashboardDirection({ user, userData }) {
   );
 }
 
+
+function FicheChantier({ chantier, commandes, onClose }) {
+  // Calculs par type de BTC
+  var besoins = chantier.besoins || {};
+  var cmdChantier = commandes.filter(function(c) { return c.chantierId === chantier.id; });
+
+  // Construire tableau par type
+  var lignes = CATALOGUE.map(function(prod) {
+    var besoin = besoins[prod.id] || 0;
+    if (besoin === 0) return null;
+    var commande = cmdChantier.filter(function(c){ return c.type === prod.id; })
+      .reduce(function(acc,c){ return acc + (c.quantite||0); }, 0);
+    var recu = cmdChantier.filter(function(c){ return c.type === prod.id && c.status === "Livree"; })
+      .reduce(function(acc,c){ return acc + (c.quantite||0); }, 0);
+    var reste = Math.max(0, besoin - recu);
+    return { prod: prod, besoin: besoin, commande: commande, recu: recu, reste: reste };
+  }).filter(function(l) { return l !== null; });
+
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
+      <div style={{background:"white",borderRadius:16,padding:24,width:"100%",maxWidth:700,marginTop:20,boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+          <div>
+            <h2 style={{color:"#8B1A10",marginBottom:4}}>{chantier.nom}</h2>
+            <div style={{fontSize:13,color:"#666"}}>Client: {chantier.client} | Statut: <strong style={{color:chantier.statut==="termine"?"#27AE60":"#E67E22"}}>{chantier.statut==="termine"?"Termine":"En cours"}</strong></div>
+            {chantier.adresse&&<div style={{fontSize:12,color:"#888",marginTop:2}}>{chantier.adresse}</div>}
+          </div>
+          <button onClick={onClose} style={{background:"#EEE",border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:700}}>✕ Fermer</button>
+        </div>
+        {lignes.length === 0 ? <p style={{color:"#888"}}>Aucun besoin enregistre pour ce chantier.</p> : (
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead>
+                <tr style={{background:"#8B1A10",color:"white"}}>
+                  <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
+                  <th style={{padding:"8px 10px",textAlign:"left"}}>Dimension</th>
+                  <th style={{padding:"8px 10px",textAlign:"right"}}>Besoin total</th>
+                  <th style={{padding:"8px 10px",textAlign:"right"}}>Commande</th>
+                  <th style={{padding:"8px 10px",textAlign:"right"}}>Recu</th>
+                  <th style={{padding:"8px 10px",textAlign:"right",color:"#FFD700"}}>Reste</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lignes.map(function(l, i) {
+                  var pct = l.besoin > 0 ? Math.min(100, Math.round(l.recu/l.besoin*100)) : 0;
+                  return (
+                    <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                      <td style={{padding:"8px 10px",fontWeight:600}}>{l.prod.nom}</td>
+                      <td style={{padding:"8px 10px",color:"#888",fontSize:12}}>{l.prod.dim}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{l.commande.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>
+                        <div>{l.recu.toLocaleString()}</div>
+                        <div style={{background:"#EEE",borderRadius:3,height:4,marginTop:3,minWidth:60}}>
+                          <div style={{height:4,borderRadius:3,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
+                        </div>
+                      </td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#27AE60":"#C0392B"}}>{l.reste.toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{background:"#F5E6D3",fontWeight:700}}>
+                  <td colSpan={2} style={{padding:"8px 10px"}}>TOTAL</td>
+                  <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.besoin;},0).toLocaleString()}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{lignes.reduce(function(a,l){return a+l.commande;},0).toLocaleString()}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.recu;},0).toLocaleString()}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{lignes.reduce(function(a,l){return a+l.reste;},0).toLocaleString()}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+        <div style={{marginTop:16,fontSize:13,color:"#888"}}>Commandes liees a ce chantier: {cmdChantier.length}</div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardChef({ user, userData }) {
-  const [type, setType] = useState(CATALOGUE[0].id);
-  const [quantite, setQuantite] = useState("");
-  const [client, setClient] = useState("");
-  const [notes, setNotes] = useState("");
-  const [msg, setMsg] = useState("");
+  const [tabChef, setTabChef] = useState("chantiers");
   const [commandes, setCommandes] = useState([]);
+  const [chantiers, setChantiers] = useState([]);
+  const [ficheOuverte, setFicheOuverte] = useState(null);
+
+  // Formulaire nouveau chantier
+  const [nomChantier, setNomChantier] = useState("");
+  const [clientChantier, setClientChantier] = useState("");
+  const [adresseChantier, setAdresseChantier] = useState("");
+  const [besoins, setBesoins] = useState({});
+  const [msgChantier, setMsgChantier] = useState("");
+
+  // Formulaire nouvelle commande
+  const [cmdChantierId, setCmdChantierId] = useState("");
+  const [cmdType, setCmdType] = useState(CATALOGUE[0].id);
+  const [cmdQte, setCmdQte] = useState("");
+  const [cmdNotes, setCmdNotes] = useState("");
+  const [msgCmd, setMsgCmd] = useState("");
 
   useEffect(() => {
-    var unsub = db.collection("commandes").onSnapshot(snap => {
+    var u1 = db.collection("chantiers").onSnapshot(snap => {
+      var all = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
+      setChantiers(all.filter(c => c.chefUid === user.uid));
+    });
+    var u2 = db.collection("commandes").onSnapshot(snap => {
       var all = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
       setCommandes(all.filter(c => c.chefUid === user.uid));
     });
-    return unsub;
+    return () => { u1(); u2(); };
   }, []);
 
+  const creerChantier = async () => {
+    if (!nomChantier||!clientChantier) { setMsgChantier("Remplissez le nom et le client"); return; }
+    var besoinsValides = {};
+    CATALOGUE.forEach(function(prod) {
+      var v = parseInt(besoins[prod.id]||0);
+      if (v > 0) { besoinsValides[prod.id] = v; }
+    });
+    try {
+      await db.collection("chantiers").add({
+        nom: nomChantier, client: clientChantier, adresse: adresseChantier,
+        besoins: besoinsValides, statut: "en_cours",
+        chefUid: user.uid, chefNom: userData.nom||user.email,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setMsgChantier("Chantier cree avec succes !");
+      setNomChantier(""); setClientChantier(""); setAdresseChantier(""); setBesoins({});
+    } catch(e) { setMsgChantier("Erreur: "+e.message); }
+  };
+
   const passerCommande = async () => {
-    if (!quantite||!client) { setMsg("Remplissez la quantite et le client"); return; }
+    if (!cmdChantierId||!cmdQte) { setMsgCmd("Choisissez un chantier et entrez la quantite"); return; }
+    var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
     try {
       await db.collection("commandes").add({
-        type, quantite: parseInt(quantite), client, notes,
+        type: cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        chantierId: cmdChantierId, chantierNom: ch?ch.nom:"",
+        client: ch?ch.client:"",
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
         status: "EnAttente", timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      setMsg("Commande envoyee ! En attente de validation Direction.");
-      setQuantite(""); setClient(""); setNotes("");
-    } catch(e) { setMsg("Erreur: "+e.message); }
+      setMsgCmd("Commande envoyee ! En attente de validation Direction.");
+      setCmdQte(""); setCmdNotes("");
+    } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
+
+  const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
+    background:tabChef===t?"#2980B9":"#D6EAF8", color:tabChef===t?"white":"#1A5276", fontWeight:tabChef===t?700:500, fontSize:13 });
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
+      {ficheOuverte && <FicheChantier chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
       <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div><span style={{fontSize:20}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
-      <div style={{padding:20}}>
-        <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande</h3>
-        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
-          <select value={type} onChange={e=>setType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
-            {CATALOGUE.map(p=><option key={p.id} value={p.id}>{p.nom} ({p.dim})</option>)}
-          </select>
-          <input type="number" placeholder="Quantite" value={quantite} onChange={e=>setQuantite(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
-          <input placeholder="Nom du client" value={client} onChange={e=>setClient(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
-          <textarea placeholder="Notes (optionnel)" value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
-          {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msg.includes("envoyee")?"#1A5276":"#C0392B"}}>{msg}</div>}
-          <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Envoyer la commande</button>
-        </div>
-        <h3 style={{marginBottom:10,color:"#1A5276"}}>Mes commandes ({commandes.length})</h3>
-        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
-          commandes.map(c=>(
-            <div key={c.id} style={{background:"white",borderRadius:10,padding:"12px 16px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",borderLeft:"4px solid "+(c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22")}}>
-              <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
-                <div style={{fontWeight:600}}>{getProduit(c.type).nom} - {c.quantite?c.quantite.toLocaleString():"-"} u</div>
-                <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:c.status==="Livree"?"#EAFAF1":c.status==="Validee"?"#EBF5FB":c.status==="Refusee"?"#FFECEC":"#FEF9E7",color:c.status==="Livree"?"#1E8449":c.status==="Validee"?"#1A5276":c.status==="Refusee"?"#C0392B":"#B7950B"}}>{c.status}</span>
+      <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
+        <button style={ts("chantiers")} onClick={()=>setTabChef("chantiers")}>Mes chantiers ({chantiers.length})</button>
+        <button style={ts("nouveau")} onClick={()=>setTabChef("nouveau")}>+ Nouveau chantier</button>
+        <button style={ts("commande")} onClick={()=>setTabChef("commande")}>Passer une commande</button>
+      </div>
+      <div style={{padding:"0 16px 24px"}}>
+
+        {tabChef==="chantiers"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:14,color:"#1A5276"}}>Mes chantiers</h3>
+            {chantiers.length===0?<p style={{color:"#888"}}>Aucun chantier cree. Cliquez sur "+ Nouveau chantier".</p>:
+              chantiers.map(function(ch) {
+                var cmdCh = commandes.filter(function(c){return c.chantierId===ch.id;});
+                var recu = cmdCh.filter(function(c){return c.status==="Livree";}).reduce(function(a,c){return a+(c.quantite||0);},0);
+                var commande = cmdCh.reduce(function(a,c){return a+(c.quantite||0);},0);
+                var besoinTotal = Object.values(ch.besoins||{}).reduce(function(a,v){return a+v;},0);
+                var reste = Math.max(0, besoinTotal - recu);
+                return (
+                  <div key={ch.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#2980B9")}}>
+                    <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:15}}>{ch.nom}</div>
+                        <div style={{fontSize:13,color:"#555",marginTop:2}}>Client: {ch.client}</div>
+                        {ch.adresse&&<div style={{fontSize:12,color:"#888"}}>{ch.adresse}</div>}
+                        <div style={{display:"flex",gap:12,marginTop:8,fontSize:12,flexWrap:"wrap"}}>
+                          <span style={{color:"#666"}}>Besoin: <strong>{besoinTotal.toLocaleString()}</strong> u</span>
+                          <span style={{color:"#2980B9"}}>Commande: <strong>{commande.toLocaleString()}</strong> u</span>
+                          <span style={{color:"#27AE60"}}>Recu: <strong>{recu.toLocaleString()}</strong> u</span>
+                          <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong> u</span>
+                        </div>
+                      </div>
+                      <button onClick={()=>setFicheOuverte(ch)} style={{background:"#2980B9",color:"white",border:"none",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Voir la fiche</button>
+                    </div>
+                  </div>
+                );
+              })
+            }
+          </div>
+        )}
+        {tabChef==="nouveau"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:14,color:"#1A5276"}}>Creer un nouveau chantier</h3>
+            <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:560}}>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Nom du chantier</label>
+                <input placeholder="Ex: Construction villa Mamoudzou" value={nomChantier} onChange={e=>setNomChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
               </div>
-              <div style={{fontSize:12,color:"#888",marginTop:3}}>Client: {c.client||"-"}</div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Nom du client</label>
+                <input placeholder="Nom du client" value={clientChantier} onChange={e=>setClientChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+              </div>
+              <div style={{marginBottom:16}}>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Adresse du chantier</label>
+                <input placeholder="Adresse (optionnel)" value={adresseChantier} onChange={e=>setAdresseChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+              </div>
+              <div style={{marginBottom:16}}>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:8}}>Besoins en BTC pour l'ensemble du chantier</label>
+                <div style={{maxHeight:320,overflowY:"auto",border:"1px solid #EEE",borderRadius:8,padding:10}}>
+                  {CATALOGUE.map(function(prod){
+                    return(
+                      <div key={prod.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 4px",borderBottom:"1px solid #F5F5F5"}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:13,fontWeight:600}}>{prod.nom}</div>
+                          <div style={{fontSize:11,color:"#999"}}>{prod.dim}</div>
+                        </div>
+                        <input type="number" min="0" placeholder="0" value={besoins[prod.id]||""}
+                          onChange={e=>setBesoins(Object.assign({},besoins,{[prod.id]:e.target.value}))} 
+                          style={{width:90,padding:"6px 8px",borderRadius:6,border:"1px solid #ddd",fontSize:13,textAlign:"right"}} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {msgChantier&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgChantier.includes("succes")?"#EAFAF1":"#FFECEC",color:msgChantier.includes("succes")?"#1E8449":"#C0392B"}}>{msgChantier}</div>}
+              <button onClick={creerChantier} style={{width:"100%",padding:"11px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Creer le chantier</button>
             </div>
-          ))
-        }
+          </div>
+        )}
+        {tabChef==="commande"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande pour un chantier</h3>
+            {chantiers.length===0?<p style={{color:"#888",padding:16,background:"#EBF5FB",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:(
+              <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:460}}>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Chantier</label>
+                <select value={cmdChantierId} onChange={e=>setCmdChantierId(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,background:"white",fontSize:14}}>
+                  <option value="">-- Choisir un chantier --</option>
+                  {chantiers.map(ch=><option key={ch.id} value={ch.id}>{ch.nom} - {ch.client}</option>)}
+                </select>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Type de BTC</label>
+                <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,background:"white",fontSize:14}}>
+                  {CATALOGUE.map(p=><option key={p.id} value={p.id}>{p.nom} - {p.dim}</option>)}
+                </select>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Quantite</label>
+                <input type="number" placeholder="Quantite a commander" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14}} />
+                <textarea placeholder="Notes (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
+                {msgCmd&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgCmd.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msgCmd.includes("envoyee")?"#1A5276":"#C0392B"}}>{msgCmd}</div>}
+                <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -502,6 +748,7 @@ function DashboardStock({ user, userData }) {
     </div>
   );
 }
+
 
 function DashboardProduction({ user, userData }) {
   const [stocks, setStocks] = useState({});
@@ -614,6 +861,7 @@ function DashboardProduction({ user, userData }) {
     </div>
   );
 }
+
 
 function App() {
   const [user, setUser] = useState(null);
