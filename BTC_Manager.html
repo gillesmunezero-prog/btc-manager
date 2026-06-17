@@ -732,52 +732,80 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
             </div>
           )}
 
-          {tabFiche==="finance"&&(
-            <div className="fade-in">
-              <h4 style={{marginBottom:6,color:"#8B1A10"}}>Fiche financiere — base facturation</h4>
-              <p style={{fontSize:12,color:"#888",marginBottom:16}}>Calculee sur les quantites effectivement livrees. Les prix sont ceux du catalogue Terre et Eau.</p>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:550}}>
-                  <thead><tr style={{background:"#8B1A10",color:"white"}}>
-                    <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
-                    <th style={{padding:"8px 10px",textAlign:"right"}}>Qte livree</th>
-                    <th style={{padding:"8px 10px",textAlign:"right"}}>Prix unit.</th>
-                    <th style={{padding:"8px 10px",textAlign:"right"}}>Montant</th>
-                  </tr></thead>
-                  <tbody>{lignesFinancieres.filter(function(l){return l.livre>0;}).map(function(l,i){
-                    return(
-                      <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
-                        <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div></td>
-                        <td style={{padding:"8px 10px",textAlign:"right",fontWeight:600}}>{l.livre.toLocaleString()}</td>
-                        <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
-                        <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montantLivre.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                      </tr>
-                    );
-                  })}
-                  {lignesFinancieres.filter(function(l){return l.livre>0;}).length===0&&(
-                    <tr><td colSpan={4} style={{padding:16,textAlign:"center",color:"#888"}}>Aucune livraison enregistree pour ce chantier.</td></tr>
-                  )}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{background:"#F5E6D3",fontWeight:700,fontSize:14}}>
-                      <td colSpan={3} style={{padding:"10px",textAlign:"right"}}>TOTAL A FACTURER</td>
-                      <td style={{padding:"10px",textAlign:"right",color:"#8B1A10",fontSize:16}}>{totalMontantLivre.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                    </tr>
-                    <tr style={{background:"#EAFAF1",fontWeight:600,fontSize:13}}>
-                      <td colSpan={3} style={{padding:"8px 10px",textAlign:"right",color:"#555"}}>Reste a livrer (estimation)</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#27AE60"}}>{(totalMontantBesoin-totalMontantLivre).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                    </tr>
-                    <tr style={{background:"#EBF5FB",fontWeight:700,fontSize:14}}>
-                      <td colSpan={3} style={{padding:"8px 10px",textAlign:"right",color:"#555"}}>MONTANT TOTAL CHANTIER</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
+            {tabFiche==="finance"&&(
+              <div className="fade-in">
+                <h4 style={{marginBottom:6,color:"#8B1A10"}}>Facturation par commande</h4>
+                <p style={{fontSize:12,color:"#888",marginBottom:16}}>Chaque ligne correspond a une commande validee et confirmee par le chef de chantier. Base de facturation Terre et Eau.</p>
 
-          {tabFiche==="commandes"&&(
+                {(function(){
+                  var lignesFact = [];
+                  cmdCh.forEach(function(cmd) {
+                    var confirme = cmd.quantiteConfirmeeChef || 0;
+                    if (confirme <= 0) return;
+                    var prod = getProduit(cmd.type);
+                    var montant = confirme * prod.prix;
+                    var dateStr = cmd.valideAt && cmd.valideAt.toDate ? cmd.valideAt.toDate().toLocaleDateString("fr-FR") : (cmd.timestamp && cmd.timestamp.toDate ? cmd.timestamp.toDate().toLocaleDateString("fr-FR") : "-");
+                    lignesFact.push({ cmd:cmd, prod:prod, confirme:confirme, montant:montant, dateStr:dateStr });
+                  });
+
+                  if (lignesFact.length === 0) {
+                    return <div style={{padding:20,textAlign:"center",color:"#888",background:"#FEF9F0",borderRadius:10,marginBottom:16}}>Aucune reception confirmee par le chef de chantier pour l'instant.<br/><span style={{fontSize:12}}>Le montant apparaitra ici apres confirmation de reception par le chef.</span></div>;
+                  }
+
+                  var totalGeneral = lignesFact.reduce(function(a,l){return a+l.montant;},0);
+
+                  return (
+                    <div>
+                      <div style={{overflowX:"auto",marginBottom:16}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:580}}>
+                          <thead><tr style={{background:"#8B1A10",color:"white"}}>
+                            <th style={{padding:"8px 10px",textAlign:"left"}}>Date reception</th>
+                            <th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th>
+                            <th style={{padding:"8px 10px",textAlign:"right"}}>Qte commande</th>
+                            <th style={{padding:"8px 10px",textAlign:"right"}}>Qte confirmee</th>
+                            <th style={{padding:"8px 10px",textAlign:"right"}}>Prix unit.</th>
+                            <th style={{padding:"8px 10px",textAlign:"right"}}>Montant</th>
+                          </tr></thead>
+                          <tbody>
+                            {lignesFact.map(function(l,i){
+                              return (
+                                <tr key={l.cmd.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                                  <td style={{padding:"8px 10px",color:"#666"}}>{l.dateStr}</td>
+                                  <td style={{padding:"8px 10px"}}>
+                                    <div style={{fontWeight:600}}>{l.prod.nom}</div>
+                                    <div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div>
+                                  </td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{background:"#8B1A10",color:"white",fontWeight:700,fontSize:15}}>
+                              <td colSpan={5} style={{padding:"12px 10px",textAlign:"right",letterSpacing:1}}>TOTAL GENERAL A FACTURER</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:17}}>{totalGeneral.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                      <div style={{background:"#FEF9F0",border:"1px solid #EEE",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                        <div style={{fontSize:12,color:"#888"}}>
+                          <strong style={{color:"#2C1810"}}>{lignesFact.length}</strong> commande(s) confirmee(s) | Client: <strong>{chantier.client}</strong>
+                        </div>
+                        <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>
+                          MONTANT TOTAL CHANTIER (estimation): {totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {tabFiche==="commandes"&&(
             <div className="fade-in">
               <h4 style={{marginBottom:12,color:"#8B1A10"}}>Historique des commandes ({cmdCh.length})</h4>
               {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
