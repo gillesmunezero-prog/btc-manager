@@ -170,7 +170,7 @@ function DashboardDirection({ user, userData }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
-      {ficheOuverte && <FicheChantier chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
+      {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
       <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div><span style={{fontSize:20}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
@@ -424,85 +424,386 @@ function DashboardDirection({ user, userData }) {
 
 
 
-function FicheChantier({ chantier, commandes, onClose }) {
-  // Calculs par type de BTC
-  var besoins = chantier.besoins || {};
-  var cmdChantier = commandes.filter(function(c) { return c.chantierId === chantier.id; });
 
-  // Construire tableau par type
-  var lignes = CATALOGUE.map(function(prod) {
+function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
+  const [tabFiche, setTabFiche] = useState("suivi");
+  const [cmdType, setCmdType] = useState("");
+  const [cmdQte, setCmdQte] = useState("");
+  const [cmdNotes, setCmdNotes] = useState("");
+  const [msgCmd, setMsgCmd] = useState("");
+
+  var cmdCh = commandes.filter(function(c){ return c.chantierId === chantier.id; });
+  var besoins = chantier.besoins || {};
+  var typesChantier = CATALOGUE.filter(function(p){ return (besoins[p.id]||0) > 0; });
+
+  // Résumé par type
+  var lignes = typesChantier.map(function(prod) {
     var besoin = besoins[prod.id] || 0;
-    if (besoin === 0) return null;
-    var commande = cmdChantier.filter(function(c){ return c.type === prod.id; })
-      .reduce(function(acc,c){ return acc + (c.quantite||0); }, 0);
-    var recu = cmdChantier.filter(function(c){ return c.type === prod.id && c.status === "Livree"; })
-      .reduce(function(acc,c){ return acc + (c.quantite||0); }, 0);
+    var cmdTotal = cmdCh.filter(function(c){ return c.type===prod.id; }).reduce(function(a,c){ return a+(c.quantite||0); }, 0);
+    var recu = cmdCh.filter(function(c){ return c.type===prod.id; }).reduce(function(a,c){ return a+(c.quantiteLivree||0); }, 0);
     var reste = Math.max(0, besoin - recu);
-    return { prod: prod, besoin: besoin, commande: commande, recu: recu, reste: reste };
-  }).filter(function(l) { return l !== null; });
+    return { prod:prod, besoin:besoin, cmdTotal:cmdTotal, recu:recu, reste:reste };
+  });
+
+  var passerCommande = async function() {
+    if (!cmdType||!cmdQte) { setMsgCmd("Choisissez un type et entrez la quantite"); return; }
+    try {
+      await db.collection("commandes").add({
+        type: cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        chantierId: chantier.id, chantierNom: chantier.nom, client: chantier.client,
+        chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
+        status: "EnAttente", quantiteLivree: 0,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setMsgCmd("Commande envoyee ! En attente de validation Direction.");
+      setCmdQte(""); setCmdNotes(""); setCmdType("");
+      setTabFiche("suivi");
+    } catch(e) { setMsgCmd("Erreur: "+e.message); }
+  };
+
+  var validerReception = async function(cmdId, qteRecue) {
+    // Chef confirme qu il a bien recu les BTC sur le chantier
+    var cmd = cmdCh.find(function(c){return c.id===cmdId;});
+    if (!cmd) return;
+    var dejaConfirme = cmd.quantiteConfirmeeChef || 0;
+    var nouveauTotal = dejaConfirme + qteRecue;
+    var cmdQteTotal = cmd.quantite || 0;
+    var newStatus = (cmd.status === "Livree" || nouveauTotal >= cmdQteTotal) ? "Livree" : cmd.status;
+    await db.collection("commandes").doc(cmdId).update({
+      quantiteConfirmeeChef: nouveauTotal,
+      chefConfirmeAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    setMsgCmd("Reception confirmee !");
+  };
+
+  var ts = function(t) { return { padding:"7px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6,
+    background:tabFiche===t?"#2980B9":"#D6EAF8", color:tabFiche===t?"white":"#1A5276", fontWeight:tabFiche===t?700:500, fontSize:13 }; };
 
   return (
-    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
-      <div style={{background:"white",borderRadius:16,padding:24,width:"100%",maxWidth:700,marginTop:20,boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.55)",zIndex:1000,overflowY:"auto",padding:16}}>
+      <div style={{background:"white",borderRadius:16,maxWidth:720,margin:"0 auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+        <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
-            <h2 style={{color:"#8B1A10",marginBottom:4}}>{chantier.nom}</h2>
-            <div style={{fontSize:13,color:"#666"}}>Client: {chantier.client} | Statut: <strong style={{color:chantier.statut==="termine"?"#27AE60":"#E67E22"}}>{chantier.statut==="termine"?"Termine":"En cours"}</strong></div>
-            {chantier.adresse&&<div style={{fontSize:12,color:"#888",marginTop:2}}>{chantier.adresse}</div>}
+            <h2 style={{marginBottom:4,fontSize:18}}>{chantier.nom}</h2>
+            <div style={{fontSize:13,opacity:.9}}>Client: {chantier.client}</div>
+            {chantier.adresse&&<div style={{fontSize:12,opacity:.8}}>{chantier.adresse}</div>}
           </div>
-          <button onClick={onClose} style={{background:"#EEE",border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:700}}>✕ Fermer</button>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>✕ Fermer</button>
         </div>
-        {lignes.length === 0 ? <p style={{color:"#888"}}>Aucun besoin enregistre pour ce chantier.</p> : (
-          <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead>
-                <tr style={{background:"#8B1A10",color:"white"}}>
-                  <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
-                  <th style={{padding:"8px 10px",textAlign:"left"}}>Dimension</th>
-                  <th style={{padding:"8px 10px",textAlign:"right"}}>Besoin total</th>
-                  <th style={{padding:"8px 10px",textAlign:"right"}}>Commande</th>
-                  <th style={{padding:"8px 10px",textAlign:"right"}}>Recu</th>
-                  <th style={{padding:"8px 10px",textAlign:"right",color:"#FFD700"}}>Reste</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lignes.map(function(l, i) {
-                  var pct = l.besoin > 0 ? Math.min(100, Math.round(l.recu/l.besoin*100)) : 0;
-                  return (
-                    <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
-                      <td style={{padding:"8px 10px",fontWeight:600}}>{l.prod.nom}</td>
-                      <td style={{padding:"8px 10px",color:"#888",fontSize:12}}>{l.prod.dim}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{l.commande.toLocaleString()}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right"}}>
-                        <div>{l.recu.toLocaleString()}</div>
-                        <div style={{background:"#EEE",borderRadius:3,height:4,marginTop:3,minWidth:60}}>
-                          <div style={{height:4,borderRadius:3,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
-                        </div>
-                      </td>
-                      <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#27AE60":"#C0392B"}}>{l.reste.toLocaleString()}</td>
-                    </tr>
+        <div style={{padding:"12px 16px 0",display:"flex",flexWrap:"wrap"}}>
+          <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>📊 Suivi</button>
+          <button style={ts("commande")} onClick={()=>setTabFiche("commande")}>+ Passer une commande</button>
+          <button style={ts("reception")} onClick={()=>setTabFiche("reception")}>✅ Valider reception</button>
+        </div>
+
+        <div style={{padding:20}}>
+          {msgCmd&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:12,fontSize:13,background:msgCmd.includes("envoyee")||msgCmd.includes("confirme")?"#EAFAF1":"#FFECEC",color:msgCmd.includes("envoyee")||msgCmd.includes("confirme")?"#1E8449":"#C0392B"}}>{msgCmd}</div>}
+
+          {tabFiche==="suivi"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:12,color:"#1A5276"}}>Besoins et etat des livraisons</h4>
+              {lignes.length===0?<p style={{color:"#888"}}>Aucun type de BTC renseigne dans ce chantier.</p>:(
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead><tr style={{background:"#1A5276",color:"white"}}>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>Dim.</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Besoin</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Commande</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Recu</th>
+                      <th style={{padding:"8px 10px",textAlign:"right",color:"#FFD700"}}>Reste</th>
+                    </tr></thead>
+                    <tbody>{lignes.map(function(l,i){
+                      var pct=l.besoin>0?Math.min(100,Math.round(l.recu/l.besoin*100)):0;
+                      return(
+                        <tr key={l.prod.id} style={{background:i%2===0?"white":"#EBF5FB",borderBottom:"1px solid #ddd"}}>
+                          <td style={{padding:"8px 10px",fontWeight:600}}>{l.prod.nom}</td>
+                          <td style={{padding:"8px 10px",fontSize:11,color:"#999"}}>{l.prod.dim}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{l.cmdTotal.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right"}}>
+                            <div>{l.recu.toLocaleString()}</div>
+                            <div style={{background:"#EEE",borderRadius:3,height:4,marginTop:3}}>
+                              <div style={{height:4,borderRadius:3,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
+                            </div>
+                          </td>
+                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#27AE60":"#C0392B"}}>{l.reste.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                    <tfoot><tr style={{background:"#D6EAF8",fontWeight:700}}>
+                      <td colSpan={2} style={{padding:"8px 10px"}}>TOTAL</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.besoin;},0).toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{lignes.reduce(function(a,l){return a+l.cmdTotal;},0).toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.recu;},0).toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{lignes.reduce(function(a,l){return a+l.reste;},0).toLocaleString()}</td>
+                    </tr></tfoot>
+                  </table>
+                </div>
+              )}
+              <h4 style={{marginTop:20,marginBottom:10,color:"#1A5276"}}>Historique des commandes ({cmdCh.length})</h4>
+              {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande passee.</p>:
+                cmdCh.map(function(c,i){
+                  var livree=c.quantiteLivree||0; var tot=c.quantite||0; var reste=Math.max(0,tot-livree);
+                  var confirme=c.quantiteConfirmeeChef||0;
+                  var couleur=c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22";
+                  return(
+                    <div key={c.id} style={{borderRadius:10,padding:"10px 14px",marginBottom:8,background:i%2===0?"#F8FBFF":"white",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
+                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
+                        <div style={{fontWeight:600,fontSize:13}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
+                        <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
+                      </div>
+                      <div style={{fontSize:12,color:"#666",marginTop:3}}>Livre: {livree.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong> | Confirme par chef: {confirme.toLocaleString()}</div>
+                    </div>
                   );
-                })}
-              </tbody>
-              <tfoot>
-                <tr style={{background:"#F5E6D3",fontWeight:700}}>
-                  <td colSpan={2} style={{padding:"8px 10px"}}>TOTAL</td>
-                  <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.besoin;},0).toLocaleString()}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{lignes.reduce(function(a,l){return a+l.commande;},0).toLocaleString()}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.recu;},0).toLocaleString()}</td>
-                  <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{lignes.reduce(function(a,l){return a+l.reste;},0).toLocaleString()}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-        <div style={{marginTop:16,fontSize:13,color:"#888"}}>Commandes liees a ce chantier: {cmdChantier.length}</div>
+                })
+              }
+            </div>
+          )}
+
+          {tabFiche==="commande"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:14,color:"#1A5276"}}>Nouvelle commande pour ce chantier</h4>
+              {typesChantier.length===0?
+                <p style={{color:"#888",padding:12,background:"#FFF3CD",borderRadius:8}}>Aucun type de BTC renseigne. Modifiez la fiche chantier d'abord.</p>:
+                <div style={{maxWidth:440}}>
+                  <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Type de BTC du chantier</label>
+                  <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"white",fontSize:14,marginBottom:12}}>
+                    <option value="">-- Choisir le type --</option>
+                    {typesChantier.map(function(p){
+                      var l = lignes.find(function(x){return x.prod.id===p.id;});
+                      var reste = l ? l.reste : (besoins[p.id]||0);
+                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste a livrer: {reste.toLocaleString()}</option>;
+                    })}
+                  </select>
+                  <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Quantite a commander</label>
+                  <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14,marginBottom:12}} />
+                  <textarea placeholder="Notes pour la Direction (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14,resize:"vertical",minHeight:50,marginBottom:12}} />
+                  <button onClick={passerCommande} style={{width:"100%",padding:"11px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande a la Direction ↗</button>
+                </div>
+              }
+            </div>
+          )}
+
+          {tabFiche==="reception"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:12,color:"#1A5276"}}>Confirmer la reception des BTC sur le chantier</h4>
+              {cmdCh.filter(function(c){return c.status==="Livree"||(c.quantiteLivree||0)>0;}).length===0?
+                <p style={{color:"#888"}}>Aucune livraison a confirmer pour l'instant.</p>:
+                cmdCh.filter(function(c){return (c.quantiteLivree||0)>0;}).map(function(c){
+                  var livree = c.quantiteLivree||0;
+                  var confirme = c.quantiteConfirmeeChef||0;
+                  var aConfirmer = Math.max(0, livree - confirme);
+                  return(
+                    <div key={c.id} style={{background:"white",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #EEE",borderLeft:"4px solid #27AE60"}}>
+                      <div style={{fontWeight:700,fontSize:14}}>{getProduit(c.type).nom}</div>
+                      <div style={{fontSize:12,color:"#666",marginTop:4}}>Commande: {(c.quantite||0).toLocaleString()} u | Livre par stock: <strong>{livree.toLocaleString()}</strong> u | Deja confirme: {confirme.toLocaleString()} u</div>
+                      {aConfirmer > 0 ? (
+                        <div style={{marginTop:10,padding:"10px 14px",background:"#EAFAF1",borderRadius:8}}>
+                          <div style={{fontSize:13,color:"#1E8449",fontWeight:600,marginBottom:6}}>A confirmer: {aConfirmer.toLocaleString()} u</div>
+                          <button onClick={()=>validerReception(c.id, aConfirmer)} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>✅ Confirmer reception de {aConfirmer.toLocaleString()} BTC</button>
+                        </div>
+                      ):(
+                        <div style={{marginTop:8,fontSize:12,color:"#27AE60",fontWeight:600}}>✅ Reception confirmee</div>
+                      )}
+                    </div>
+                  );
+                })
+              }
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
+function FicheChantierDirection({ chantier, commandes, onClose }) {
+  const [tabFiche, setTabFiche] = useState("suivi");
+  var cmdCh = commandes.filter(function(c){ return c.chantierId === chantier.id; });
+  var besoins = chantier.besoins || {};
+  var typesChantier = CATALOGUE.filter(function(p){ return (besoins[p.id]||0) > 0; });
+
+  // Lignes financières : uniquement sur les BTC réellement livrés et confirmés
+  var lignesFinancieres = typesChantier.map(function(prod) {
+    var besoin = besoins[prod.id] || 0;
+    var cmdsProd = cmdCh.filter(function(c){ return c.type===prod.id; });
+    var cmdTotal = cmdsProd.reduce(function(a,c){ return a+(c.quantite||0); }, 0);
+    var livre = cmdsProd.reduce(function(a,c){ return a+(c.quantiteLivree||0); }, 0);
+    var confirme = cmdsProd.reduce(function(a,c){ return a+(c.quantiteConfirmeeChef||0); }, 0);
+    var reste = Math.max(0, besoin - livre);
+    var montantLivre = livre * prod.prix;
+    var montantBesoin = besoin * prod.prix;
+    return { prod:prod, besoin:besoin, cmdTotal:cmdTotal, livre:livre, confirme:confirme, reste:reste, montantLivre:montantLivre, montantBesoin:montantBesoin };
+  });
+
+  var totalBesoin = lignesFinancieres.reduce(function(a,l){return a+l.besoin;},0);
+  var totalCmde = lignesFinancieres.reduce(function(a,l){return a+l.cmdTotal;},0);
+  var totalLivre = lignesFinancieres.reduce(function(a,l){return a+l.livre;},0);
+  var totalMontantLivre = lignesFinancieres.reduce(function(a,l){return a+l.montantLivre;},0);
+  var totalMontantBesoin = lignesFinancieres.reduce(function(a,l){return a+l.montantBesoin;},0);
+  var totalReste = lignesFinancieres.reduce(function(a,l){return a+l.reste;},0);
+  var pctGlobal = totalBesoin>0?Math.min(100,Math.round(totalLivre/totalBesoin*100)):0;
+
+  var ts = function(t) { return { padding:"7px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6,
+    background:tabFiche===t?"#8B1A10":"#F5E6D3", color:tabFiche===t?"white":"#2C1810", fontWeight:tabFiche===t?700:500, fontSize:13 }; };
+
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.55)",zIndex:1000,overflowY:"auto",padding:16}}>
+      <div style={{background:"white",borderRadius:16,maxWidth:780,margin:"0 auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+        <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+            <div>
+              <h2 style={{marginBottom:4,fontSize:18}}>{chantier.nom}</h2>
+              <div style={{fontSize:13,opacity:.9}}>Client: <strong>{chantier.client}</strong> | Chef: {chantier.chefNom||"-"}</div>
+              {chantier.adresse&&<div style={{fontSize:12,opacity:.8,marginTop:2}}>{chantier.adresse}</div>}
+            </div>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontWeight:700}}>✕ Fermer</button>
+          </div>
+          <div style={{display:"flex",gap:16,marginTop:12,flexWrap:"wrap"}}>
+            <div style={{background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,opacity:.8}}>Avancement</div>
+              <div style={{fontSize:20,fontWeight:700}}>{pctGlobal}%</div>
+            </div>
+            <div style={{background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,opacity:.8}}>Livre</div>
+              <div style={{fontSize:18,fontWeight:700}}>{totalLivre.toLocaleString()} u</div>
+            </div>
+            <div style={{background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,opacity:.8}}>Montant livre</div>
+              <div style={{fontSize:18,fontWeight:700}}>{totalMontantLivre.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+            </div>
+            <div style={{background:"rgba(255,255,255,0.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}>
+              <div style={{fontSize:11,opacity:.8}}>Montant total chantier</div>
+              <div style={{fontSize:18,fontWeight:700}}>{totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+            </div>
+          </div>
+        </div>
+        <div style={{padding:"12px 16px 0",display:"flex",flexWrap:"wrap"}}>
+          <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>Suivi livraisons</button>
+          <button style={ts("finance")} onClick={()=>setTabFiche("finance")}>💶 Fiche financiere</button>
+          <button style={ts("commandes")} onClick={()=>setTabFiche("commandes")}>Historique commandes</button>
+        </div>
+
+        <div style={{padding:20}}>
+          {tabFiche==="suivi"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:12,color:"#8B1A10"}}>Etat des livraisons par type</h4>
+              {lignesFinancieres.length===0?<p style={{color:"#888"}}>Aucun besoin enregistre.</p>:(
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
+                    <thead><tr style={{background:"#8B1A10",color:"white"}}>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Besoin</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Commande</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Livre</th>
+                      <th style={{padding:"8px 10px",textAlign:"right"}}>Confirme chef</th>
+                      <th style={{padding:"8px 10px",textAlign:"right",color:"#FFD700"}}>Reste</th>
+                    </tr></thead>
+                    <tbody>{lignesFinancieres.map(function(l,i){
+                      var pct=l.besoin>0?Math.min(100,Math.round(l.livre/l.besoin*100)):0;
+                      return(
+                        <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                          <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div></td>
+                          <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{l.cmdTotal.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right"}}>
+                            <div>{l.livre.toLocaleString()}</div>
+                            <div style={{background:"#EEE",borderRadius:3,height:4,marginTop:3,minWidth:50}}>
+                              <div style={{height:4,borderRadius:3,background:pct===100?"#27AE60":"#C0392B",width:pct+"%"}}></div>
+                            </div>
+                          </td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:l.confirme>=l.livre?"#27AE60":"#E67E22"}}>{l.confirme.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#27AE60":"#C0392B"}}>{l.reste.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                    <tfoot><tr style={{background:"#F5E6D3",fontWeight:700}}>
+                      <td style={{padding:"8px 10px"}}>TOTAL</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>{totalBesoin.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{totalCmde.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}>{totalLivre.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right"}}></td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{totalReste.toLocaleString()}</td>
+                    </tr></tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tabFiche==="finance"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:6,color:"#8B1A10"}}>Fiche financiere — base facturation</h4>
+              <p style={{fontSize:12,color:"#888",marginBottom:16}}>Calculee sur les quantites effectivement livrees. Les prix sont ceux du catalogue Terre et Eau.</p>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:550}}>
+                  <thead><tr style={{background:"#8B1A10",color:"white"}}>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
+                    <th style={{padding:"8px 10px",textAlign:"right"}}>Qte livree</th>
+                    <th style={{padding:"8px 10px",textAlign:"right"}}>Prix unit.</th>
+                    <th style={{padding:"8px 10px",textAlign:"right"}}>Montant</th>
+                  </tr></thead>
+                  <tbody>{lignesFinancieres.filter(function(l){return l.livre>0;}).map(function(l,i){
+                    return(
+                      <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                        <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div></td>
+                        <td style={{padding:"8px 10px",textAlign:"right",fontWeight:600}}>{l.livre.toLocaleString()}</td>
+                        <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
+                        <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montantLivre.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                      </tr>
+                    );
+                  })}
+                  {lignesFinancieres.filter(function(l){return l.livre>0;}).length===0&&(
+                    <tr><td colSpan={4} style={{padding:16,textAlign:"center",color:"#888"}}>Aucune livraison enregistree pour ce chantier.</td></tr>
+                  )}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:"#F5E6D3",fontWeight:700,fontSize:14}}>
+                      <td colSpan={3} style={{padding:"10px",textAlign:"right"}}>TOTAL A FACTURER</td>
+                      <td style={{padding:"10px",textAlign:"right",color:"#8B1A10",fontSize:16}}>{totalMontantLivre.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                    </tr>
+                    <tr style={{background:"#EAFAF1",fontWeight:600,fontSize:13}}>
+                      <td colSpan={3} style={{padding:"8px 10px",textAlign:"right",color:"#555"}}>Reste a livrer (estimation)</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#27AE60"}}>{(totalMontantBesoin-totalMontantLivre).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                    </tr>
+                    <tr style={{background:"#EBF5FB",fontWeight:700,fontSize:14}}>
+                      <td colSpan={3} style={{padding:"8px 10px",textAlign:"right",color:"#555"}}>MONTANT TOTAL CHANTIER</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {tabFiche==="commandes"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:12,color:"#8B1A10"}}>Historique des commandes ({cmdCh.length})</h4>
+              {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
+                cmdCh.map(function(c,i){
+                  var livree=c.quantiteLivree||0; var tot=c.quantite||0; var reste=Math.max(0,tot-livree);
+                  var confirme=c.quantiteConfirmeeChef||0;
+                  var couleur=c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22";
+                  return(
+                    <div key={c.id} style={{borderRadius:10,padding:"12px 14px",marginBottom:8,background:i%2===0?"#FEF9F0":"white",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
+                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4,marginBottom:4}}>
+                        <div style={{fontWeight:700}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
+                        <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
+                      </div>
+                      <div style={{fontSize:12,color:"#666"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong></div>
+                      {c.notes&&<div style={{fontSize:11,color:"#888",marginTop:3}}>Note: {c.notes}</div>}
+                    </div>
+                  );
+                })
+              }
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function DashboardChef({ user, userData }) {
   const [tabChef, setTabChef] = useState("chantiers");
@@ -655,7 +956,7 @@ function DashboardChef({ user, userData }) {
           </div>
         </div>
       )}
-      {ficheOuverte && <FicheChantier chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
+      {ficheOuverte && <FicheChantierChef chantier={ficheOuverte} commandes={commandes} user={user} userData={userData} onClose={()=>setFicheOuverte(null)} />}
       <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div><span style={{fontSize:20}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
@@ -663,7 +964,7 @@ function DashboardChef({ user, userData }) {
       <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
         <button style={ts("chantiers")} onClick={()=>setTabChef("chantiers")}>Mes chantiers ({chantiers.length})</button>
         <button style={ts("nouveau")} onClick={ouvrirNouveauChantier}>+ Nouveau chantier</button>
-        <button style={ts("commande")} onClick={()=>setTabChef("commande")}>Passer une commande</button>
+        
       </div>
       <div style={{padding:"0 16px 24px"}}>
 
@@ -804,6 +1105,7 @@ function DashboardChef({ user, userData }) {
   );
 }
 
+
 function DashboardStock({ user, userData }) {
   const [commandes, setCommandes] = useState([]);
   const [stocks, setStocks] = useState({});
@@ -918,6 +1220,7 @@ function DashboardStock({ user, userData }) {
   );
 }
 
+
 function DashboardProduction({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
@@ -1029,6 +1332,7 @@ function DashboardProduction({ user, userData }) {
     </div>
   );
 }
+
 
 
 
