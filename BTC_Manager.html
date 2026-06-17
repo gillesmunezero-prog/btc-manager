@@ -64,6 +64,8 @@ const FOURNITURES = [
 const TYPES_BTC = CATALOGUE.map(function(p) { return p.id; });
 const STOCK_CIBLE = 10000;
 const STOCK_ALERTE = 7500;
+const DUREE_SECHAGE = 28;
+const MS_PAR_JOUR = 86400000;
 
 function couleurUrgence(total) {
   if (total < STOCK_ALERTE) return "#C0392B";
@@ -74,6 +76,21 @@ function libelleUrgence(total) {
   if (total < STOCK_ALERTE) return "ALERTE";
   if (total < STOCK_CIBLE) return "A PRODUIRE";
   return "OK";
+}
+function joursRestants(dateTs) {
+if (!dateTs) return 0;
+var d = dateTs.toDate ? dateTs.toDate() : new Date(dateTs);
+return Math.max(0, DUREE_SECHAGE - Math.floor((Date.now()-d.getTime())/MS_PAR_JOUR));
+}
+function calcSechageActif(prods, typeId) {
+var now28 = Date.now() - DUREE_SECHAGE*MS_PAR_JOUR;
+var actif = 0;
+prods.forEach(function(p) {
+if (p.type!==typeId||p.phase!=='sechage') return;
+var d = p.timestamp&&p.timestamp.toDate ? p.timestamp.toDate().getTime() : 0;
+if (d && d>now28) actif += (p.quantite||0);
+});
+return actif;
 }
 function getProduit(id) {
   return CATALOGUE.find(function(p) { return p.id === id; }) || { nom: id, dim: "", prix: 0 };
@@ -217,8 +234,11 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                   <div key={prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                     <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{prod.nom}</div>
                     <div style={{fontSize:11,color:"#999",marginBottom:8}}>{prod.dim}</div>
-                    <div style={{fontSize:12,color:"#666"}}>Stock sec: <strong>{sec.toLocaleString()}</strong></div>
-                    <div style={{fontSize:12,color:"#666"}}>En sechage: <strong>{sechage.toLocaleString()}</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                  <span style={{color:"#27AE60",fontWeight:600}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
+                  <span style={{color:"#E67E22",fontWeight:600}}>Sechage: <strong>{sechage.toLocaleString()}</strong></span>
+                </div>
+                {calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {calcSechageActif(productions,prod.id).toLocaleString()} u pas encore matures</div>}
                     <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
                       <div style={{height:6,borderRadius:4,background:couleur,width:Math.min(100,Math.round(total/STOCK_CIBLE*100))+"%"}}></div>
                     </div>
@@ -1301,10 +1321,13 @@ function DashboardStock({ user, userData }) {
             return(
               <div key={prod.id} style={{background:"white",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
-                <div style={{fontSize:11,color:"#999",marginBottom:5}}>{prod.dim}</div>
-                <div style={{fontSize:12,color:"#666"}}>Sec: <strong>{sec.toLocaleString()}</strong></div>
-                <div style={{fontSize:12,color:"#666"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></div>
-                <div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:4}}>Total: {total.toLocaleString()}</div>
+<div style={{fontSize:11,color:"#999",marginBottom:4}}>{prod.dim}</div>
+<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
+<span style={{color:"#27AE60"}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
+<span style={{color:"#E67E22"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></span>
+</div>
+{calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {calcSechageActif(productions,prod.id).toLocaleString()} u pas encore matures</div>}
+<div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:2}}>Total: {total.toLocaleString()}</div>
               </div>
             );
           })}
@@ -1328,7 +1351,17 @@ function DashboardStock({ user, userData }) {
                   <div style={{textAlign:"right"}}>
                     <div style={{fontSize:13,color:"#666"}}>Commande totale: <strong>{total.toLocaleString()} u</strong></div>
                     <div style={{fontSize:13,color:"#27AE60"}}>Deja livre: <strong>{livree.toLocaleString()} u</strong></div>
-                    <div style={{fontSize:14,fontWeight:700,color:"#C0392B",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#C0392B",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong>
+{(function(){
+var sActif=calcSechageActif(productions,cmd.type);
+var sStock=stocks[cmd.type]||{};
+var secMatur=sStock.sec||0;
+if(resteCmd>0&&sActif>0&&resteCmd>secMatur) {
+return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1px solid #F39C12",borderRadius:6,fontSize:11,color:"#7D5A00",fontWeight:700,textAlign:"left"}}>
+⚠️ ATTENTION: {sActif.toLocaleString()} BTC en sechage pas encore matures. Si vous livrez, des briques humides seront expedies.
+</div>;
+} return null;
+})()}</div>
                   </div>
                 </div>
                 <div style={{background:"#EEE",borderRadius:4,height:8,marginBottom:8}}>
@@ -1438,6 +1471,7 @@ function DashboardProduction({ user, userData }) {
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</span>
                 </div>
                 {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"#888",marginTop:3}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()}</strong></div>}
+{(function(){var sa=calcSechageActif(productions,item.prod.id);if(sa>0)return<div style={{fontSize:10,color:"#B7770D",marginTop:2}}>⏳ {sa.toLocaleString()} u en sechage actif</div>;return null;})()}
               </div>
             );
           })}
@@ -1457,15 +1491,57 @@ function DashboardProduction({ user, userData }) {
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
           <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
         </div>
-        <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
+        {(function(){
+var seches=productions.filter(function(p){return p.phase==="sechage";}).map(function(p){return Object.assign({},p,{jr:joursRestants(p.timestamp)});}).filter(function(p){return p.jr>0;}).sort(function(a,b){return a.jr-b.jr;});
+if(seches.length>0) return(
+<div style={{marginBottom:24}}>
+<h3 style={{marginBottom:8,color:"#4A235A"}}>Lots en cours de sechage ({seches.length})</h3>
+<p style={{fontSize:11,color:"#888",marginBottom:10}}>Ces BTC ne peuvent pas etre livres avant la fin de leur sechage de {DUREE_SECHAGE} jours.</p>
+{seches.map(function(p){
+var pct=Math.round((DUREE_SECHAGE-p.jr)/DUREE_SECHAGE*100);
+return(
+<div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderLeft:"3px solid #E67E22"}}>
+<div style={{flex:1,minWidth:140}}>
+<div style={{fontWeight:600,fontSize:13}}>{getProduit(p.type).nom}</div>
+<div style={{fontSize:11,color:"#999"}}>{p.date}</div>
+</div>
+<div style={{textAlign:"right"}}>
+<div style={{fontWeight:700,fontSize:14,color:"#E67E22"}}>{p.jr} j restants</div>
+<div style={{fontSize:11,color:"#888"}}>{(p.quantite||0).toLocaleString()} u</div>
+</div>
+<div style={{width:100}}>
+<div style={{background:"#EEE",borderRadius:4,height:6}}>
+<div style={{height:6,borderRadius:4,background:"#E67E22",width:pct+"%"}}></div>
+</div>
+<div style={{fontSize:10,color:"#888",marginTop:2}}>{pct}% seche</div>
+</div>
+</div>
+);
+})}
+</div>
+);
+return null;
+})()}
+<h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
         {prodAujourdHui.length===0?<p style={{color:"#888"}}>Aucune production enregistree aujourd'hui.</p>:
-          prodAujourdHui.map(p=>(
-            <div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          prodAujourdHui.map(p=>{
+var jrR=p.phase==="sechage"&&p.timestamp?joursRestants(p.timestamp):0;
+return(
+            <div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
               <div>
-                <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"#888"}}>({p.phase==="sec"?"sec":"sechage"})</span></div>
+                <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"#888"}}>({p.phase==="sec"?"Sec":"Sechage"})</span></div>
                 <div style={{fontSize:12,color:"#666"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
+                {p.phase==="sechage"&&jrR>0&&<div style={{fontSize:11,color:"#B7770D",marginTop:2}}>⏳ Mature dans {jrR} jour{jrR>1?"s":""}</div>}
+                {p.phase==="sechage"&&jrR===0&&<div style={{fontSize:11,color:"#27AE60",marginTop:2}}>✅ Mature (seche)</div>}
               </div>
-              <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>OK</span>
+              {p.phase==="sechage"?(
+<div style={{textAlign:"right"}}>
+<span style={{background:"#FFF3CD",color:"#B7770D",borderRadius:10,padding:"2px 10px",fontSize:11,fontWeight:700}}>⏳ Sechage en cours</span>
+<div style={{fontSize:10,color:"#888",marginTop:2}}>Mature dans ~28 jours</div>
+</div>
+):(
+<span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>✅ Sec</span>
+)}
             </div>
           ))
         }
