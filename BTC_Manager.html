@@ -99,6 +99,7 @@ function BTCSelect(props) {
   var value = props.value; var onChange = props.onChange; var sp = props.stockPret || {};
   return (<select value={value} onChange={function(e) { onChange(e.target.value); }} style={C.input}><option value="">Selectionner un BTC...</option>{BTC.map(function(b) { var dispo = sp[b.id] !== undefined ? " - Dispo: " + Math.max(0, sp[b.id]) + " u" : ""; return <option key={b.id} value={b.id}>{"#" + b.id + " - " + b.nom + " (" + b.dim + ")" + dispo}</option>; })}</select>);
 }
+// CORRECTION : pas de orderBy sur cmdValidees pour eviter index composite
 function useStock() {
   var s1 = useState([]); var prods = s1[0]; var setProds = s1[1];
   var s2 = useState([]); var sorties = s2[0]; var setSorties = s2[1];
@@ -106,7 +107,7 @@ function useStock() {
   useEffect(function() {
     var u1 = db.collection("productions").orderBy("timestamp","desc").limit(1000).onSnapshot(function(s) { setProds(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
     var u2 = db.collection("sorties").orderBy("timestamp","desc").limit(1000).onSnapshot(function(s) { setSorties(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
-    var u3 = db.collection("commandes").where("status","==","Validee").orderBy("timestamp","desc").onSnapshot(function(s) { setCmdValidees(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
+    var u3 = db.collection("commandes").where("status","==","Validee").onSnapshot(function(s) { setCmdValidees(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
     return function() { u1(); u2(); u3(); };
   }, []);
   var now = new Date();
@@ -162,11 +163,8 @@ function ChefApp(props) {
 function StockVisuelTab(props) {
   var stockPret = props.stockPret; var stockSech = props.stockSech;
   var items = BTC.map(function(b) {
-    var pret = Math.max(0, stockPret[b.id] || 0);
-    var sech = stockSech[b.id] ? stockSech[b.id].qty : 0;
-    var total = pret + sech;
-    var pct = Math.min(100, Math.round(total / STOCK_CIBLE * 100));
-    var alerte = total < STOCK_ALERTE; var critique = total < STOCK_ALERTE / 2;
+    var pret = Math.max(0, stockPret[b.id] || 0); var sech = stockSech[b.id] ? stockSech[b.id].qty : 0; var total = pret + sech;
+    var pct = Math.min(100, Math.round(total / STOCK_CIBLE * 100)); var alerte = total < STOCK_ALERTE; var critique = total < STOCK_ALERTE / 2;
     return { id:b.id, nom:b.nom, dim:b.dim, pret:pret, sech:sech, total:total, pct:pct, alerte:alerte, critique:critique, manque:Math.max(0, STOCK_CIBLE - total) };
   }).sort(function(a,b) { return a.total - b.total; });
   return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:4 }}>Etat du Stock</div><div style={{ fontSize:12, color:"#9ca3af", marginBottom:12 }}>Trie du plus urgent - Cible: {STOCK_CIBLE.toLocaleString()} u / Alerte: {STOCK_ALERTE.toLocaleString()} u</div>{items.map(function(item) { var barColor = item.critique ? "#b91c1c" : item.alerte ? "#f59e0b" : "#15803d"; var bgCard = item.critique ? "#fef2f2" : item.alerte ? "#fefce8" : "#fff"; var borderCard = item.critique ? "2px solid #fca5a5" : item.alerte ? "2px solid #fde047" : "1px solid #f3f4f6"; return (<div key={item.id} style={{ ...C.card, background:bgCard, border:borderCard }}><div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}><div><span style={{ fontWeight:700, fontSize:13 }}>#{item.id} {item.nom}</span><span style={{ fontSize:11, color:"#9ca3af", marginLeft:6 }}>{item.dim}</span></div>{item.critique && <span style={C.pill("#fee2e2","#b91c1c")}>CRITIQUE</span>}{!item.critique && item.alerte && <span style={C.pill("#fef9c3","#854d0e")}>ALERTE</span>}{!item.alerte && <span style={C.pill("#dcfce7","#15803d")}>OK</span>}</div><div style={{ background:"#f3f4f6", borderRadius:8, height:10, marginBottom:6 }}><div style={{ width:item.pct+"%", background:barColor, height:10, borderRadius:8 }}></div></div><div style={{ display:"flex", justifyContent:"space-between", fontSize:12 }}><span>Pret: <strong>{item.pret.toLocaleString()}</strong> u | Sechage: <strong>{item.sech.toLocaleString()}</strong> u</span><span style={{ fontWeight:700, color:barColor }}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span></div>{item.alerte && <div style={{ fontSize:11, color:barColor, marginTop:4, fontWeight:600 }}>A produire en priorite: {item.manque.toLocaleString()} u manquantes</div>}</div>); })}</div>);
@@ -251,7 +249,7 @@ function KPI(props) {
   return (<div style={{ background:props.bg, borderRadius:14, padding:"14px 12px", color:"#fff" }}><div style={{ fontSize:11, opacity:.8, marginBottom:4 }}>{props.label}</div><div style={{ fontSize:28, fontWeight:800, lineHeight:1 }}>{props.value}</div>{props.sub && <div style={{ fontSize:11, opacity:.7, marginTop:3 }}>{props.sub}</div>}</div>);
 }
 function DashboardTab(props) {
-  var todayProds=props.todayProds; var todaySorties=props.todaySorties; var stockSech=props.stockSech; var stockPret=props.stockPret; var cmdAttente=props.cmdAttente; var cmdValidees=props.cmdValidees;
+  var todayProds=props.todayProds; var todaySorties=props.todaySorties; var stockSech=props.stockSech; var stockPret=props.stockPret; var cmdAttente=props.cmdAttente;
   var totalSech = Object.values(stockSech).reduce(function(a,s){return a+s.qty;},0);
   var totalPret = Object.entries(stockPret).reduce(function(a,e){return a+Math.max(0,e[1]);},0);
   var totalVal = Object.entries(stockPret).reduce(function(a,e){return a+Math.max(0,e[1])*(getBTC(e[0]).prix||0);},0);
@@ -302,17 +300,17 @@ function DirectionApp(props) {
   var s2=useState([]); var commandes=s2[0]; var setCommandes=s2[1];
   var s3=useState([]); var cmdAttente=s3[0]; var setCmdAttente=s3[1];
   var s4=useState([]); var users=s4[0]; var setUsers=s4[1];
-  var stock=useStock(); var prods=stock.prods; var sorties=stock.sorties; var stockSech=stock.stockSech; var stockPret=stock.stockPret; var cmdValidees=stock.cmdValidees;
+  var stock=useStock(); var prods=stock.prods; var sorties=stock.sorties; var stockSech=stock.stockSech; var stockPret=stock.stockPret;
   var tabs = [{id:"dashboard",label:"Dashboard"},{id:"production",label:"Production"},{id:"stock",label:"Stock"},{id:"commandes",label:"Commandes"},{id:"chantiers",label:"Chantiers"},{id:"utilisateurs",label:"Utilisateurs"}];
   useEffect(function() {
     var u1 = db.collection("commandes").orderBy("timestamp","desc").limit(200).onSnapshot(function(s){setCommandes(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
-    var u2 = db.collection("commandes").where("status","==","En attente").orderBy("timestamp","desc").onSnapshot(function(s){setCmdAttente(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
+    var u2 = db.collection("commandes").where("status","==","En attente").onSnapshot(function(s){setCmdAttente(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
     var u3 = db.collection("users").orderBy("name").onSnapshot(function(s){setUsers(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
     return function(){ u1(); u2(); u3(); };
   }, []);
   var todayProds = prods.filter(function(p){return p.date===todayStr();});
   var todaySorties = sorties.filter(function(s){return s.date===todayStr();});
-  return (<div style={{ minHeight:"100vh", background:"#FDF6E3" }}><NavBar userDoc={userDoc} role="direction" tab={tab} setTab={setTab} tabs={tabs} badge={cmdAttente.length} /><div style={C.page} className="fade-in">{tab==="dashboard" && <DashboardTab todayProds={todayProds} todaySorties={todaySorties} stockSech={stockSech} stockPret={stockPret} cmdAttente={cmdAttente} cmdValidees={cmdValidees} />}{tab==="production" && <ProdListTab prods={prods} title="Toutes les productions" />}{tab==="stock" && <div><div style={{marginBottom:8}}><PretTab stockPret={stockPret} showPrix={true} /></div><SechageTab stockSech={stockSech} /></div>}{tab==="commandes" && <AllCmdTab commandes={commandes} />}{tab==="chantiers" && <ChantierRecapTab sorties={sorties} />}{tab==="utilisateurs" && <UsersTab users={users} />}</div></div>);
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3" }}><NavBar userDoc={userDoc} role="direction" tab={tab} setTab={setTab} tabs={tabs} badge={cmdAttente.length} /><div style={C.page} className="fade-in">{tab==="dashboard" && <DashboardTab todayProds={todayProds} todaySorties={todaySorties} stockSech={stockSech} stockPret={stockPret} cmdAttente={cmdAttente} />}{tab==="production" && <ProdListTab prods={prods} title="Toutes les productions" />}{tab==="stock" && <div><PretTab stockPret={stockPret} showPrix={true} /><div style={{marginTop:8}} /><SechageTab stockSech={stockSech} /></div>}{tab==="commandes" && <AllCmdTab commandes={commandes} />}{tab==="chantiers" && <ChantierRecapTab sorties={sorties} />}{tab==="utilisateurs" && <UsersTab users={users} />}</div></div>);
 }
 function PendingScreen(props) {
   return (<div style={{ minHeight:"100vh", background:"#FDF6E3", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}><div style={{ background:"#fff", borderRadius:20, padding:28, maxWidth:340, textAlign:"center", boxShadow:"0 4px 24px rgba(0,0,0,.1)" }}><div style={{ fontSize:48, marginBottom:12 }}>⏳</div><div style={{ fontWeight:800, fontSize:18, marginBottom:8 }}>Compte en cours de configuration</div><div style={{ color:"#6b7280", fontSize:13 }}>Contactez votre responsable Direction.</div><div style={{ color:"#9ca3af", fontSize:11, marginTop:8 }}>{props.user.email}</div><button onClick={function(){auth.signOut();}} style={{ ...C.btn("#374151"), marginTop:16 }}>Deconnexion</button></div></div>);
