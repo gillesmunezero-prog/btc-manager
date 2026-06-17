@@ -587,7 +587,7 @@ function DashboardProduction({ user, userData }) {
         <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
           <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
             {typesParUrgence.map(function(item) {
-              return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - stock: {item.total.toLocaleString()}</option>;
+              return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - {item.prod.dim}</option>;
             })}
           </select>
           <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
