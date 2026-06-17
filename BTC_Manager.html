@@ -25,7 +25,7 @@ input, select, textarea, button { font-family: inherit; }
 const { useState, useEffect, useCallback } = React;
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCqmFuVHJi-KgAvjnB0b5_qdz9Cj_DCNQY",
+  apiKey: "AIzaSyDZJyM3vJXM9gZ5C2RNpmxu_eRvMIjwa7Q",
   authDomain: "btc-manager-2d64f.firebaseapp.com",
   projectId: "btc-manager-2d64f",
   storageBucket: "btc-manager-2d64f.firebasestorage.app",
@@ -52,7 +52,7 @@ function libelleUrgence(total) {
   return "OK";
 }
 
-function Login({ onLogin }) {
+function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -102,6 +102,7 @@ function DashboardDirection({ user, userData }) {
   const [newRole, setNewRole] = useState("chef_chantier");
   const [newNom, setNewNom] = useState("");
   const [msgUser, setMsgUser] = useState("");
+  const prix = { "BTC 14cm": 850, "BTC 10cm": 700, "BTC 7cm": 600, "BTC Plein": 750, "BTC Angle": 900 };
 
   useEffect(() => {
     const unsubProd = db.collection("productions").orderBy("date","desc").onSnapshot(snap => {
@@ -124,26 +125,21 @@ function DashboardDirection({ user, userData }) {
   const validerCommande = async (cmdId) => {
     await db.collection("commandes").doc(cmdId).update({ status: "Validee", validePar: userData.nom || user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp() });
   };
-
   const refuserCommande = async (cmdId) => {
     await db.collection("commandes").doc(cmdId).update({ status: "Refusee" });
   };
-
   const creerUtilisateur = async () => {
     if (!newEmail || !newPassword || !newNom) { setMsgUser("Remplissez tous les champs"); return; }
     try {
       var res = await auth.createUserWithEmailAndPassword(newEmail, newPassword);
       await db.collection("users").doc(res.user.uid).set({ email: newEmail, nom: newNom, role: newRole, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-      setMsgUser("Compte cree avec succes !");
-      setNewEmail(""); setNewPassword(""); setNewNom("");
+      setMsgUser("Compte cree avec succes !"); setNewEmail(""); setNewPassword(""); setNewNom("");
     } catch(e) { setMsgUser("Erreur: " + e.message); }
   };
 
   const cmdEnAttente = commandes.filter(c => c.status === "EnAttente");
   const cmdValidees = commandes.filter(c => c.status === "Validee");
   const cmdLivrees = commandes.filter(c => c.status === "Livree");
-
-  var prix = { "BTC 14cm": 850, "BTC 10cm": 700, "BTC 7cm": 600, "BTC Plein": 750, "BTC Angle": 900 };
 
   const tabStyle = (t) => ({
     padding: "8px 14px", border: "none", cursor: "pointer", borderRadius: 8, marginRight: 6, marginBottom: 6,
@@ -153,35 +149,35 @@ function DashboardDirection({ user, userData }) {
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
       <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction</span></div>
+        <div><span style={{fontSize:22}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction - {userData.nom || user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
         <button style={tabStyle("production")} onClick={()=>setTab("production")}>Production</button>
         <button style={tabStyle("stock")} onClick={()=>setTab("stock")}>Stock</button>
-        <button style={tabStyle("commandes")} onClick={()=>setTab("commandes")}>Commandes {cmdEnAttente.length>0 && <span style={{background:"#E74C3C",color:"white",borderRadius:10,padding:"1px 6px",marginLeft:4,fontSize:11}}>{cmdEnAttente.length}</span>}</button>
+        <button style={tabStyle("commandes")} onClick={()=>setTab("commandes")}>Commandes {cmdEnAttente.length>0&&<span style={{background:"#E74C3C",color:"white",borderRadius:10,padding:"1px 6px",marginLeft:4,fontSize:11}}>{cmdEnAttente.length}</span>}</button>
         <button style={tabStyle("finance")} onClick={()=>setTab("finance")}>Finances</button>
         <button style={tabStyle("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
       </div>
 
       <div style={{padding:"0 16px 20px"}}>
-        {tab === "production" && (
+        {tab==="production"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Productions recentes</h3>
-            {productions.length === 0 ? <p style={{color:"#888"}}>Aucune production enregistree.</p> : (
+            {productions.length===0?<p style={{color:"#888"}}>Aucune production enregistree.</p>:(
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                   <thead><tr style={{background:"#8B1A10",color:"white"}}>
-                    <th style={{padding:"8px",textAlign:"left"}}>Date</th><th style={{padding:"8px"}}>Type BTC</th>
+                    <th style={{padding:"8px",textAlign:"left"}}>Date</th><th style={{padding:"8px"}}>Type</th>
                     <th style={{padding:"8px"}}>Quantite</th><th style={{padding:"8px"}}>Responsable</th><th style={{padding:"8px"}}>Statut</th>
                   </tr></thead>
-                  <tbody>{productions.map((p,i) => (
+                  <tbody>{productions.map((p,i)=>(
                     <tr key={p.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
                       <td style={{padding:"7px 8px"}}>{p.date}</td>
                       <td style={{padding:"7px 8px",textAlign:"center",fontWeight:600}}>{p.type}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center"}}>{p.quantite ? p.quantite.toLocaleString() : "-"}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center"}}>{p.responsable || "-"}</td>
-                      <td style={{padding:"7px 8px",textAlign:"center"}}><span style={{padding:"2px 8px",borderRadius:10,fontSize:11,background:p.statut==="Valide"?"#D5F5E3":"#FEF9E7",color:p.statut==="Valide"?"#1E8449":"#B7950B",fontWeight:700}}>{p.statut || "En cours"}</span></td>
+                      <td style={{padding:"7px 8px",textAlign:"center"}}>{p.quantite?p.quantite.toLocaleString():"-"}</td>
+                      <td style={{padding:"7px 8px",textAlign:"center"}}>{p.responsable||"-"}</td>
+                      <td style={{padding:"7px 8px",textAlign:"center"}}><span style={{padding:"2px 8px",borderRadius:10,fontSize:11,background:"#D5F5E3",color:"#1E8449",fontWeight:700}}>{p.statut||"En cours"}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -189,18 +185,15 @@ function DashboardDirection({ user, userData }) {
             )}
           </div>
         )}
-
-        {tab === "stock" && (
+        {tab==="stock"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Etat du stock</h3>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-              {TYPES_BTC.map(type => {
-                var s = stocks[type] || {};
-                var sec = s.sec || 0;
-                var sechage = s.sechage || 0;
-                var total = sec + sechage;
-                var couleur = couleurUrgence(total);
-                return (
+              {TYPES_BTC.map(type=>{
+                var s=stocks[type]||{};
+                var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
+                var couleur=couleurUrgence(total);
+                return(
                   <div key={type} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                     <div style={{fontWeight:700,marginBottom:8,fontSize:14}}>{type}</div>
                     <div style={{fontSize:12,color:"#666"}}>Stock sec: <strong>{sec.toLocaleString()}</strong></div>
@@ -210,7 +203,6 @@ function DashboardDirection({ user, userData }) {
                       <div style={{height:6,borderRadius:4,background:couleur,width:Math.min(100,Math.round(total/STOCK_CIBLE*100))+"%"}}></div>
                     </div>
                     <div style={{fontSize:11,fontWeight:700,color:couleur,marginTop:4}}>{libelleUrgence(total)}</div>
-                    <div style={{fontSize:11,color:"#888",marginTop:2}}>Prix: {prix[type] ? prix[type].toLocaleString() + " FCFA" : "-"}</div>
                   </div>
                 );
               })}
@@ -218,17 +210,17 @@ function DashboardDirection({ user, userData }) {
           </div>
         )}
 
-        {tab === "commandes" && (
+        {tab==="commandes"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Commandes a valider ({cmdEnAttente.length})</h3>
-            {cmdEnAttente.length === 0 ? <p style={{color:"#888",marginBottom:20}}>Aucune commande en attente.</p> : (
-              cmdEnAttente.map(cmd => (
+            {cmdEnAttente.length===0?<p style={{color:"#888",marginBottom:20}}>Aucune commande en attente.</p>:(
+              cmdEnAttente.map(cmd=>(
                 <div key={cmd.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #E67E22"}}>
                   <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                     <div>
-                      <div style={{fontWeight:700,fontSize:15}}>{cmd.type} - {cmd.quantite ? cmd.quantite.toLocaleString() : "-"} BTC</div>
-                      <div style={{fontSize:12,color:"#666",marginTop:4}}>Par: {cmd.chefNom || cmd.chefEmail || "-"} | Client: {cmd.client || "-"}</div>
-                      <div style={{fontSize:12,color:"#888"}}>{cmd.notes || ""}</div>
+                      <div style={{fontWeight:700,fontSize:15}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
+                      <div style={{fontSize:12,color:"#666",marginTop:4}}>Par: {cmd.chefNom||cmd.chefEmail||"-"} | Client: {cmd.client||"-"}</div>
+                      <div style={{fontSize:12,color:"#888"}}>{cmd.notes||""}</div>
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
                       <button onClick={()=>validerCommande(cmd.id)} style={{background:"#27AE60",color:"white",border:"none",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Valider</button>
@@ -239,33 +231,33 @@ function DashboardDirection({ user, userData }) {
               ))
             )}
             <h3 style={{marginBottom:10,marginTop:20,color:"#8B1A10"}}>Commandes validees ({cmdValidees.length})</h3>
-            {cmdValidees.length === 0 ? <p style={{color:"#888",marginBottom:20}}>Aucune commande validee en attente de livraison.</p> : (
-              cmdValidees.map(cmd => (
+            {cmdValidees.length===0?<p style={{color:"#888",marginBottom:20}}>Aucune commande validee en attente.</p>:(
+              cmdValidees.map(cmd=>(
                 <div key={cmd.id} style={{background:"#EBF5FB",borderRadius:12,padding:14,marginBottom:10,borderLeft:"4px solid #2980B9"}}>
-                  <div style={{fontWeight:600}}>{cmd.type} - {cmd.quantite ? cmd.quantite.toLocaleString() : "-"} BTC</div>
-                  <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client || "-"} | Valide par: {cmd.validePar || "-"}</div>
+                  <div style={{fontWeight:600}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
+                  <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"-"}</div>
                 </div>
               ))
             )}
-            <h3 style={{marginBottom:10,marginTop:20,color:"#27AE60"}}>Commandes livrees ({cmdLivrees.length})</h3>
-            {cmdLivrees.map(cmd => (
+            <h3 style={{marginBottom:10,marginTop:20,color:"#27AE60"}}>Livrees ({cmdLivrees.length})</h3>
+            {cmdLivrees.map(cmd=>(
               <div key={cmd.id} style={{background:"#EAFAF1",borderRadius:12,padding:14,marginBottom:10,borderLeft:"4px solid #27AE60"}}>
-                <div style={{fontWeight:600}}>{cmd.type} - {cmd.quantite ? cmd.quantite.toLocaleString() : "-"} BTC</div>
-                <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client || "-"}</div>
+                <div style={{fontWeight:600}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
+                <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"}</div>
               </div>
             ))}
           </div>
         )}
 
-        {tab === "finance" && (
+        {tab==="finance"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Valeur financiere du stock</h3>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:20}}>
-              {TYPES_BTC.map(type => {
-                var s = stocks[type] || {};
-                var total = (s.sec || 0) + (s.sechage || 0);
-                var valeur = total * (prix[type] || 0);
-                return (
+              {TYPES_BTC.map(type=>{
+                var s=stocks[type]||{};
+                var total=(s.sec||0)+(s.sechage||0);
+                var valeur=total*(prix[type]||0);
+                return(
                   <div key={type} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
                     <div style={{fontWeight:700,marginBottom:6}}>{type}</div>
                     <div style={{fontSize:13,color:"#666"}}>Stock total: {total.toLocaleString()}</div>
@@ -277,17 +269,16 @@ function DashboardDirection({ user, userData }) {
             <div style={{background:"#8B1A10",color:"white",borderRadius:12,padding:18,display:"inline-block"}}>
               <div style={{fontSize:13,opacity:.8}}>VALEUR TOTALE DU STOCK</div>
               <div style={{fontSize:24,fontWeight:700,marginTop:4}}>
-                {TYPES_BTC.reduce((acc,type) => {
-                  var s = stocks[type] || {};
-                  var total = (s.sec || 0) + (s.sechage || 0);
-                  return acc + total * (prix[type] || 0);
-                }, 0).toLocaleString()} FCFA
+                {TYPES_BTC.reduce((acc,type)=>{
+                  var s=stocks[type]||{};
+                  var total=(s.sec||0)+(s.sechage||0);
+                  return acc+total*(prix[type]||0);
+                },0).toLocaleString()} FCFA
               </div>
             </div>
           </div>
         )}
-
-        {tab === "utilisateurs" && (
+        {tab==="utilisateurs"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#8B1A10"}}>Creer un compte</h3>
             <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20,maxWidth:400}}>
@@ -300,13 +291,13 @@ function DashboardDirection({ user, userData }) {
                 <option value="resp_production">Responsable Production</option>
                 <option value="direction">Direction</option>
               </select>
-              {msgUser && <div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgUser.includes("succes")?"#EAFAF1":"#FFECEC",color:msgUser.includes("succes")?"#1E8449":"#C0392B"}}>{msgUser}</div>}
+              {msgUser&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgUser.includes("succes")?"#EAFAF1":"#FFECEC",color:msgUser.includes("succes")?"#1E8449":"#C0392B"}}>{msgUser}</div>}
               <button onClick={creerUtilisateur} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Creer le compte</button>
             </div>
             <h3 style={{marginBottom:10,color:"#8B1A10"}}>Comptes existants</h3>
-            {utilisateurs.map(u => (
+            {utilisateurs.map(u=>(
               <div key={u.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                <div><div style={{fontWeight:600}}>{u.nom || u.email}</div><div style={{fontSize:12,color:"#888"}}>{u.email} - {u.role}</div></div>
+                <div><div style={{fontWeight:600}}>{u.nom||u.email}</div><div style={{fontSize:12,color:"#888"}}>{u.email} - {u.role}</div></div>
               </div>
             ))}
           </div>
@@ -346,37 +337,33 @@ function DashboardChef({ user, userData }) {
     } catch(e) { setMsg("Erreur: " + e.message); }
   };
 
-  var enAttente = commandes.filter(c => c.status === "EnAttente");
-  var validees = commandes.filter(c => c.status === "Validee" || c.status === "Livree");
-  var refusees = commandes.filter(c => c.status === "Refusee");
-
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
       <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom || user.email}</span></div>
+        <div><span style={{fontSize:22}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
         <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande</h3>
         <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:420,marginBottom:24}}>
           <select value={type} onChange={e=>setType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
-            {TYPES_BTC.map(t => <option key={t} value={t}>{t}</option>)}
+            {TYPES_BTC.map(t=><option key={t} value={t}>{t}</option>)}
           </select>
           <input type="number" placeholder="Quantite de BTC" value={quantite} onChange={e=>setQuantite(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
           <input placeholder="Nom du client" value={client} onChange={e=>setClient(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
           <textarea placeholder="Notes (optionnel)" value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:60}} />
-          {msg && <div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msg.includes("envoyee")?"#1A5276":"#C0392B"}}>{msg}</div>}
+          {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msg.includes("envoyee")?"#1A5276":"#C0392B"}}>{msg}</div>}
           <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
         </div>
         <h3 style={{marginBottom:10,color:"#1A5276"}}>Mes commandes ({commandes.length})</h3>
-        {commandes.length === 0 ? <p style={{color:"#888"}}>Aucune commande pour l'instant.</p> : (
-          commandes.map(c => (
+        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:(
+          commandes.map(c=>(
             <div key={c.id} style={{background:"white",borderRadius:10,padding:"12px 16px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",borderLeft:"4px solid "+(c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22")}}>
               <div style={{display:"flex",justifyContent:"space-between"}}>
-                <div style={{fontWeight:600}}>{c.type} - {c.quantite ? c.quantite.toLocaleString() : "-"} BTC</div>
+                <div style={{fontWeight:600}}>{c.type} - {c.quantite?c.quantite.toLocaleString():"-"} BTC</div>
                 <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:c.status==="Livree"?"#EAFAF1":c.status==="Validee"?"#EBF5FB":c.status==="Refusee"?"#FFECEC":"#FEF9E7",color:c.status==="Livree"?"#1E8449":c.status==="Validee"?"#1A5276":c.status==="Refusee"?"#C0392B":"#B7950B"}}>{c.status}</span>
               </div>
-              <div style={{fontSize:12,color:"#888",marginTop:4}}>Client: {c.client || "-"}</div>
+              <div style={{fontSize:12,color:"#888",marginTop:4}}>Client: {c.client||"-"}</div>
             </div>
           ))
         )}
@@ -411,19 +398,16 @@ function DashboardStock({ user, userData }) {
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
       <div style={{background:"linear-gradient(90deg,#145A32,#1E8449)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>📦</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Responsable Stock - {userData.nom || user.email}</span></div>
+        <div><span style={{fontSize:22}}>📦</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Stock - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:24}}>
-          {TYPES_BTC.map(type => {
-            var s = stocks[type] || {};
-            var sec = s.sec || 0;
-            var sechage = s.sechage || 0;
-            var total = sec + sechage;
-            var couleur = couleurUrgence(total);
-            return (
+          {TYPES_BTC.map(type=>{
+            var s=stocks[type]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
+            var couleur=couleurUrgence(total);
+            return(
               <div key={type} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:6}}>{type}</div>
                 <div style={{fontSize:12,color:"#666"}}>Sec: <strong>{sec.toLocaleString()}</strong></div>
@@ -434,15 +418,15 @@ function DashboardStock({ user, userData }) {
           })}
         </div>
         <h3 style={{marginBottom:10,color:"#145A32"}}>Commandes a preparer ({commandes.length})</h3>
-        {commandes.length === 0 ? <p style={{color:"#888"}}>Aucune commande validee en attente de preparation.</p> : (
-          commandes.map(cmd => (
+        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande validee en attente.</p>:(
+          commandes.map(cmd=>(
             <div key={cmd.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
               <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10,alignItems:"center"}}>
                 <div>
-                  <div style={{fontWeight:700,fontSize:15}}>{cmd.type} - {cmd.quantite ? cmd.quantite.toLocaleString() : "-"} BTC</div>
-                  <div style={{fontSize:12,color:"#666",marginTop:4}}>Client: {cmd.client || "-"} | Valide par: {cmd.validePar || "Direction"}</div>
+                  <div style={{fontWeight:700,fontSize:15}}>{cmd.type} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} BTC</div>
+                  <div style={{fontSize:12,color:"#666",marginTop:4}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"Direction"}</div>
                 </div>
-                <button onClick={()=>marquerEnvoye(cmd.id, cmd.type, cmd.quantite || 0)} style={{background:"#1E8449",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>Commande envoyee ✓</button>
+                <button onClick={()=>marquerEnvoye(cmd.id,cmd.type,cmd.quantite||0)} style={{background:"#1E8449",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>Commande envoyee ✓</button>
               </div>
             </div>
           ))
@@ -473,12 +457,9 @@ function DashboardProduction({ user, userData }) {
     return () => { unsubStock(); unsubProd(); };
   }, []);
 
-  // Trier les types BTC par urgence : du plus petit stock au plus grand
   var typesParUrgence = TYPES_BTC.map(function(type) {
     var s = stocks[type] || {};
-    var sec = s.sec || 0;
-    var sechage = s.sechage || 0;
-    var total = sec + sechage;
+    var sec = s.sec || 0; var sechage = s.sechage || 0; var total = sec + sechage;
     return { type: type, sec: sec, sechage: sechage, total: total };
   }).sort(function(a, b) { return a.total - b.total; });
 
@@ -491,20 +472,14 @@ function DashboardProduction({ user, userData }) {
     try {
       await db.collection("productions").add({
         type: saisieType, quantite: qte, phase: saisiePhase,
-        date: dateAujourdHui,
-        responsable: userData.nom || user.email,
-        responsableUid: user.uid,
-        statut: "Valide",
+        date: dateAujourdHui, responsable: userData.nom || user.email,
+        responsableUid: user.uid, statut: "Valide",
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      // Mettre a jour le stock
       var s = stocks[saisieType] || {};
       var updateData = {};
-      if (saisiePhase === "sec") {
-        updateData.sec = (s.sec || 0) + qte;
-      } else {
-        updateData.sechage = (s.sechage || 0) + qte;
-      }
+      if (saisiePhase === "sec") { updateData.sec = (s.sec || 0) + qte; }
+      else { updateData.sechage = (s.sechage || 0) + qte; }
       await db.collection("stocks").doc(saisieType).set(updateData, { merge: true });
       setMsg("Production enregistree ! Stock mis a jour.");
       setSaisieQte("");
@@ -514,13 +489,12 @@ function DashboardProduction({ user, userData }) {
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
       <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontSize:22}}>🏭</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Production - {userData.nom || user.email}</span></div>
+        <div><span style={{fontSize:22}}>🏭</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Production - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
-
-        <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites de production - {dateAujourdHui}</h3>
-        <p style={{fontSize:12,color:"#888",marginBottom:14}}>Stock cible: {STOCK_CIBLE.toLocaleString()} BTC | Alerte si total (sec + sechage) inferieur a {STOCK_ALERTE.toLocaleString()} BTC</p>
+        <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites de production du jour - {dateAujourdHui}</h3>
+        <p style={{fontSize:12,color:"#888",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} BTC | Alerte si stock total inferieur a {STOCK_ALERTE.toLocaleString()} BTC</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12,marginBottom:24}}>
           {typesParUrgence.map(function(item, idx) {
             var couleur = couleurUrgence(item.total);
@@ -528,10 +502,10 @@ function DashboardProduction({ user, userData }) {
             var manque = Math.max(0, STOCK_CIBLE - item.total);
             return (
               <div key={item.type} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
-                <div style={{position:"absolute",top:12,right:12,background:couleur,color:"white",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>#{idx+1}</div>
+                <div style={{position:"absolute",top:12,right:12,background:couleur,color:"white",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
                 <div style={{fontWeight:700,fontSize:15,marginBottom:8,paddingRight:50}}>{item.type}</div>
-                <div style={{fontSize:12,color:"#666"}}>Stock sec: <strong style={{color:"#333"}}>{item.sec.toLocaleString()}</strong></div>
-                <div style={{fontSize:12,color:"#666"}}>En sechage: <strong style={{color:"#333"}}>{item.sechage.toLocaleString()}</strong></div>
+                <div style={{fontSize:12,color:"#666"}}>Stock sec: <strong>{item.sec.toLocaleString()}</strong></div>
+                <div style={{fontSize:12,color:"#666"}}>En sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
                 <div style={{margin:"8px 0 4px",background:"#EEE",borderRadius:4,height:8}}>
                   <div style={{height:8,borderRadius:4,background:couleur,width:pct+"%"}}></div>
                 </div>
@@ -539,7 +513,7 @@ function DashboardProduction({ user, userData }) {
                   <div style={{fontSize:13,fontWeight:700,color:couleur}}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</div>
                   <div style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</div>
                 </div>
-                {item.total < STOCK_CIBLE && <div style={{fontSize:11,color:"#888",marginTop:4}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()} BTC</strong></div>}
+                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"#888",marginTop:4}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()} BTC</strong></div>}
               </div>
             );
           })}
@@ -548,9 +522,9 @@ function DashboardProduction({ user, userData }) {
         <h3 style={{marginBottom:14,color:"#4A235A"}}>Enregistrer une production</h3>
         <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:420,marginBottom:24}}>
           <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
-            <option value="">-- Choisir le type BTC (priorite suggere) --</option>
+            <option value="">-- Type BTC (du plus urgent) --</option>
             {typesParUrgence.map(function(item) {
-              return <option key={item.type} value={item.type}>{item.type} (stock: {item.total.toLocaleString()} BTC)</option>;
+              return <option key={item.type} value={item.type}>{item.type} (stock: {item.total.toLocaleString()})</option>;
             })}
           </select>
           <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
@@ -558,18 +532,18 @@ function DashboardProduction({ user, userData }) {
             <option value="sechage">En sechage (frais)</option>
           </select>
           <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14}} />
-          {msg && <div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
+          {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
           <button onClick={enregistrerProduction} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Enregistrer la production</button>
         </div>
-        <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions enregistrees aujourd'hui ({productionsAujourdHui.length})</h3>
-        {productionsAujourdHui.length === 0 ? <p style={{color:"#888"}}>Aucune production enregistree aujourd'hui.</p> : (
-          productionsAujourdHui.map(p => (
+        <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions d'aujourd'hui ({productionsAujourdHui.length})</h3>
+        {productionsAujourdHui.length===0?<p style={{color:"#888"}}>Aucune production enregistree aujourd'hui.</p>:(
+          productionsAujourdHui.map(p=>(
             <div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
-                <div style={{fontWeight:600}}>{p.type} <span style={{fontSize:12,color:"#888"}}>({p.phase === "sec" ? "sec" : "sechage"})</span></div>
-                <div style={{fontSize:12,color:"#666"}}>+{p.quantite ? p.quantite.toLocaleString() : "-"} BTC</div>
+                <div style={{fontWeight:600}}>{p.type} <span style={{fontSize:12,color:"#888"}}>({p.phase==="sec"?"sec":"sechage"})</span></div>
+                <div style={{fontSize:12,color:"#666"}}>+{p.quantite?p.quantite.toLocaleString():"-"} BTC</div>
               </div>
-              <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>Enregistre</span>
+              <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>OK</span>
             </div>
           ))
         )}
@@ -588,18 +562,12 @@ function App() {
       if (u) {
         try {
           var doc = await db.collection("users").doc(u.uid).get();
-          if (doc.exists) {
-            setUserData(doc.data());
-          } else {
-            setUserData({ role: "inconnu" });
-          }
-        } catch(e) {
-          setUserData({ role: "inconnu" });
-        }
+          if (doc.exists) { setUserData(doc.data()); }
+          else { setUserData({ role: "inconnu" }); }
+        } catch(e) { setUserData({ role: "inconnu" }); }
         setUser(u);
       } else {
-        setUser(null);
-        setUserData(null);
+        setUser(null); setUserData(null);
       }
       setLoading(false);
     });
@@ -618,16 +586,13 @@ function App() {
 
   if (!user) return <Login />;
 
-  var role = (userData && userData.role) ? userData.role.trim().toLowerCase() : "";
-
-  if (loading || !userData) return (
+  if (!userData) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDF6E3"}}>
-      <div style={{textAlign:"center",color:"#888"}}>
-        <div style={{fontSize:40}}>⏳</div>
-        <p style={{marginTop:8}}>Chargement du profil...</p>
-      </div>
+      <div style={{textAlign:"center",color:"#888"}}><div style={{fontSize:40}}>⏳</div><p style={{marginTop:8}}>Chargement du profil...</p></div>
     </div>
   );
+
+  var role = userData.role ? userData.role.trim().toLowerCase() : "";
 
   if (role === "direction") return <DashboardDirection user={user} userData={userData} />;
   if (role === "chef_chantier") return <DashboardChef user={user} userData={userData} />;
