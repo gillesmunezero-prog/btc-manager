@@ -423,6 +423,7 @@ function DashboardDirection({ user, userData }) {
 }
 
 
+
 function FicheChantier({ chantier, commandes, onClose }) {
   // Calculs par type de BTC
   var besoins = chantier.besoins || {};
@@ -502,22 +503,29 @@ function FicheChantier({ chantier, commandes, onClose }) {
   );
 }
 
+
 function DashboardChef({ user, userData }) {
   const [tabChef, setTabChef] = useState("chantiers");
   const [commandes, setCommandes] = useState([]);
   const [chantiers, setChantiers] = useState([]);
   const [ficheOuverte, setFicheOuverte] = useState(null);
 
-  // Formulaire nouveau chantier
+  // Formulaire nouveau/modif chantier
+  const [editChantier, setEditChantier] = useState(null); // null = nouveau, objet = modification
   const [nomChantier, setNomChantier] = useState("");
   const [clientChantier, setClientChantier] = useState("");
   const [adresseChantier, setAdresseChantier] = useState("");
   const [besoins, setBesoins] = useState({});
   const [msgChantier, setMsgChantier] = useState("");
 
-  // Formulaire nouvelle commande
+  // Suppression sécurisée
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+
+  // Formulaire commande
   const [cmdChantierId, setCmdChantierId] = useState("");
-  const [cmdType, setCmdType] = useState(CATALOGUE[0].id);
+  const [cmdType, setCmdType] = useState("");
   const [cmdQte, setCmdQte] = useState("");
   const [cmdNotes, setCmdNotes] = useState("");
   const [msgCmd, setMsgCmd] = useState("");
@@ -534,35 +542,83 @@ function DashboardChef({ user, userData }) {
     return () => { u1(); u2(); };
   }, []);
 
-  const creerChantier = async () => {
+  // Quand chantier sélectionné change -> reset type BTC
+  useEffect(() => {
+    if (cmdChantierId) {
+      var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
+      if (ch && ch.besoins) {
+        var premiers = Object.keys(ch.besoins).filter(function(k){ return (ch.besoins[k]||0)>0; });
+        setCmdType(premiers[0] || "");
+      }
+    }
+  }, [cmdChantierId]);
+
+  const ouvrirNouveauChantier = () => {
+    setEditChantier(null);
+    setNomChantier(""); setClientChantier(""); setAdresseChantier(""); setBesoins({});
+    setMsgChantier(""); setTabChef("nouveau");
+  };
+
+  const ouvrirModifChantier = (ch) => {
+    setEditChantier(ch);
+    setNomChantier(ch.nom||""); setClientChantier(ch.client||""); setAdresseChantier(ch.adresse||"");
+    setBesoins(Object.assign({}, ch.besoins||{}));
+    setMsgChantier(""); setTabChef("nouveau");
+  };
+
+  const sauvegarderChantier = async () => {
     if (!nomChantier||!clientChantier) { setMsgChantier("Remplissez le nom et le client"); return; }
     var besoinsValides = {};
     CATALOGUE.forEach(function(prod) {
       var v = parseInt(besoins[prod.id]||0);
-      if (v > 0) { besoinsValides[prod.id] = v; }
+      if (v > 0) besoinsValides[prod.id] = v;
     });
     try {
-      await db.collection("chantiers").add({
-        nom: nomChantier, client: clientChantier, adresse: adresseChantier,
-        besoins: besoinsValides, statut: "en_cours",
-        chefUid: user.uid, chefNom: userData.nom||user.email,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      setMsgChantier("Chantier cree avec succes !");
+      if (editChantier) {
+        await db.collection("chantiers").doc(editChantier.id).update({
+          nom: nomChantier, client: clientChantier, adresse: adresseChantier, besoins: besoinsValides
+        });
+        setMsgChantier("Chantier mis a jour !");
+      } else {
+        await db.collection("chantiers").add({
+          nom: nomChantier, client: clientChantier, adresse: adresseChantier,
+          besoins: besoinsValides, statut: "en_cours",
+          chefUid: user.uid, chefNom: userData.nom||user.email,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        setMsgChantier("Chantier cree avec succes !");
+      }
       setNomChantier(""); setClientChantier(""); setAdresseChantier(""); setBesoins({});
+      setEditChantier(null);
+      setTimeout(() => setTabChef("chantiers"), 1200);
     } catch(e) { setMsgChantier("Erreur: "+e.message); }
   };
 
+  const demanderSuppression = (ch) => {
+    setDeleteTarget(ch); setDeletePassword(""); setDeleteError("");
+  };
+
+  const confirmerSuppression = async () => {
+    if (!deleteTarget) return;
+    try {
+      var res = await auth.signInWithEmailAndPassword(user.email, deletePassword);
+      if (res.user) {
+        await db.collection("chantiers").doc(deleteTarget.id).delete();
+        setDeleteTarget(null); setDeletePassword("");
+      }
+    } catch(e) { setDeleteError("Mot de passe incorrect"); }
+  };
+
   const passerCommande = async () => {
-    if (!cmdChantierId||!cmdQte) { setMsgCmd("Choisissez un chantier et entrez la quantite"); return; }
+    if (!cmdChantierId||!cmdType||!cmdQte) { setMsgCmd("Choisissez un chantier, un type et une quantite"); return; }
     var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
     try {
       await db.collection("commandes").add({
         type: cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
-        chantierId: cmdChantierId, chantierNom: ch?ch.nom:"",
-        client: ch?ch.client:"",
+        chantierId: cmdChantierId, chantierNom: ch?ch.nom:"", client: ch?ch.client:"",
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
-        status: "EnAttente", timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        status: "EnAttente", quantiteLivree: 0,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
       setMsgCmd("Commande envoyee ! En attente de validation Direction.");
       setCmdQte(""); setCmdNotes("");
@@ -572,8 +628,33 @@ function DashboardChef({ user, userData }) {
   const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
     background:tabChef===t?"#2980B9":"#D6EAF8", color:tabChef===t?"white":"#1A5276", fontWeight:tabChef===t?700:500, fontSize:13 });
 
+  // Types disponibles pour le chantier sélectionné
+  var typesChantier = [];
+  if (cmdChantierId) {
+    var chSel = chantiers.find(function(c){return c.id===cmdChantierId;});
+    if (chSel && chSel.besoins) {
+      typesChantier = CATALOGUE.filter(function(p){ return (chSel.besoins[p.id]||0)>0; });
+    }
+  }
+
   return (
     <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
+
+      {deleteTarget && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:28,maxWidth:380,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+            <div style={{fontSize:36,textAlign:"center",marginBottom:12}}>🔒</div>
+            <h3 style={{color:"#C0392B",textAlign:"center",marginBottom:8}}>Confirmer la suppression</h3>
+            <p style={{fontSize:13,color:"#555",textAlign:"center",marginBottom:16}}>Vous allez supprimer le chantier <strong>"{deleteTarget.nom}"</strong>. Entrez votre mot de passe pour confirmer.</p>
+            <input type="password" placeholder="Votre mot de passe" value={deletePassword} onChange={e=>{setDeletePassword(e.target.value);setDeleteError("");}} style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"2px solid #C0392B",marginBottom:8,fontSize:14}} />
+            {deleteError && <div style={{color:"#C0392B",fontSize:13,marginBottom:8,textAlign:"center"}}>{deleteError}</div>}
+            <div style={{display:"flex",gap:10,marginTop:8}}>
+              <button onClick={()=>setDeleteTarget(null)} style={{flex:1,padding:"9px",background:"#EEE",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Annuler</button>
+              <button onClick={confirmerSuppression} style={{flex:1,padding:"9px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>Supprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
       {ficheOuverte && <FicheChantier chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
       <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div><span style={{fontSize:20}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
@@ -581,7 +662,7 @@ function DashboardChef({ user, userData }) {
       </div>
       <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
         <button style={ts("chantiers")} onClick={()=>setTabChef("chantiers")}>Mes chantiers ({chantiers.length})</button>
-        <button style={ts("nouveau")} onClick={()=>setTabChef("nouveau")}>+ Nouveau chantier</button>
+        <button style={ts("nouveau")} onClick={ouvrirNouveauChantier}>+ Nouveau chantier</button>
         <button style={ts("commande")} onClick={()=>setTabChef("commande")}>Passer une commande</button>
       </div>
       <div style={{padding:"0 16px 24px"}}>
@@ -589,28 +670,37 @@ function DashboardChef({ user, userData }) {
         {tabChef==="chantiers"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"#1A5276"}}>Mes chantiers</h3>
-            {chantiers.length===0?<p style={{color:"#888"}}>Aucun chantier cree. Cliquez sur "+ Nouveau chantier".</p>:
+            {chantiers.length===0?<p style={{color:"#888"}}>Aucun chantier. Cliquez sur "+ Nouveau chantier".</p>:
               chantiers.map(function(ch) {
                 var cmdCh = commandes.filter(function(c){return c.chantierId===ch.id;});
-                var recu = cmdCh.filter(function(c){return c.status==="Livree";}).reduce(function(a,c){return a+(c.quantite||0);},0);
-                var commande = cmdCh.reduce(function(a,c){return a+(c.quantite||0);},0);
+                var recu = cmdCh.reduce(function(a,c){return a+(c.quantiteLivree||0);},0);
+                var cmdTotal = cmdCh.reduce(function(a,c){return a+(c.quantite||0);},0);
                 var besoinTotal = Object.values(ch.besoins||{}).reduce(function(a,v){return a+v;},0);
                 var reste = Math.max(0, besoinTotal - recu);
+                var pct = besoinTotal>0?Math.min(100,Math.round(recu/besoinTotal*100)):0;
                 return (
                   <div key={ch.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#2980B9")}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
-                      <div>
+                      <div style={{flex:1}}>
                         <div style={{fontWeight:700,fontSize:15}}>{ch.nom}</div>
                         <div style={{fontSize:13,color:"#555",marginTop:2}}>Client: {ch.client}</div>
                         {ch.adresse&&<div style={{fontSize:12,color:"#888"}}>{ch.adresse}</div>}
                         <div style={{display:"flex",gap:12,marginTop:8,fontSize:12,flexWrap:"wrap"}}>
-                          <span style={{color:"#666"}}>Besoin: <strong>{besoinTotal.toLocaleString()}</strong> u</span>
-                          <span style={{color:"#2980B9"}}>Commande: <strong>{commande.toLocaleString()}</strong> u</span>
+                          <span>Besoin: <strong>{besoinTotal.toLocaleString()}</strong> u</span>
+                          <span style={{color:"#2980B9"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong> u</span>
                           <span style={{color:"#27AE60"}}>Recu: <strong>{recu.toLocaleString()}</strong> u</span>
                           <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong> u</span>
                         </div>
+                        <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:6}}>
+                          <div style={{height:6,borderRadius:4,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
+                        </div>
+                        <div style={{fontSize:11,color:"#888",marginTop:2}}>{pct}% livre</div>
                       </div>
-                      <button onClick={()=>setFicheOuverte(ch)} style={{background:"#2980B9",color:"white",border:"none",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Voir la fiche</button>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        <button onClick={()=>setFicheOuverte(ch)} style={{background:"#2980B9",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>📋 Fiche</button>
+                        <button onClick={()=>ouvrirModifChantier(ch)} style={{background:"#E67E22",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>✏️ Modifier</button>
+                        <button onClick={()=>demanderSuppression(ch)} style={{background:"#E74C3C",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>🗑️ Supprimer</button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -618,9 +708,10 @@ function DashboardChef({ user, userData }) {
             }
           </div>
         )}
+
         {tabChef==="nouveau"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#1A5276"}}>Creer un nouveau chantier</h3>
+            <h3 style={{marginBottom:14,color:"#1A5276"}}>{editChantier ? "Modifier le chantier" : "Creer un nouveau chantier"}</h3>
             <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:560}}>
               <div style={{marginBottom:12}}>
                 <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Nom du chantier</label>
@@ -631,53 +722,81 @@ function DashboardChef({ user, userData }) {
                 <input placeholder="Nom du client" value={clientChantier} onChange={e=>setClientChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
               </div>
               <div style={{marginBottom:16}}>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Adresse du chantier</label>
+                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Adresse</label>
                 <input placeholder="Adresse (optionnel)" value={adresseChantier} onChange={e=>setAdresseChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
               </div>
               <div style={{marginBottom:16}}>
                 <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:8}}>Besoins en BTC pour l'ensemble du chantier</label>
-                <div style={{maxHeight:320,overflowY:"auto",border:"1px solid #EEE",borderRadius:8,padding:10}}>
+                <div style={{maxHeight:340,overflowY:"auto",border:"1px solid #EEE",borderRadius:8,padding:10}}>
                   {CATALOGUE.map(function(prod){
                     return(
-                      <div key={prod.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 4px",borderBottom:"1px solid #F5F5F5"}}>
+                      <div key={prod.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 4px",borderBottom:"1px solid #F5F5F5"}}>
                         <div style={{flex:1}}>
                           <div style={{fontSize:13,fontWeight:600}}>{prod.nom}</div>
                           <div style={{fontSize:11,color:"#999"}}>{prod.dim}</div>
                         </div>
                         <input type="number" min="0" placeholder="0" value={besoins[prod.id]||""}
-                          onChange={e=>setBesoins(Object.assign({},besoins,{[prod.id]:e.target.value}))} 
+                          onChange={e=>setBesoins(Object.assign({},besoins,{[prod.id]:e.target.value}))}
                           style={{width:90,padding:"6px 8px",borderRadius:6,border:"1px solid #ddd",fontSize:13,textAlign:"right"}} />
                       </div>
                     );
                   })}
                 </div>
               </div>
-              {msgChantier&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgChantier.includes("succes")?"#EAFAF1":"#FFECEC",color:msgChantier.includes("succes")?"#1E8449":"#C0392B"}}>{msgChantier}</div>}
-              <button onClick={creerChantier} style={{width:"100%",padding:"11px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Creer le chantier</button>
+              {msgChantier&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgChantier.includes("succes")||msgChantier.includes("jour")?"#EAFAF1":"#FFECEC",color:msgChantier.includes("succes")||msgChantier.includes("jour")?"#1E8449":"#C0392B"}}>{msgChantier}</div>}
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setTabChef("chantiers")} style={{flex:1,padding:"10px",background:"#EEE",color:"#333",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer"}}>Annuler</button>
+                <button onClick={sauvegarderChantier} style={{flex:2,padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>
+                  {editChantier ? "Enregistrer les modifications" : "Creer le chantier"}
+                </button>
+              </div>
             </div>
           </div>
         )}
+
         {tabChef==="commande"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande pour un chantier</h3>
-            {chantiers.length===0?<p style={{color:"#888",padding:16,background:"#EBF5FB",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:(
-              <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:460}}>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Chantier</label>
-                <select value={cmdChantierId} onChange={e=>setCmdChantierId(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,background:"white",fontSize:14}}>
-                  <option value="">-- Choisir un chantier --</option>
-                  {chantiers.map(ch=><option key={ch.id} value={ch.id}>{ch.nom} - {ch.client}</option>)}
-                </select>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Type de BTC</label>
-                <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,background:"white",fontSize:14}}>
-                  {CATALOGUE.map(p=><option key={p.id} value={p.id}>{p.nom} - {p.dim}</option>)}
-                </select>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Quantite</label>
-                <input type="number" placeholder="Quantite a commander" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14}} />
-                <textarea placeholder="Notes (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
-                {msgCmd&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgCmd.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msgCmd.includes("envoyee")?"#1A5276":"#C0392B"}}>{msgCmd}</div>}
-                <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
+            <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande</h3>
+            {chantiers.length===0?
+              <p style={{color:"#888",padding:16,background:"#EBF5FB",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:
+              <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:480}}>
+                <div style={{marginBottom:12}}>
+                  <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Chantier</label>
+                  <select value={cmdChantierId} onChange={e=>setCmdChantierId(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",background:"white",fontSize:14}}>
+                    <option value="">-- Choisir un chantier --</option>
+                    {chantiers.map(ch=><option key={ch.id} value={ch.id}>{ch.nom} - {ch.client}</option>)}
+                  </select>
+                </div>
+                {cmdChantierId && typesChantier.length === 0 && (
+                  <div style={{padding:"10px 14px",background:"#FFF3CD",borderRadius:8,marginBottom:12,fontSize:13,color:"#856404"}}>Aucun type de BTC renseigne dans ce chantier. Modifiez d'abord la fiche chantier.</div>
+                )}
+                {cmdChantierId && typesChantier.length > 0 && (
+                  <div>
+                    <div style={{marginBottom:12}}>
+                      <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Type de BTC <span style={{fontSize:11,color:"#888",fontWeight:400}}>(uniquement les types renseignes dans ce chantier)</span></label>
+                      <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"white",fontSize:14}}>
+                        <option value="">-- Choisir le type --</option>
+                        {typesChantier.map(function(p){
+                          var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
+                          var besoin = ch && ch.besoins ? (ch.besoins[p.id]||0) : 0;
+                          var dejaCmde = commandes.filter(function(c){return c.chantierId===cmdChantierId&&c.type===p.id;}).reduce(function(a,c){return a+(c.quantite||0);},0);
+                          var dejaRecu = commandes.filter(function(c){return c.chantierId===cmdChantierId&&c.type===p.id;}).reduce(function(a,c){return a+(c.quantiteLivree||0);},0);
+                          var reste = Math.max(0, besoin - dejaRecu);
+                          return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) | besoin: {besoin.toLocaleString()} | reste: {reste.toLocaleString()}</option>;
+                        })}
+                      </select>
+                    </div>
+                    <div style={{marginBottom:12}}>
+                      <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Quantite a commander</label>
+                      <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+                    </div>
+                    <textarea placeholder="Notes (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
+                    {msgCmd&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgCmd.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msgCmd.includes("envoyee")?"#1A5276":"#C0392B"}}>{msgCmd}</div>}
+                    <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
+                  </div>
+                )}
               </div>
-            )}
+            }
           </div>
         )}
       </div>
@@ -688,6 +807,7 @@ function DashboardChef({ user, userData }) {
 function DashboardStock({ user, userData }) {
   const [commandes, setCommandes] = useState([]);
   const [stocks, setStocks] = useState({});
+  const [qteEnvoi, setQteEnvoi] = useState({}); // par cmdId
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -699,11 +819,28 @@ function DashboardStock({ user, userData }) {
     return () => { u1(); u2(); };
   }, []);
 
-  const marquerEnvoye = async (cmdId, type, quantite) => {
-    var s = stocks[type]||{};
-    var newSec = Math.max(0, (s.sec||0) - quantite);
-    await db.collection("commandes").doc(cmdId).update({ status:"Livree", livrePar:userData.nom||user.email, livreAt:firebase.firestore.FieldValue.serverTimestamp() });
-    await db.collection("stocks").doc(type).set({ sec:newSec, sechage:s.sechage||0 }, { merge:true });
+  const enregistrerLivraison = async (cmd) => {
+    var qte = parseInt(qteEnvoi[cmd.id]||0);
+    if (!qte || qte <= 0) return;
+    var dejaLivre = cmd.quantiteLivree || 0;
+    var totalApres = dejaLivre + qte;
+    var cmdQte = cmd.quantite || 0;
+    var newStatus = totalApres >= cmdQte ? "Livree" : "Validee";
+
+    // Soustraire du stock
+    var s = stocks[cmd.type]||{};
+    var newSec = Math.max(0, (s.sec||0) - qte);
+    await db.collection("commandes").doc(cmd.id).update({
+      quantiteLivree: totalApres,
+      status: newStatus,
+      livrePar: userData.nom||user.email,
+      livreAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection("stocks").doc(cmd.type).set({ sec: newSec, sechage: s.sechage||0 }, { merge:true });
+    // Reset champ
+    var newQte = Object.assign({}, qteEnvoi);
+    delete newQte[cmd.id];
+    setQteEnvoi(newQte);
   };
 
   return (
@@ -714,14 +851,14 @@ function DashboardStock({ user, userData }) {
       </div>
       <div style={{padding:20}}>
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:24}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:28}}>
           {CATALOGUE.map(prod=>{
             var s=stocks[prod.id]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
             var couleur=couleurUrgence(total);
             return(
               <div key={prod.id} style={{background:"white",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
-                <div style={{fontSize:11,color:"#999",marginBottom:6}}>{prod.dim}</div>
+                <div style={{fontSize:11,color:"#999",marginBottom:5}}>{prod.dim}</div>
                 <div style={{fontSize:12,color:"#666"}}>Sec: <strong>{sec.toLocaleString()}</strong></div>
                 <div style={{fontSize:12,color:"#666"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></div>
                 <div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:4}}>Total: {total.toLocaleString()}</div>
@@ -731,24 +868,55 @@ function DashboardStock({ user, userData }) {
         </div>
         <h3 style={{marginBottom:10,color:"#145A32"}}>Commandes a preparer ({commandes.length})</h3>
         {commandes.length===0?<p style={{color:"#888"}}>Aucune commande validee en attente.</p>:
-          commandes.map(cmd=>(
-            <div key={cmd.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
-              <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:10,alignItems:"center"}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom}</div>
-                  <div style={{fontSize:13,color:"#444",marginTop:2}}>Quantite: {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
-                  <div style={{fontSize:12,color:"#666",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"Direction"}</div>
+          commandes.map(cmd=>{
+            var livree = cmd.quantiteLivree || 0;
+            var total = cmd.quantite || 0;
+            var resteCmd = Math.max(0, total - livree);
+            var pct = total>0?Math.min(100,Math.round(livree/total*100)):0;
+            return(
+              <div key={cmd.id} style={{background:"white",borderRadius:12,padding:18,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
+                <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12,alignItems:"flex-start"}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom}</div>
+                    <div style={{fontSize:12,color:"#888",marginTop:2}}>{getProduit(cmd.type).dim}</div>
+                    <div style={{fontSize:13,color:"#444",marginTop:4}}>Chantier: <strong>{cmd.chantierNom||cmd.client||"-"}</strong></div>
+                    <div style={{fontSize:12,color:"#666",marginTop:2}}>Valide par: {cmd.validePar||"Direction"}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:13,color:"#666"}}>Commande totale: <strong>{total.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:13,color:"#27AE60"}}>Deja livre: <strong>{livree.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#C0392B",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong></div>
+                  </div>
                 </div>
-                <button onClick={()=>marquerEnvoye(cmd.id,cmd.type,cmd.quantite||0)} style={{background:"#1E8449",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>Commande envoyee ✓</button>
+                <div style={{background:"#EEE",borderRadius:4,height:8,marginBottom:8}}>
+                  <div style={{height:8,borderRadius:4,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
+                </div>
+                <div style={{fontSize:11,color:"#888",marginBottom:12}}>{pct}% livre ({livree.toLocaleString()} / {total.toLocaleString()})</div>
+                {resteCmd > 0 && (
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <div style={{flex:1}}>
+                      <label style={{fontSize:12,fontWeight:600,color:"#145A32",display:"block",marginBottom:4}}>Quantite effective livree maintenant :</label>
+                      <input type="number" min="1" max={resteCmd} placeholder={"Max "+resteCmd.toLocaleString()}
+                        value={qteEnvoi[cmd.id]||""}
+                        onChange={e=>setQteEnvoi(Object.assign({},qteEnvoi,{[cmd.id]:e.target.value}))}
+                        style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"2px solid #1E8449",fontSize:14}} />
+                    </div>
+                    <button onClick={()=>enregistrerLivraison(cmd)}
+                      disabled={!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0}
+                      style={{background:"#1E8449",color:"white",border:"none",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,marginTop:20,opacity:(!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0)?0.5:1}}>Enregistrer livraison ✓</button>
+                  </div>
+                )}
+                {resteCmd === 0 && (
+                  <div style={{padding:"8px 14px",background:"#EAFAF1",borderRadius:8,color:"#1E8449",fontWeight:700,fontSize:13,textAlign:"center"}}>✅ Commande entierement livree</div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         }
       </div>
     </div>
   );
 }
-
 
 function DashboardProduction({ user, userData }) {
   const [stocks, setStocks] = useState({});
@@ -861,6 +1029,7 @@ function DashboardProduction({ user, userData }) {
     </div>
   );
 }
+
 
 
 function App() {
