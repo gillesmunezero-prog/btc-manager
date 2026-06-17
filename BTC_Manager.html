@@ -24,9 +24,7 @@ input, select, textarea, button { font-family: inherit; }
 <body>
 <div id="root"></div>
 <script type="text/babel">
-
 const { useState, useEffect, useCallback } = React;
-
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDZJyM3vJXM9gZ5C2RNpmxu_eRvMIjwa7Q",
   authDomain: "btc-manager-2d64f.firebaseapp.com",
@@ -35,7 +33,8 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "1030047900428",
   appId: "1:1030047900428:web:499085f15513fd76125f29"
 };
-
+const STOCK_CIBLE = 10000;
+const STOCK_ALERTE = 7000;
 const BTC = [
   { id:1,  nom:"BTC Bloc Poteaux",          dim:"33x22x9.5cm", prix:2.31 },
   { id:2,  nom:"BTC Bloc Passage de gaine", dim:"22x22x9.5cm", prix:1.94 },
@@ -51,875 +50,299 @@ const BTC = [
   { id:12, nom:"BTC Bloc Passage de gaine", dim:"29x14x9.5cm", prix:1.83 },
   { id:13, nom:"BTC Bloc Remplissage",      dim:"30x22x9.5cm", prix:2.83 },
 ];
-
 let db = null, auth = null;
-
-function initFB() {
-  if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-  db = firebase.firestore();
-  auth = firebase.auth();
-}
-
+function initFB() { if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); auth = firebase.auth(); }
 const getBTC = function(id) { return BTC.find(function(b) { return b.id === parseInt(id); }) || {}; };
-const todayStr = function() { return new Date().toISOString().split('T')[0]; };
-const fmtDate = function(ts) { if (!ts) return ''; var d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('fr-FR'); };
+const todayStr = function() { return new Date().toISOString().split("T")[0]; };
+const fmtDate = function(ts) { if (!ts) return ""; var d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString("fr-FR"); };
 const nowTime = function() { return new Date().toTimeString().slice(0,5); };
-
 const C = {
-  card: { background:'#fff', borderRadius:16, boxShadow:'0 2px 8px rgba(0,0,0,.08)', padding:16, marginBottom:12 },
-  input: { width:'100%', border:'2px solid #e5e7eb', borderRadius:12, padding:'11px 14px', fontSize:14, outline:'none', background:'#fff' },
-  btn: function(color) { return { background:color||'#b91c1c', color:'#fff', border:'none', borderRadius:12, padding:'13px 16px', fontSize:14, fontWeight:700, width:'100%', cursor:'pointer' }; },
-  pill: function(bg, tc) { return { background:bg, color:tc, borderRadius:20, padding:'3px 10px', fontSize:11, fontWeight:700, display:'inline-block', whiteSpace:'nowrap' }; },
-  page: { padding:14, paddingBottom:24, maxWidth:520, margin:'0 auto' },
+  card: { background:"#fff", borderRadius:16, boxShadow:"0 2px 8px rgba(0,0,0,.08)", padding:16, marginBottom:12 },
+  input: { width:"100%", border:"2px solid #e5e7eb", borderRadius:12, padding:"11px 14px", fontSize:14, outline:"none", background:"#fff" },
+  btn: function(color) { return { background:color||"#b91c1c", color:"#fff", border:"none", borderRadius:12, padding:"13px 16px", fontSize:14, fontWeight:700, width:"100%", cursor:"pointer" }; },
+  pill: function(bg, tc) { return { background:bg, color:tc, borderRadius:20, padding:"3px 10px", fontSize:11, fontWeight:700, display:"inline-block", whiteSpace:"nowrap" }; },
+  page: { padding:14, paddingBottom:24, maxWidth:520, margin:"0 auto" },
 };
-
 function useToast() {
-  var state = useState({ msg:'', type:'success' });
-  var t = state[0]; var setT = state[1];
-  var show = useCallback(function(msg, type) {
-    setT({ msg:msg, type:type||'success' });
-    setTimeout(function() { setT({ msg:'', type:'success' }); }, 3000);
-  }, []);
+  var state = useState({ msg:"", type:"success" }); var t = state[0]; var setT = state[1];
+  var show = useCallback(function(msg, type) { setT({ msg:msg, type:type||"success" }); setTimeout(function() { setT({ msg:"", type:"success" }); }, 3000); }, []);
   return [t, show];
 }
-
 function Toast(props) {
   if (!props.msg) return null;
-  var bg = props.type === 'error' ? '#b91c1c' : props.type === 'warn' ? '#ca8a04' : '#15803d';
-  return React.createElement('div', { style:{ position:'fixed', top:16, left:'50%', transform:'translateX(-50%)', background:bg, color:'#fff', padding:'10px 18px', borderRadius:12, fontSize:13, fontWeight:600, zIndex:9999, boxShadow:'0 4px 16px rgba(0,0,0,.2)', maxWidth:'90vw', textAlign:'center' } }, props.msg);
+  var bg = props.type === "error" ? "#b91c1c" : props.type === "warn" ? "#ca8a04" : "#15803d";
+  return React.createElement("div", { style:{ position:"fixed", top:16, left:"50%", transform:"translateX(-50%)", background:bg, color:"#fff", padding:"10px 18px", borderRadius:12, fontSize:13, fontWeight:600, zIndex:9999, boxShadow:"0 4px 16px rgba(0,0,0,.2)", maxWidth:"90vw", textAlign:"center" } }, props.msg);
 }
-
 function NavBar(props) {
   var userDoc = props.userDoc; var role = props.role; var tab = props.tab; var setTab = props.setTab; var tabs = props.tabs; var badge = props.badge || 0;
-  var ROLES = { chef_chantier:'Chef de Chantier', production:'Resp. Production', stock:'Resp. Stock', direction:'Direction' };
-  var sousTitre = ROLES[role] + (userDoc && userDoc.chantier ? ' - ' + userDoc.chantier : '');
+  var ROLES = { chef_chantier:"Chef de Chantier", production:"Resp. Production", stock:"Resp. Stock", direction:"Direction" };
+  var sousTitre = ROLES[role] + (userDoc && userDoc.chantier ? " - " + userDoc.chantier : "");
   return (
-    <div style={{ position:'sticky', top:0, zIndex:100 }}>
-      <div style={{ background:'#7f1d1d', color:'#fff', padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <div>
-          <div style={{ fontWeight:800, fontSize:16 }}>BTC Manager</div>
-          <div style={{ fontSize:11, color:'#fca5a5' }}>{sousTitre}</div>
-        </div>
-        <div style={{ textAlign:'right' }}>
-          {badge > 0 && <span className="badge" style={{ background:'#f59e0b', color:'#7c2d12', marginBottom:4 }}>{badge}</span>}
-          <div style={{ fontSize:11, color:'#fca5a5' }}>{userDoc && userDoc.name ? userDoc.name : ''}</div>
-          <button onClick={function() { auth.signOut(); }} style={{ fontSize:11, color:'#fca5a5', background:'none', border:'none', cursor:'pointer', textDecoration:'underline' }}>Deconnexion</button>
+    <div style={{ position:"sticky", top:0, zIndex:100 }}>
+      <div style={{ background:"#7f1d1d", color:"#fff", padding:"10px 14px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div><div style={{ fontWeight:800, fontSize:16 }}>BTC Manager</div><div style={{ fontSize:11, color:"#fca5a5" }}>{sousTitre}</div></div>
+        <div style={{ textAlign:"right" }}>
+          {badge > 0 && <span className="badge" style={{ background:"#f59e0b", color:"#7c2d12", marginBottom:4 }}>{badge}</span>}
+          <div style={{ fontSize:11, color:"#fca5a5" }}>{userDoc && userDoc.name ? userDoc.name : ""}</div>
+          <button onClick={function() { auth.signOut(); }} style={{ fontSize:11, color:"#fca5a5", background:"none", border:"none", cursor:"pointer", textDecoration:"underline" }}>Deconnexion</button>
         </div>
       </div>
-      <div style={{ background:'#991b1b', display:'flex', overflowX:'auto' }}>
+      <div style={{ background:"#991b1b", display:"flex", overflowX:"auto" }}>
         {tabs.map(function(t) {
-          return (
-            <button key={t.id} onClick={function() { setTab(t.id); }}
-              style={{ flexShrink:0, padding:'10px 14px', fontSize:12, fontWeight:600, border:'none', cursor:'pointer', whiteSpace:'nowrap',
-                background: tab===t.id ? '#fff' : 'transparent', color: tab===t.id ? '#991b1b' : '#fca5a5' }}>
-              {t.label}
-            </button>
-          );
+          return (<button key={t.id} onClick={function() { setTab(t.id); }} style={{ flexShrink:0, padding:"10px 14px", fontSize:12, fontWeight:600, border:"none", cursor:"pointer", whiteSpace:"nowrap", background: tab===t.id ? "#fff" : "transparent", color: tab===t.id ? "#991b1b" : "#fca5a5" }}>{t.label}</button>);
         })}
       </div>
     </div>
   );
 }
-
 function BTCSelect(props) {
   var value = props.value; var onChange = props.onChange; var sp = props.stockPret || {};
-  return (
-    <select value={value} onChange={function(e) { onChange(e.target.value); }} style={C.input}>
-      <option value="">Selectionner un BTC...</option>
-      {BTC.map(function(b) {
-        var dispo = sp[b.id] !== undefined ? ' - Dispo: ' + Math.max(0, sp[b.id]) + ' u' : '';
-        return <option key={b.id} value={b.id}>{'#' + b.id + ' - ' + b.nom + ' (' + b.dim + ')' + dispo}</option>;
-      })}
-    </select>
-  );
+  return (<select value={value} onChange={function(e) { onChange(e.target.value); }} style={C.input}><option value="">Selectionner un BTC...</option>{BTC.map(function(b) { var dispo = sp[b.id] !== undefined ? " - Dispo: " + Math.max(0, sp[b.id]) + " u" : ""; return <option key={b.id} value={b.id}>{"#" + b.id + " - " + b.nom + " (" + b.dim + ")" + dispo}</option>; })}</select>);
 }
-
 function useStock() {
   var s1 = useState([]); var prods = s1[0]; var setProds = s1[1];
   var s2 = useState([]); var sorties = s2[0]; var setSorties = s2[1];
-  var s3 = useState([]); var cmdWait = s3[0]; var setCmdWait = s3[1];
-
+  var s3 = useState([]); var cmdValidees = s3[0]; var setCmdValidees = s3[1];
   useEffect(function() {
-    var u1 = db.collection('productions').orderBy('timestamp','desc').limit(1000).onSnapshot(function(s) { setProds(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
-    var u2 = db.collection('sorties').orderBy('timestamp','desc').limit(1000).onSnapshot(function(s) { setSorties(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
-    var u3 = db.collection('commandes').where('status','==','En attente').orderBy('timestamp','desc').onSnapshot(function(s) { setCmdWait(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
+    var u1 = db.collection("productions").orderBy("timestamp","desc").limit(1000).onSnapshot(function(s) { setProds(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
+    var u2 = db.collection("sorties").orderBy("timestamp","desc").limit(1000).onSnapshot(function(s) { setSorties(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
+    var u3 = db.collection("commandes").where("status","==","Validee").orderBy("timestamp","desc").onSnapshot(function(s) { setCmdValidees(s.docs.map(function(d) { return Object.assign({id:d.id}, d.data()); })); });
     return function() { u1(); u2(); u3(); };
   }, []);
-
   var now = new Date();
   var sechage = prods.filter(function(p) { return p.maturite && p.maturite.toDate && p.maturite.toDate() > now; });
   var pretProds = prods.filter(function(p) { return p.maturite && p.maturite.toDate && p.maturite.toDate() <= now; });
-
   var stockSech = {};
-  sechage.forEach(function(p) {
-    if (!stockSech[p.btcId]) stockSech[p.btcId] = { qty:0, nextMat:null };
-    stockSech[p.btcId].qty += p.quantity;
-    var m = p.maturite.toDate();
-    if (!stockSech[p.btcId].nextMat || m < stockSech[p.btcId].nextMat) stockSech[p.btcId].nextMat = m;
-  });
-
+  sechage.forEach(function(p) { if (!stockSech[p.btcId]) stockSech[p.btcId] = { qty:0, nextMat:null }; stockSech[p.btcId].qty += p.quantity; var m = p.maturite.toDate(); if (!stockSech[p.btcId].nextMat || m < stockSech[p.btcId].nextMat) stockSech[p.btcId].nextMat = m; });
   var stockPret = {};
   pretProds.forEach(function(p) { stockPret[p.btcId] = (stockPret[p.btcId] || 0) + p.quantity; });
   sorties.forEach(function(s) { stockPret[s.btcId] = (stockPret[s.btcId] || 0) - s.quantity; });
-
-  return { prods:prods, sorties:sorties, cmdWait:cmdWait, stockSech:stockSech, stockPret:stockPret };
+  return { prods:prods, sorties:sorties, cmdValidees:cmdValidees, stockSech:stockSech, stockPret:stockPret };
 }
-
 function LoginScreen() {
-  var s1 = useState(''); var email = s1[0]; var setEmail = s1[1];
-  var s2 = useState(''); var pwd = s2[0]; var setPwd = s2[1];
-  var s3 = useState(''); var err = s3[0]; var setErr = s3[1];
+  var s1 = useState(""); var email = s1[0]; var setEmail = s1[1];
+  var s2 = useState(""); var pwd = s2[0]; var setPwd = s2[1];
+  var s3 = useState(""); var err = s3[0]; var setErr = s3[1];
   var s4 = useState(false); var loading = s4[0]; var setLoading = s4[1];
-
-  async function submit(e) {
-    e.preventDefault(); setLoading(true); setErr('');
-    try { await auth.signInWithEmailAndPassword(email, pwd); }
-    catch(ex) { setErr('Email ou mot de passe incorrect'); setLoading(false); }
-  }
-
-  return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-      <div style={{ background:'#fff', borderRadius:20, boxShadow:'0 4px 24px rgba(0,0,0,.12)', padding:28, width:'100%', maxWidth:360 }}>
-        <div style={{ textAlign:'center', marginBottom:28 }}>
-          <div style={{ fontSize:56 }}>🧱</div>
-          <div style={{ fontSize:22, fontWeight:800 }}>BTC Manager</div>
-          <div style={{ fontSize:12, color:'#9ca3af', marginTop:4 }}>Suivi de Production</div>
-        </div>
-        <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <input type="email" value={email} onChange={function(e){setEmail(e.target.value);}} required placeholder="Email" style={C.input} />
-          <input type="password" value={pwd} onChange={function(e){setPwd(e.target.value);}} required placeholder="Mot de passe" style={C.input} />
-          {err && <div style={{ color:'#b91c1c', fontSize:12, textAlign:'center' }}>{err}</div>}
-          <button type="submit" disabled={loading} style={C.btn()}>{loading ? '...' : 'Se connecter'}</button>
-        </form>
-      </div>
-    </div>
-  );
+  async function submit(e) { e.preventDefault(); setLoading(true); setErr(""); try { await auth.signInWithEmailAndPassword(email, pwd); } catch(ex) { setErr("Email ou mot de passe incorrect"); setLoading(false); } }
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}><div style={{ background:"#fff", borderRadius:20, boxShadow:"0 4px 24px rgba(0,0,0,.12)", padding:28, width:"100%", maxWidth:360 }}><div style={{ textAlign:"center", marginBottom:28 }}><div style={{ fontSize:56 }}>🧱</div><div style={{ fontSize:22, fontWeight:800 }}>BTC Manager</div><div style={{ fontSize:12, color:"#9ca3af", marginTop:4 }}>Suivi de Production</div></div><form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:12 }}><input type="email" value={email} onChange={function(e){setEmail(e.target.value);}} required placeholder="Email" style={C.input} /><input type="password" value={pwd} onChange={function(e){setPwd(e.target.value);}} required placeholder="Mot de passe" style={C.input} />{err && <div style={{ color:"#b91c1c", fontSize:12, textAlign:"center" }}>{err}</div>}<button type="submit" disabled={loading} style={C.btn()}>{loading ? "..." : "Se connecter"}</button></form></div></div>);
 }
-
 function CatalogueTab() {
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Catalogue BTC</div>
-      {BTC.map(function(b) {
-        return (
-          <div key={b.id} style={{ ...C.card, display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ background:'#fee2e2', color:'#991b1b', fontWeight:800, width:38, height:38, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{b.id}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:600, fontSize:13 }}>{b.nom}</div>
-              <div style={{ fontSize:12, color:'#6b7280' }}>{b.dim}</div>
-            </div>
-            <div style={{ textAlign:'right' }}>
-              <div style={{ fontWeight:800, color:'#b91c1c' }}>{b.prix.toFixed(2)} EUR</div>
-              <div style={{ fontSize:10, color:'#9ca3af' }}>/unite</div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Catalogue BTC</div>{BTC.map(function(b) { return (<div key={b.id} style={{ ...C.card, display:"flex", alignItems:"center", gap:12 }}><div style={{ background:"#fee2e2", color:"#991b1b", fontWeight:800, width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{b.id}</div><div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:13 }}>{b.nom}</div><div style={{ fontSize:12, color:"#6b7280" }}>{b.dim}</div></div><div style={{ textAlign:"right" }}><div style={{ fontSize:11, color:"#9ca3af" }}>Ref #{b.id}</div></div></div>); })}</div>);
 }
-
 function CommanderTab(props) {
   var user = props.user; var userDoc = props.userDoc;
-  var s1 = useState(''); var btcId = s1[0]; var setBtcId = s1[1];
-  var s2 = useState(''); var qty = s2[0]; var setQty = s2[1];
-  var s3 = useState(''); var notes = s3[0]; var setNotes = s3[1];
+  var s1 = useState(""); var btcId = s1[0]; var setBtcId = s1[1];
+  var s2 = useState(""); var qty = s2[0]; var setQty = s2[1];
+  var s3 = useState(""); var notes = s3[0]; var setNotes = s3[1];
   var s4 = useState(false); var loading = s4[0]; var setLoading = s4[1];
   var toastState = useToast(); var toast = toastState[0]; var showToast = toastState[1];
   var sel = getBTC(btcId);
-
   async function submit(e) {
     e.preventDefault(); setLoading(true);
-    await db.collection('commandes').add({
-      chefId:user.uid, chefNom:userDoc&&userDoc.name?userDoc.name:user.email,
-      chantier:userDoc&&userDoc.chantier?userDoc.chantier:'Non defini',
-      btcId:+btcId, btcNom:sel.nom, btcDim:sel.dim,
-      prixU:sel.prix, quantity:+qty, totalHT:sel.prix*+qty,
-      notes:notes, status:'En attente',
-      timestamp:firebase.firestore.FieldValue.serverTimestamp(), date:todayStr(),
-    });
-    setBtcId(''); setQty(''); setNotes('');
-    showToast('Commande envoyee !');
-    setLoading(false);
+    await db.collection("commandes").add({ chefId:user.uid, chefNom:userDoc&&userDoc.name?userDoc.name:user.email, chantier:userDoc&&userDoc.chantier?userDoc.chantier:"Non defini", btcId:+btcId, btcNom:sel.nom, btcDim:sel.dim, quantity:+qty, notes:notes, status:"En attente", timestamp:firebase.firestore.FieldValue.serverTimestamp(), date:todayStr() });
+    setBtcId(""); setQty(""); setNotes(""); showToast("Commande envoyee - en attente de validation Direction"); setLoading(false);
   }
-
-  return (
-    <div>
-      <Toast msg={toast.msg} type={toast.type} />
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Passer une commande</div>
-      <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Type de BTC</label>
-          <BTCSelect value={btcId} onChange={setBtcId} />
-        </div>
-        {btcId && (
-          <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12, padding:12, fontSize:13 }}>
-            <div style={{ fontWeight:700, color:'#991b1b' }}>{sel.nom}</div>
-            <div style={{ color:'#6b7280' }}>{sel.dim} - {sel.prix&&sel.prix.toFixed(2)} EUR/u</div>
-            {qty && <div style={{ fontWeight:800, color:'#b91c1c' }}>Total : {(sel.prix*+qty).toFixed(2)} EUR</div>}
-          </div>
-        )}
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Quantite</label>
-          <input type="number" value={qty} onChange={function(e){setQty(e.target.value);}} required min="1" placeholder="Ex: 500" style={C.input} />
-        </div>
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Notes</label>
-          <textarea value={notes} onChange={function(e){setNotes(e.target.value);}} rows={2} placeholder="Remarques..." style={{ ...C.input, resize:'none' }} />
-        </div>
-        <button type="submit" disabled={loading} style={C.btn()}>{loading?'...':'Envoyer la commande'}</button>
-      </form>
-    </div>
-  );
+  return (<div><Toast msg={toast.msg} type={toast.type} /><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Passer une commande</div><div style={{ background:"#fef9c3", border:"1px solid #fde047", borderRadius:12, padding:10, marginBottom:12, fontSize:12, color:"#854d0e" }}>Votre commande sera soumise a la Direction pour validation.</div><form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:12 }}><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Type de BTC</label><BTCSelect value={btcId} onChange={setBtcId} /></div>{btcId && (<div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:12, padding:12, fontSize:13 }}><div style={{ fontWeight:700, color:"#991b1b" }}>{sel.nom}</div><div style={{ color:"#6b7280" }}>{sel.dim}</div></div>)}<div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Quantite</label><input type="number" value={qty} onChange={function(e){setQty(e.target.value);}} required min="1" placeholder="Ex: 500" style={C.input} /></div><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Notes</label><textarea value={notes} onChange={function(e){setNotes(e.target.value);}} rows={2} placeholder="Remarques..." style={{ ...C.input, resize:"none" }} /></div><button type="submit" disabled={loading} style={C.btn()}>{loading?"...":"Envoyer la commande"}</button></form></div>);
 }
-
 function MesCmdTab(props) {
   var commandes = props.commandes;
-  var stColors = { 'En attente':['#fef9c3','#854d0e'], 'Validee':['#dcfce7','#166534'], 'Livree':['#dbeafe','#1e40af'], 'Refusee':['#fee2e2','#991b1b'] };
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Mes Commandes ({commandes.length})</div>
-      {commandes.length===0 && <div style={{ textAlign:'center', color:'#9ca3af', padding:40 }}>Aucune commande</div>}
-      {commandes.map(function(c) {
-        var col = stColors[c.status]||['#f3f4f6','#374151'];
-        return (
-          <div key={c.id} style={C.card}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-              <span style={C.pill(col[0],col[1])}>{c.status}</span>
-              <span style={{ fontSize:11, color:'#9ca3af' }}>{fmtDate(c.timestamp)}</span>
-            </div>
-            <div style={{ fontWeight:600, fontSize:13 }}>#{c.btcId} {c.btcNom}</div>
-            <div style={{ display:'flex', justifyContent:'space-between', marginTop:8 }}>
-              <span style={{ fontSize:13 }}>Qte : <strong>{c.quantity}</strong> u</span>
-              <span style={{ fontWeight:800, color:'#b91c1c' }}>{c.totalHT?c.totalHT.toFixed(2):'0.00'} EUR</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  var stColors = { "En attente":["#fef9c3","#854d0e"], "Validee":["#dcfce7","#166534"], "Livree":["#dbeafe","#1e40af"], "Refusee":["#fee2e2","#991b1b"] };
+  var stLabels = { "En attente":"En attente validation Direction", "Validee":"Validee - En preparation", "Livree":"Livree", "Refusee":"Refusee" };
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Mes Commandes ({commandes.length})</div>{commandes.length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>Aucune commande</div>}{commandes.map(function(c) { var col = stColors[c.status]||["#f3f4f6","#374151"]; return (<div key={c.id} style={C.card}><div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}><span style={C.pill(col[0],col[1])}>{stLabels[c.status]||c.status}</span><span style={{ fontSize:11, color:"#9ca3af" }}>{fmtDate(c.timestamp)}</span></div><div style={{ fontWeight:600, fontSize:13 }}>#{c.btcId} {c.btcNom}</div><div style={{ fontSize:13, marginTop:4 }}>Qte : <strong>{c.quantity}</strong> u</div>{c.notes && <div style={{ fontSize:11, color:"#9ca3af", marginTop:4, fontStyle:"italic" }}>"{c.notes}"</div>}</div>); })}</div>);
 }
-
 function ChefApp(props) {
   var user = props.user; var userDoc = props.userDoc;
-  var s = useState('catalogue'); var tab = s[0]; var setTab = s[1];
+  var s = useState("catalogue"); var tab = s[0]; var setTab = s[1];
   var s2 = useState([]); var commandes = s2[0]; var setCommandes = s2[1];
-  var tabs = [{id:'catalogue',label:'Catalogue'},{id:'commander',label:'Commander'},{id:'mes_cmd',label:'Mes commandes'}];
-
-  useEffect(function() {
-    var unsub = db.collection('commandes').where('chefId','==',user.uid).orderBy('timestamp','desc').limit(50)
-      .onSnapshot(function(s) { setCommandes(s.docs.map(function(d) { return Object.assign({id:d.id},d.data()); })); });
-    return unsub;
-  }, []);
-
-  return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3' }}>
-      <NavBar userDoc={userDoc} role="chef_chantier" tab={tab} setTab={setTab} tabs={tabs} />
-      <div style={C.page} className="fade-in">
-        {tab==='catalogue' && <CatalogueTab />}
-        {tab==='commander' && <CommanderTab user={user} userDoc={userDoc} />}
-        {tab==='mes_cmd' && <MesCmdTab commandes={commandes} />}
-      </div>
-    </div>
-  );
+  var tabs = [{id:"catalogue",label:"Catalogue"},{id:"commander",label:"Commander"},{id:"mes_cmd",label:"Mes commandes"}];
+  useEffect(function() { var unsub = db.collection("commandes").where("chefId","==",user.uid).orderBy("timestamp","desc").limit(50).onSnapshot(function(s) { setCommandes(s.docs.map(function(d) { return Object.assign({id:d.id},d.data()); })); }); return unsub; }, []);
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3" }}><NavBar userDoc={userDoc} role="chef_chantier" tab={tab} setTab={setTab} tabs={tabs} /><div style={C.page} className="fade-in">{tab==="catalogue" && <CatalogueTab />}{tab==="commander" && <CommanderTab user={user} userDoc={userDoc} />}{tab==="mes_cmd" && <MesCmdTab commandes={commandes} />}</div></div>);
 }
-
+function StockVisuelTab(props) {
+  var stockPret = props.stockPret; var stockSech = props.stockSech;
+  var items = BTC.map(function(b) {
+    var pret = Math.max(0, stockPret[b.id] || 0);
+    var sech = stockSech[b.id] ? stockSech[b.id].qty : 0;
+    var total = pret + sech;
+    var pct = Math.min(100, Math.round(total / STOCK_CIBLE * 100));
+    var alerte = total < STOCK_ALERTE; var critique = total < STOCK_ALERTE / 2;
+    return { id:b.id, nom:b.nom, dim:b.dim, pret:pret, sech:sech, total:total, pct:pct, alerte:alerte, critique:critique, manque:Math.max(0, STOCK_CIBLE - total) };
+  }).sort(function(a,b) { return a.total - b.total; });
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:4 }}>Etat du Stock</div><div style={{ fontSize:12, color:"#9ca3af", marginBottom:12 }}>Trie du plus urgent - Cible: {STOCK_CIBLE.toLocaleString()} u / Alerte: {STOCK_ALERTE.toLocaleString()} u</div>{items.map(function(item) { var barColor = item.critique ? "#b91c1c" : item.alerte ? "#f59e0b" : "#15803d"; var bgCard = item.critique ? "#fef2f2" : item.alerte ? "#fefce8" : "#fff"; var borderCard = item.critique ? "2px solid #fca5a5" : item.alerte ? "2px solid #fde047" : "1px solid #f3f4f6"; return (<div key={item.id} style={{ ...C.card, background:bgCard, border:borderCard }}><div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}><div><span style={{ fontWeight:700, fontSize:13 }}>#{item.id} {item.nom}</span><span style={{ fontSize:11, color:"#9ca3af", marginLeft:6 }}>{item.dim}</span></div>{item.critique && <span style={C.pill("#fee2e2","#b91c1c")}>CRITIQUE</span>}{!item.critique && item.alerte && <span style={C.pill("#fef9c3","#854d0e")}>ALERTE</span>}{!item.alerte && <span style={C.pill("#dcfce7","#15803d")}>OK</span>}</div><div style={{ background:"#f3f4f6", borderRadius:8, height:10, marginBottom:6 }}><div style={{ width:item.pct+"%", background:barColor, height:10, borderRadius:8 }}></div></div><div style={{ display:"flex", justifyContent:"space-between", fontSize:12 }}><span>Pret: <strong>{item.pret.toLocaleString()}</strong> u | Sechage: <strong>{item.sech.toLocaleString()}</strong> u</span><span style={{ fontWeight:700, color:barColor }}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span></div>{item.alerte && <div style={{ fontSize:11, color:barColor, marginTop:4, fontWeight:600 }}>A produire en priorite: {item.manque.toLocaleString()} u manquantes</div>}</div>); })}</div>);
+}
 function SaisirProdTab(props) {
-  var user = props.user; var userDoc = props.userDoc;
-  var s1 = useState(''); var btcId = s1[0]; var setBtcId = s1[1];
-  var s2 = useState(''); var qty = s2[0]; var setQty = s2[1];
+  var user = props.user; var userDoc = props.userDoc; var stockPret = props.stockPret || {}; var stockSech = props.stockSech || {};
+  var s1 = useState(""); var btcId = s1[0]; var setBtcId = s1[1];
+  var s2 = useState(""); var qty = s2[0]; var setQty = s2[1];
   var s3 = useState(nowTime()); var heure = s3[0]; var setHeure = s3[1];
-  var s4 = useState(''); var notes = s4[0]; var setNotes = s4[1];
+  var s4 = useState(""); var notes = s4[0]; var setNotes = s4[1];
   var s5 = useState(false); var loading = s5[0]; var setLoading = s5[1];
   var toastState = useToast(); var toast = toastState[0]; var showToast = toastState[1];
-  var sel = getBTC(btcId);
-  var matDate = new Date(Date.now() + 14*86400000);
-
+  var urgents = BTC.map(function(b) { var pret = Math.max(0, stockPret[b.id] || 0); var sech = stockSech[b.id] ? stockSech[b.id].qty : 0; return { id:b.id, nom:b.nom, total:pret+sech, alerte:(pret+sech)<STOCK_ALERTE }; }).sort(function(a,b) { return a.total - b.total; }).slice(0,3);
+  var sel = getBTC(btcId); var matDate = new Date(Date.now() + 14*86400000);
   async function submit(e) {
     e.preventDefault(); setLoading(true);
-    var parts = heure.split(':');
-    var ts = new Date(); ts.setHours(+parts[0],+parts[1],0);
-    var mat = new Date(ts.getTime() + 14*86400000);
-    await db.collection('productions').add({
-      responsableId:user.uid, responsableNom:userDoc&&userDoc.name?userDoc.name:user.email,
-      btcId:+btcId, btcNom:sel.nom, btcDim:sel.dim, prixU:sel.prix,
-      quantity:+qty, heure:heure, date:todayStr(),
-      timestamp:firebase.firestore.Timestamp.fromDate(ts),
-      maturite:firebase.firestore.Timestamp.fromDate(mat),
-      notes:notes,
-    });
-    setBtcId(''); setQty(''); setNotes(''); setHeure(nowTime());
-    showToast('Production enregistree - sechage 14j');
-    setLoading(false);
+    var parts = heure.split(":"); var ts = new Date(); ts.setHours(+parts[0],+parts[1],0); var mat = new Date(ts.getTime() + 14*86400000);
+    await db.collection("productions").add({ responsableId:user.uid, responsableNom:userDoc&&userDoc.name?userDoc.name:user.email, btcId:+btcId, btcNom:sel.nom, btcDim:sel.dim, prixU:sel.prix, quantity:+qty, heure:heure, date:todayStr(), timestamp:firebase.firestore.Timestamp.fromDate(ts), maturite:firebase.firestore.Timestamp.fromDate(mat), notes:notes });
+    setBtcId(""); setQty(""); setNotes(""); setHeure(nowTime()); showToast("Production enregistree - sechage 14j"); setLoading(false);
   }
-
-  return (
-    <div>
-      <Toast msg={toast.msg} type={toast.type} />
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Saisir une production</div>
-      <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Date</label>
-            <div style={{ ...C.input, background:'#f9fafb', color:'#6b7280' }}>{new Date().toLocaleDateString('fr-FR')}</div>
-          </div>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Heure</label>
-            <input type="time" value={heure} onChange={function(e){setHeure(e.target.value);}} required style={C.input} />
-          </div>
-        </div>
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Type de BTC</label>
-          <BTCSelect value={btcId} onChange={setBtcId} />
-        </div>
-        {btcId && (
-          <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:12, padding:12, fontSize:13 }}>
-            <div style={{ color:'#c2410c', fontWeight:700 }}>Maturite : {matDate.toLocaleDateString('fr-FR')} (J+14)</div>
-          </div>
-        )}
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Quantite produite</label>
-          <input type="number" value={qty} onChange={function(e){setQty(e.target.value);}} required min="1" placeholder="Ex: 200" style={C.input} />
-        </div>
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Notes</label>
-          <textarea value={notes} onChange={function(e){setNotes(e.target.value);}} rows={2} placeholder="Remarques..." style={{ ...C.input, resize:'none' }} />
-        </div>
-        <button type="submit" disabled={loading} style={C.btn('#d97706')}>{loading?'...':'Enregistrer la production'}</button>
-      </form>
-    </div>
-  );
+  return (<div><Toast msg={toast.msg} type={toast.type} />{urgents.some(function(u){return u.alerte;}) && (<div style={{ background:"#fef2f2", border:"2px solid #fca5a5", borderRadius:14, padding:12, marginBottom:14 }}><div style={{ fontWeight:700, color:"#b91c1c", marginBottom:6, fontSize:13 }}>Priorites de production :</div>{urgents.map(function(u) { return <div key={u.id} style={{ fontSize:12, padding:"3px 0", color:u.alerte?"#b91c1c":"#374151" }}>{u.alerte?"🔴":"🟢"} #{u.id} {u.nom} - Stock: {u.total.toLocaleString()} u</div>; })}</div>)}<div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Saisir une production</div><form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:12 }}><div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Date</label><div style={{ ...C.input, background:"#f9fafb", color:"#6b7280" }}>{new Date().toLocaleDateString("fr-FR")}</div></div><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Heure</label><input type="time" value={heure} onChange={function(e){setHeure(e.target.value);}} required style={C.input} /></div></div><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Type de BTC</label><BTCSelect value={btcId} onChange={setBtcId} /></div>{btcId && (<div style={{ background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:12, padding:12, fontSize:13 }}><div style={{ color:"#c2410c", fontWeight:700 }}>Maturite : {matDate.toLocaleDateString("fr-FR")} (J+14)</div></div>)}<div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Quantite produite</label><input type="number" value={qty} onChange={function(e){setQty(e.target.value);}} required min="1" placeholder="Ex: 200" style={C.input} /></div><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Notes</label><textarea value={notes} onChange={function(e){setNotes(e.target.value);}} rows={2} placeholder="Remarques..." style={{ ...C.input, resize:"none" }} /></div><button type="submit" disabled={loading} style={C.btn("#d97706")}>{loading?"...":"Enregistrer la production"}</button></form></div>);
 }
-
 function ProdListTab(props) {
   var prods = props.prods; var title = props.title;
-  var totals = {};
-  prods.forEach(function(p) { totals[p.btcId] = (totals[p.btcId]||0) + p.quantity; });
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>{title}</div>
-      {Object.keys(totals).length > 0 && (
-        <div style={C.card}>
-          <div style={{ fontSize:12, fontWeight:700, marginBottom:8 }}>Totaux par type</div>
-          {Object.entries(totals).map(function(e) {
-            return (
-              <div key={e[0]} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom:'1px solid #f3f4f6', fontSize:13 }}>
-                <span>#{e[0]} {getBTC(e[0]).nom}</span>
-                <span style={{ fontWeight:800, color:'#b91c1c' }}>{e[1]} u</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {prods.length===0 && <div style={{ textAlign:'center', color:'#9ca3af', padding:40 }}>Aucune production</div>}
-      {prods.map(function(p) {
-        return (
-          <div key={p.id} style={{ ...C.card, display:'flex', gap:12, alignItems:'center' }}>
-            <div style={{ background:'#fff7ed', color:'#c2410c', fontWeight:800, width:38, height:38, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{p.btcId}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:600, fontSize:13 }}>{p.btcNom}</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>{p.date} a {p.heure}</div>
-            </div>
-            <div style={{ textAlign:'right' }}>
-              <div style={{ fontWeight:800 }}>{p.quantity} u</div>
-              <div style={{ fontSize:10, color:'#ea580c' }}>{fmtDate(p.maturite)}</div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  var totals = {}; prods.forEach(function(p) { totals[p.btcId] = (totals[p.btcId]||0) + p.quantity; });
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>{title}</div>{Object.keys(totals).length > 0 && (<div style={C.card}><div style={{ fontSize:12, fontWeight:700, marginBottom:8 }}>Totaux par type</div>{Object.entries(totals).map(function(e) { return (<div key={e[0]} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:"1px solid #f3f4f6", fontSize:13 }}><span>#{e[0]} {getBTC(e[0]).nom}</span><span style={{ fontWeight:800, color:"#b91c1c" }}>{e[1]} u</span></div>); })}</div>)}{prods.length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>Aucune production</div>}{prods.map(function(p) { return (<div key={p.id} style={{ ...C.card, display:"flex", gap:12, alignItems:"center" }}><div style={{ background:"#fff7ed", color:"#c2410c", fontWeight:800, width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{p.btcId}</div><div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:13 }}>{p.btcNom}</div><div style={{ fontSize:11, color:"#9ca3af" }}>{p.date} a {p.heure}</div></div><div style={{ textAlign:"right" }}><div style={{ fontWeight:800 }}>{p.quantity} u</div><div style={{ fontSize:10, color:"#ea580c" }}>{fmtDate(p.maturite)}</div></div></div>); })}</div>);
 }
-
 function ProductionApp(props) {
   var user = props.user; var userDoc = props.userDoc;
-  var s = useState('saisir'); var tab = s[0]; var setTab = s[1];
+  var s = useState("stock"); var tab = s[0]; var setTab = s[1];
   var s2 = useState([]); var prods = s2[0]; var setProds = s2[1];
-  var tabs = [{id:'saisir',label:'Saisir'},{id:'auj',label:"Aujourd'hui"},{id:'histo',label:'Historique'}];
-
-  useEffect(function() {
-    return db.collection('productions').orderBy('timestamp','desc').limit(500)
-      .onSnapshot(function(s) { setProds(s.docs.map(function(d) { return Object.assign({id:d.id},d.data()); })); });
-  }, []);
-
+  var stock = useStock(); var stockPret = stock.stockPret; var stockSech = stock.stockSech;
+  var tabs = [{id:"stock",label:"Etat Stock"},{id:"saisir",label:"Saisir"},{id:"auj",label:"Auj."},{id:"histo",label:"Historique"}];
+  useEffect(function() { return db.collection("productions").orderBy("timestamp","desc").limit(500).onSnapshot(function(s) { setProds(s.docs.map(function(d) { return Object.assign({id:d.id},d.data()); })); }); }, []);
   var todayProds = prods.filter(function(p) { return p.date === todayStr(); });
-
-  return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3' }}>
-      <NavBar userDoc={userDoc} role="production" tab={tab} setTab={setTab} tabs={tabs} />
-      <div style={C.page} className="fade-in">
-        {tab==='saisir' && <SaisirProdTab user={user} userDoc={userDoc} />}
-        {tab==='auj' && <ProdListTab prods={todayProds} title="Production du jour" />}
-        {tab==='histo' && <ProdListTab prods={prods} title="Historique" />}
-      </div>
-    </div>
-  );
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3" }}><NavBar userDoc={userDoc} role="production" tab={tab} setTab={setTab} tabs={tabs} /><div style={C.page} className="fade-in">{tab==="stock" && <StockVisuelTab stockPret={stockPret} stockSech={stockSech} />}{tab==="saisir" && <SaisirProdTab user={user} userDoc={userDoc} stockPret={stockPret} stockSech={stockSech} />}{tab==="auj" && <ProdListTab prods={todayProds} title="Production du jour" />}{tab==="histo" && <ProdListTab prods={prods} title="Historique" />}</div></div>);
 }
-
 function SortieTab(props) {
   var user = props.user; var userDoc = props.userDoc; var stockPret = props.stockPret;
-  var s1 = useState(''); var btcId = s1[0]; var setBtcId = s1[1];
-  var s2 = useState(''); var qty = s2[0]; var setQty = s2[1];
-  var s3 = useState(''); var chantier = s3[0]; var setChantier = s3[1];
-  var s4 = useState(''); var notes = s4[0]; var setNotes = s4[1];
+  var s1 = useState(""); var btcId = s1[0]; var setBtcId = s1[1];
+  var s2 = useState(""); var qty = s2[0]; var setQty = s2[1];
+  var s3 = useState(""); var chantier = s3[0]; var setChantier = s3[1];
+  var s4 = useState(""); var notes = s4[0]; var setNotes = s4[1];
   var s5 = useState(false); var loading = s5[0]; var setLoading = s5[1];
   var toastState = useToast(); var toast = toastState[0]; var showToast = toastState[1];
-  var sel = getBTC(btcId);
-  var avail = Math.max(0, stockPret[btcId]||0);
-
+  var sel = getBTC(btcId); var avail = Math.max(0, stockPret[btcId]||0);
   async function submit(e) {
     e.preventDefault();
-    if (+qty > avail) { showToast('Stock insuffisant - Disponible: ' + avail + ' u', 'error'); return; }
+    if (+qty > avail) { showToast("Stock insuffisant - Disponible: " + avail + " u", "error"); return; }
     setLoading(true);
-    await db.collection('sorties').add({
-      responsableId:user.uid, responsableNom:userDoc&&userDoc.name?userDoc.name:user.email,
-      btcId:+btcId, btcNom:sel.nom, btcDim:sel.dim,
-      prixU:sel.prix, quantity:+qty, totalHT:sel.prix*+qty,
-      chantier:chantier, notes:notes, date:todayStr(),
-      timestamp:firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    setBtcId(''); setQty(''); setChantier(''); setNotes('');
-    showToast('Sortie enregistree !');
-    setLoading(false);
+    await db.collection("sorties").add({ responsableId:user.uid, responsableNom:userDoc&&userDoc.name?userDoc.name:user.email, btcId:+btcId, btcNom:sel.nom, btcDim:sel.dim, prixU:sel.prix, quantity:+qty, totalHT:sel.prix*+qty, chantier:chantier, notes:notes, date:todayStr(), timestamp:firebase.firestore.FieldValue.serverTimestamp() });
+    setBtcId(""); setQty(""); setChantier(""); setNotes(""); showToast("Sortie enregistree !"); setLoading(false);
   }
-
-  var bgDisp = avail>0?'#f0fdf4':'#fef2f2';
-  var bdDisp = avail>0?'1px solid #bbf7d0':'1px solid #fecaca';
-  var tcDisp = avail>0?'#15803d':'#b91c1c';
-
-  return (
-    <div>
-      <Toast msg={toast.msg} type={toast.type} />
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Enregistrer une sortie</div>
-      <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Type de BTC</label>
-          <BTCSelect value={btcId} onChange={setBtcId} stockPret={stockPret} />
-        </div>
-        {btcId && (
-          <div style={{ background:bgDisp, border:bdDisp, borderRadius:12, padding:12, fontSize:13 }}>
-            Stock disponible : <strong style={{ color:tcDisp }}>{avail} unites</strong>
-          </div>
-        )}
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Chantier destinataire</label>
-          <input value={chantier} onChange={function(e){setChantier(e.target.value);}} required placeholder="Nom du chantier" style={C.input} />
-        </div>
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Quantite</label>
-          <input type="number" value={qty} onChange={function(e){setQty(e.target.value);}} required min="1" placeholder="Quantite a sortir" style={C.input} />
-        </div>
-        {sel.prix && qty && (
-          <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:12, padding:12, fontSize:13 }}>
-            Prix unit. : <strong>{sel.prix.toFixed(2)} EUR</strong> - Total HT : <strong style={{ color:'#1d4ed8' }}>{(sel.prix*+qty).toFixed(2)} EUR</strong>
-          </div>
-        )}
-        <div>
-          <label style={{ fontSize:12, fontWeight:600, display:'block', marginBottom:5 }}>Notes</label>
-          <textarea value={notes} onChange={function(e){setNotes(e.target.value);}} rows={2} placeholder="Remarques..." style={{ ...C.input, resize:'none' }} />
-        </div>
-        <button type="submit" disabled={loading||!avail} style={C.btn('#15803d')}>{loading?'...':'Enregistrer la sortie'}</button>
-      </form>
-    </div>
-  );
+  var bgDisp = avail>0?"#f0fdf4":"#fef2f2"; var bdDisp = avail>0?"1px solid #bbf7d0":"1px solid #fecaca"; var tcDisp = avail>0?"#15803d":"#b91c1c";
+  return (<div><Toast msg={toast.msg} type={toast.type} /><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Enregistrer une sortie</div><form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:12 }}><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Type de BTC</label><BTCSelect value={btcId} onChange={setBtcId} stockPret={stockPret} /></div>{btcId && (<div style={{ background:bgDisp, border:bdDisp, borderRadius:12, padding:12, fontSize:13 }}>Stock disponible : <strong style={{ color:tcDisp }}>{avail} unites</strong></div>)}<div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Chantier destinataire</label><input value={chantier} onChange={function(e){setChantier(e.target.value);}} required placeholder="Nom du chantier" style={C.input} /></div><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Quantite</label><input type="number" value={qty} onChange={function(e){setQty(e.target.value);}} required min="1" placeholder="Quantite a sortir" style={C.input} /></div><div><label style={{ fontSize:12, fontWeight:600, display:"block", marginBottom:5 }}>Notes</label><textarea value={notes} onChange={function(e){setNotes(e.target.value);}} rows={2} placeholder="Remarques..." style={{ ...C.input, resize:"none" }} /></div><button type="submit" disabled={loading||!avail} style={C.btn("#15803d")}>{loading?"...":"Enregistrer la sortie"}</button></form></div>);
 }
-
-function SechageTab(props) {
-  var stockSech = props.stockSech;
-  var now = new Date();
-  var items = Object.entries(stockSech).map(function(e) {
-    var id = e[0]; var s = e[1]; var btc = getBTC(id);
-    var dl = s.nextMat ? Math.ceil((s.nextMat - now) / 86400000) : 0;
-    return { id:btc.id, nom:btc.nom, dim:btc.dim, qty:s.qty, nextMat:s.nextMat, daysLeft:dl };
-  }).sort(function(a,b) { return a.daysLeft - b.daysLeft; });
-
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Stock en Sechage</div>
-      {items.length===0 && <div style={{ textAlign:'center', color:'#9ca3af', padding:40 }}>Aucun BTC en sechage</div>}
-      {items.map(function(item) {
-        var pillBg = item.daysLeft<=3 ? '#dcfce7' : item.daysLeft<=7 ? '#fef9c3' : '#fff7ed';
-        var pillTc = item.daysLeft<=3 ? '#15803d' : item.daysLeft<=7 ? '#854d0e' : '#c2410c';
-        return (
-          <div key={item.id} style={C.card}>
-            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-              <div style={{ background:'#fff7ed', color:'#c2410c', fontWeight:800, width:38, height:38, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{item.id}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:600, fontSize:13 }}>{item.nom}</div>
-                <div style={{ fontSize:11, color:'#9ca3af' }}>{item.dim}</div>
-              </div>
-              <div style={{ textAlign:'right' }}>
-                <div style={{ fontWeight:800 }}>{item.qty} u</div>
-                <span style={C.pill(pillBg,pillTc)}>J-{item.daysLeft}</span>
-              </div>
-            </div>
-            {item.nextMat && <div style={{ fontSize:11, color:'#9ca3af', marginTop:6 }}>Maturite : {item.nextMat.toLocaleDateString('fr-FR')}</div>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function PretTab(props) {
-  var stockPret = props.stockPret;
-  var items = Object.entries(stockPret).filter(function(e) { return e[1]>0; }).map(function(e) {
-    var btc = getBTC(e[0]); return { id:btc.id, nom:btc.nom, dim:btc.dim, prix:btc.prix, qty:e[1] };
-  }).sort(function(a,b) { return a.id-b.id; });
-  var totalVal = items.reduce(function(acc,i) { return acc + i.qty*i.prix; }, 0);
-
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Stock Pret a Livrer</div>
-      <div style={{ background:'#15803d', color:'#fff', borderRadius:14, padding:'14px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-        <span style={{ fontSize:13 }}>Valeur totale du stock</span>
-        <span style={{ fontSize:22, fontWeight:800 }}>{totalVal.toFixed(2)} EUR</span>
-      </div>
-      {items.length===0 && <div style={{ textAlign:'center', color:'#9ca3af', padding:40 }}>Aucun stock disponible</div>}
-      {items.map(function(item) {
-        return (
-          <div key={item.id} style={{ ...C.card, display:'flex', gap:12, alignItems:'center' }}>
-            <div style={{ background:'#dcfce7', color:'#15803d', fontWeight:800, width:38, height:38, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{item.id}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:600, fontSize:13 }}>{item.nom}</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>{item.dim}</div>
-            </div>
-            <div style={{ textAlign:'right' }}>
-              <div style={{ fontWeight:800 }}>{item.qty} u</div>
-              <div style={{ fontSize:11, color:'#15803d', fontWeight:600 }}>{(item.qty*item.prix).toFixed(2)} EUR</div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function CmdStockTab(props) {
   var commandes = props.commandes;
-  async function updateStatus(id, status) { await db.collection('commandes').doc(id).update({ status:status }); }
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Commandes en attente ({commandes.length})</div>
-      {commandes.length===0 && <div style={{ textAlign:'center', color:'#9ca3af', padding:40 }}>Aucune commande en attente</div>}
-      {commandes.map(function(c) {
-        return (
-          <div key={c.id} style={C.card}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-              <span style={{ fontWeight:700 }}>{c.chantier}</span>
-              <span style={{ fontSize:11, color:'#9ca3af' }}>{fmtDate(c.timestamp)}</span>
-            </div>
-            <div style={{ fontSize:13 }}>#{c.btcId} {c.btcNom} x <strong>{c.quantity}</strong> u</div>
-            <div style={{ fontSize:12, color:'#6b7280', marginTop:2 }}>Chef : {c.chefNom} - {c.totalHT?c.totalHT.toFixed(2):'0'} EUR</div>
-            {c.notes && <div style={{ fontSize:11, color:'#9ca3af', fontStyle:'italic', marginTop:4 }}>"{c.notes}"</div>}
-            <div style={{ display:'flex', gap:8, marginTop:10 }}>
-              <button onClick={function(){updateStatus(c.id,'Validee');}} style={{ flex:1, ...C.btn('#15803d'), padding:'8px', fontSize:12 }}>Valider</button>
-              <button onClick={function(){updateStatus(c.id,'Livree');}} style={{ flex:1, ...C.btn('#1d4ed8'), padding:'8px', fontSize:12 }}>Livree</button>
-              <button onClick={function(){updateStatus(c.id,'Refusee');}} style={{ flex:1, ...C.btn('#b91c1c'), padding:'8px', fontSize:12 }}>Refuser</button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+  async function marquerLivree(id) { await db.collection("commandes").doc(id).update({ status:"Livree", livreLe:firebase.firestore.FieldValue.serverTimestamp() }); }
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:4 }}>Commandes a preparer ({commandes.length})</div><div style={{ fontSize:12, color:"#9ca3af", marginBottom:12 }}>Validees par la Direction - cliquez "Envoye" quand les BTC quittent l'entrepot</div>{commandes.length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>Aucune commande a preparer</div>}{commandes.map(function(c) { return (<div key={c.id} style={C.card}><div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontWeight:700 }}>{c.chantier}</span><span style={{ fontSize:11, color:"#9ca3af" }}>{fmtDate(c.timestamp)}</span></div><div style={{ fontSize:13 }}>#{c.btcId} {c.btcNom} x <strong>{c.quantity}</strong> u</div><div style={{ fontSize:12, color:"#6b7280", marginTop:2 }}>Chef : {c.chefNom}</div>{c.notes && <div style={{ fontSize:11, color:"#9ca3af", fontStyle:"italic", marginTop:4 }}>"{c.notes}"</div>}<button onClick={function(){marquerLivree(c.id);}} style={{ ...C.btn("#1d4ed8"), marginTop:10, padding:"10px" }}>Commande envoyee ✓</button></div>); })}</div>);
 }
-
+function SechageTab(props) {
+  var stockSech = props.stockSech; var now = new Date();
+  var items = Object.entries(stockSech).map(function(e) { var id = e[0]; var s = e[1]; var btc = getBTC(id); var dl = s.nextMat ? Math.ceil((s.nextMat - now) / 86400000) : 0; return { id:btc.id, nom:btc.nom, dim:btc.dim, qty:s.qty, nextMat:s.nextMat, daysLeft:dl }; }).sort(function(a,b) { return a.daysLeft - b.daysLeft; });
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Stock en Sechage</div>{items.length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>Aucun BTC en sechage</div>}{items.map(function(item) { var pillBg = item.daysLeft<=3 ? "#dcfce7" : item.daysLeft<=7 ? "#fef9c3" : "#fff7ed"; var pillTc = item.daysLeft<=3 ? "#15803d" : item.daysLeft<=7 ? "#854d0e" : "#c2410c"; return (<div key={item.id} style={C.card}><div style={{ display:"flex", alignItems:"center", gap:12 }}><div style={{ background:"#fff7ed", color:"#c2410c", fontWeight:800, width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{item.id}</div><div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:13 }}>{item.nom}</div><div style={{ fontSize:11, color:"#9ca3af" }}>{item.dim}</div></div><div style={{ textAlign:"right" }}><div style={{ fontWeight:800 }}>{item.qty} u</div><span style={C.pill(pillBg,pillTc)}>J-{item.daysLeft}</span></div></div>{item.nextMat && <div style={{ fontSize:11, color:"#9ca3af", marginTop:6 }}>Maturite : {item.nextMat.toLocaleDateString("fr-FR")}</div>}</div>); })}</div>);
+}
+function PretTab(props) {
+  var stockPret = props.stockPret; var showPrix = props.showPrix || false;
+  var items = Object.entries(stockPret).filter(function(e) { return e[1]>0; }).map(function(e) { var btc = getBTC(e[0]); return { id:btc.id, nom:btc.nom, dim:btc.dim, prix:btc.prix, qty:e[1] }; }).sort(function(a,b) { return a.id-b.id; });
+  var totalVal = items.reduce(function(acc,i) { return acc + i.qty*i.prix; }, 0);
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Stock Pret a Livrer</div>{showPrix && <div style={{ background:"#15803d", color:"#fff", borderRadius:14, padding:"14px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}><span style={{ fontSize:13 }}>Valeur totale du stock</span><span style={{ fontSize:22, fontWeight:800 }}>{totalVal.toFixed(2)} EUR</span></div>}{items.length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>Aucun stock disponible</div>}{items.map(function(item) { return (<div key={item.id} style={{ ...C.card, display:"flex", gap:12, alignItems:"center" }}><div style={{ background:"#dcfce7", color:"#15803d", fontWeight:800, width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{item.id}</div><div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:13 }}>{item.nom}</div><div style={{ fontSize:11, color:"#9ca3af" }}>{item.dim}</div></div><div style={{ textAlign:"right" }}><div style={{ fontWeight:800 }}>{item.qty} u</div>{showPrix && <div style={{ fontSize:11, color:"#15803d", fontWeight:600 }}>{(item.qty*item.prix).toFixed(2)} EUR</div>}</div></div>); })}</div>);
+}
 function StockApp(props) {
   var user = props.user; var userDoc = props.userDoc;
-  var s = useState('sortie'); var tab = s[0]; var setTab = s[1];
-  var stock = useStock(); var cmdWait = stock.cmdWait; var stockSech = stock.stockSech; var stockPret = stock.stockPret;
-  var cmdLabel = cmdWait.length>0 ? 'Commandes ('+cmdWait.length+')' : 'Commandes';
-  var tabs = [{id:'sortie',label:'Sortie'},{id:'sechage',label:'Sechage'},{id:'pret',label:'Pret'},{id:'commandes',label:cmdLabel}];
-
-  return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3' }}>
-      <NavBar userDoc={userDoc} role="stock" tab={tab} setTab={setTab} tabs={tabs} badge={cmdWait.length} />
-      <div style={C.page} className="fade-in">
-        {tab==='sortie' && <SortieTab user={user} userDoc={userDoc} stockPret={stockPret} />}
-        {tab==='sechage' && <SechageTab stockSech={stockSech} />}
-        {tab==='pret' && <PretTab stockPret={stockPret} />}
-        {tab==='commandes' && <CmdStockTab commandes={cmdWait} />}
-      </div>
-    </div>
-  );
+  var s = useState("sortie"); var tab = s[0]; var setTab = s[1];
+  var stock = useStock(); var cmdValidees = stock.cmdValidees; var stockSech = stock.stockSech; var stockPret = stock.stockPret;
+  var cmdLabel = cmdValidees.length>0 ? "Commandes ("+cmdValidees.length+")" : "Commandes";
+  var tabs = [{id:"sortie",label:"Sortie"},{id:"sechage",label:"Sechage"},{id:"pret",label:"Pret"},{id:"commandes",label:cmdLabel}];
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3" }}><NavBar userDoc={userDoc} role="stock" tab={tab} setTab={setTab} tabs={tabs} badge={cmdValidees.length} /><div style={C.page} className="fade-in">{tab==="sortie" && <SortieTab user={user} userDoc={userDoc} stockPret={stockPret} />}{tab==="sechage" && <SechageTab stockSech={stockSech} />}{tab==="pret" && <PretTab stockPret={stockPret} showPrix={false} />}{tab==="commandes" && <CmdStockTab commandes={cmdValidees} />}</div></div>);
 }
-
 function KPI(props) {
-  return (
-    <div style={{ background:props.bg, borderRadius:14, padding:'14px 12px', color:'#fff' }}>
-      <div style={{ fontSize:11, opacity:.8, marginBottom:4 }}>{props.label}</div>
-      <div style={{ fontSize:28, fontWeight:800, lineHeight:1 }}>{props.value}</div>
-      {props.sub && <div style={{ fontSize:11, opacity:.7, marginTop:3 }}>{props.sub}</div>}
-    </div>
-  );
+  return (<div style={{ background:props.bg, borderRadius:14, padding:"14px 12px", color:"#fff" }}><div style={{ fontSize:11, opacity:.8, marginBottom:4 }}>{props.label}</div><div style={{ fontSize:28, fontWeight:800, lineHeight:1 }}>{props.value}</div>{props.sub && <div style={{ fontSize:11, opacity:.7, marginTop:3 }}>{props.sub}</div>}</div>);
 }
-
 function DashboardTab(props) {
-  var todayProds=props.todayProds; var todaySorties=props.todaySorties; var stockSech=props.stockSech; var stockPret=props.stockPret; var cmdWait=props.cmdWait;
+  var todayProds=props.todayProds; var todaySorties=props.todaySorties; var stockSech=props.stockSech; var stockPret=props.stockPret; var cmdAttente=props.cmdAttente; var cmdValidees=props.cmdValidees;
   var totalSech = Object.values(stockSech).reduce(function(a,s){return a+s.qty;},0);
   var totalPret = Object.entries(stockPret).reduce(function(a,e){return a+Math.max(0,e[1]);},0);
   var totalVal = Object.entries(stockPret).reduce(function(a,e){return a+Math.max(0,e[1])*(getBTC(e[0]).prix||0);},0);
   var todayQty = todayProds.reduce(function(a,p){return a+p.quantity;},0);
-
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:4 }}>Tableau de bord</div>
-      <div style={{ fontSize:12, color:'#9ca3af', marginBottom:14 }}>{new Date().toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
-        <KPI label="Production du jour" value={todayQty} sub="unites" bg="#1d4ed8" />
-        <KPI label="En sechage" value={totalSech} sub="unites" bg="#c2410c" />
-        <KPI label="Stock pret" value={totalPret} sub={totalVal.toFixed(0)+' EUR'} bg="#15803d" />
-        <KPI label="Commandes attente" value={cmdWait.length} sub="a traiter" bg="#b45309" />
-      </div>
-      {cmdWait.length>0 && (
-        <div style={{ background:'#fefce8', border:'2px solid #fde047', borderRadius:14, padding:14, marginBottom:12 }}>
-          <div style={{ fontWeight:700, color:'#854d0e', marginBottom:8 }}>Commandes a traiter</div>
-          {cmdWait.slice(0,4).map(function(c){
-            return <div key={c.id} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', fontSize:13, borderBottom:'1px solid #fef9c3' }}><span>{c.chantier} - #{c.btcId} {c.btcNom}</span><span style={{fontWeight:700}}>{c.quantity} u</span></div>;
-          })}
-          {cmdWait.length>4 && <div style={{ fontSize:11, color:'#92400e', marginTop:4 }}>+{cmdWait.length-4} autres...</div>}
-        </div>
-      )}
-      {todayProds.length>0 && (
-        <div style={C.card}>
-          <div style={{ fontWeight:700, marginBottom:8 }}>Production du jour</div>
-          {todayProds.map(function(p){
-            return <div key={p.id} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #f3f4f6', fontSize:13 }}><div><div style={{fontWeight:600}}>#{p.btcId} {p.btcNom}</div><div style={{fontSize:11,color:'#9ca3af'}}>a {p.heure}</div></div><span style={{fontWeight:800,color:'#c2410c'}}>{p.quantity} u</span></div>;
-          })}
-        </div>
-      )}
-      {todaySorties.length>0 && (
-        <div style={C.card}>
-          <div style={{ fontWeight:700, marginBottom:8 }}>Sorties du jour</div>
-          {todaySorties.map(function(s){
-            return <div key={s.id} style={{ display:'flex', justifyContent:'space-between', fontSize:13, padding:'4px 0', borderBottom:'1px solid #f3f4f6' }}><span>{s.chantier} - #{s.btcId}</span><span style={{fontWeight:700}}>{s.quantity} u</span></div>;
-          })}
-        </div>
-      )}
-    </div>
-  );
+  var alertes = BTC.filter(function(b){ var pret = Math.max(0,stockPret[b.id]||0); var sech = stockSech[b.id]?stockSech[b.id].qty:0; return (pret+sech)<STOCK_ALERTE; });
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:4 }}>Tableau de bord</div><div style={{ fontSize:12, color:"#9ca3af", marginBottom:14 }}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div><div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}><KPI label="Production du jour" value={todayQty} sub="unites" bg="#1d4ed8" /><KPI label="En sechage" value={totalSech} sub="unites" bg="#c2410c" /><KPI label="Stock pret" value={totalPret} sub={totalVal.toFixed(0)+" EUR"} bg="#15803d" /><KPI label="Cmd en attente" value={cmdAttente.length} sub="a valider" bg="#b45309" /></div>{alertes.length>0 && (<div style={{ background:"#fef2f2", border:"2px solid #fca5a5", borderRadius:14, padding:14, marginBottom:12 }}><div style={{ fontWeight:700, color:"#b91c1c", marginBottom:8 }}>Stocks en alerte ({alertes.length})</div>{alertes.map(function(b){ var pret=Math.max(0,stockPret[b.id]||0); var sech=stockSech[b.id]?stockSech[b.id].qty:0; var total=pret+sech; return <div key={b.id} style={{ fontSize:12, padding:"3px 0", borderBottom:"1px solid #fecaca" }}>🔴 #{b.id} {b.nom} - <strong>{total.toLocaleString()}</strong> u / {STOCK_CIBLE.toLocaleString()}</div>; })}</div>)}{cmdAttente.length>0 && (<div style={{ background:"#fefce8", border:"2px solid #fde047", borderRadius:14, padding:14, marginBottom:12 }}><div style={{ fontWeight:700, color:"#854d0e", marginBottom:8 }}>Commandes a valider ({cmdAttente.length})</div>{cmdAttente.slice(0,4).map(function(c){ return <div key={c.id} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:13, borderBottom:"1px solid #fef9c3" }}><span>{c.chantier} - #{c.btcId} {c.btcNom}</span><span style={{fontWeight:700}}>{c.quantity} u</span></div>; })}{cmdAttente.length>4 && <div style={{ fontSize:11, color:"#92400e", marginTop:4 }}>+{cmdAttente.length-4} autres...</div>}</div>)}{todayProds.length>0 && (<div style={C.card}><div style={{ fontWeight:700, marginBottom:8 }}>Production du jour</div>{todayProds.map(function(p){ return <div key={p.id} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", borderBottom:"1px solid #f3f4f6", fontSize:13 }}><div><div style={{fontWeight:600}}>#{p.btcId} {p.btcNom}</div><div style={{fontSize:11,color:"#9ca3af"}}>a {p.heure}</div></div><span style={{fontWeight:800,color:"#c2410c"}}>{p.quantity} u</span></div>; })}</div>)}{todaySorties.length>0 && (<div style={C.card}><div style={{ fontWeight:700, marginBottom:8 }}>Sorties du jour</div>{todaySorties.map(function(s){ return <div key={s.id} style={{ display:"flex", justifyContent:"space-between", fontSize:13, padding:"4px 0", borderBottom:"1px solid #f3f4f6" }}><span>{s.chantier} - #{s.btcId}</span><span style={{fontWeight:700}}>{s.quantity} u</span></div>; })}</div>)}</div>);
 }
-
 function AllCmdTab(props) {
   var commandes = props.commandes;
-  var stColors = { 'En attente':['#fef9c3','#854d0e'], 'Validee':['#dcfce7','#166534'], 'Livree':['#dbeafe','#1e40af'], 'Refusee':['#fee2e2','#991b1b'] };
-  async function updateStatus(id,status) { await db.collection('commandes').doc(id).update({status:status}); }
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Toutes les commandes ({commandes.length})</div>
-      {commandes.map(function(c) {
-        var col = stColors[c.status]||['#f3f4f6','#374151'];
-        return (
-          <div key={c.id} style={C.card}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-              <span style={{ fontWeight:700 }}>{c.chantier}</span>
-              <span style={C.pill(col[0],col[1])}>{c.status}</span>
-            </div>
-            <div style={{ fontSize:13 }}>#{c.btcId} {c.btcNom} x {c.quantity} u</div>
-            <div style={{ fontSize:11, color:'#9ca3af' }}>{fmtDate(c.timestamp)} - {c.chefNom}</div>
-            {c.status==='En attente' && (
-              <div style={{ display:'flex', gap:8, marginTop:8 }}>
-                <button onClick={function(){updateStatus(c.id,'Validee');}} style={{ flex:1, ...C.btn('#15803d'), padding:'7px', fontSize:11 }}>Valider</button>
-                <button onClick={function(){updateStatus(c.id,'Livree');}} style={{ flex:1, ...C.btn('#1d4ed8'), padding:'7px', fontSize:11 }}>Livree</button>
-                <button onClick={function(){updateStatus(c.id,'Refusee');}} style={{ flex:1, ...C.btn('#b91c1c'), padding:'7px', fontSize:11 }}>Refuser</button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+  var stColors = { "En attente":["#fef9c3","#854d0e"], "Validee":["#dcfce7","#166534"], "Livree":["#dbeafe","#1e40af"], "Refusee":["#fee2e2","#991b1b"] };
+  async function updateStatus(id,status) { await db.collection("commandes").doc(id).update({status:status}); }
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Toutes les commandes ({commandes.length})</div>{commandes.map(function(c) { var col = stColors[c.status]||["#f3f4f6","#374151"]; return (<div key={c.id} style={C.card}><div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}><span style={{ fontWeight:700 }}>{c.chantier}</span><span style={C.pill(col[0],col[1])}>{c.status}</span></div><div style={{ fontSize:13 }}>#{c.btcId} {c.btcNom} x {c.quantity} u</div><div style={{ fontSize:11, color:"#9ca3af" }}>{fmtDate(c.timestamp)} - {c.chefNom}</div>{c.status==="En attente" && (<div style={{ display:"flex", gap:8, marginTop:8 }}><button onClick={function(){updateStatus(c.id,"Validee");}} style={{ flex:1, ...C.btn("#15803d"), padding:"7px", fontSize:11 }}>Valider</button><button onClick={function(){updateStatus(c.id,"Refusee");}} style={{ flex:1, ...C.btn("#b91c1c"), padding:"7px", fontSize:11 }}>Refuser</button></div>)}</div>); })}</div>);
 }
-
 function ChantierRecapTab(props) {
   var sorties = props.sorties;
-  var ch = {};
-  sorties.forEach(function(s) {
-    if (!ch[s.chantier]) ch[s.chantier] = { total:0, valeur:0, btcs:{} };
-    ch[s.chantier].total += s.quantity;
-    ch[s.chantier].valeur += s.totalHT||0;
-    ch[s.chantier].btcs[s.btcId] = (ch[s.chantier].btcs[s.btcId]||0) + s.quantity;
-  });
-  return (
-    <div>
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Recapitulatif par chantier</div>
-      {Object.keys(ch).length===0 && <div style={{ textAlign:'center', color:'#9ca3af', padding:40 }}>Aucune sortie enregistree</div>}
-      {Object.entries(ch).map(function(entry) {
-        var name=entry[0]; var data=entry[1];
-        return (
-          <div key={name} style={C.card}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
-              <div style={{ fontWeight:800, fontSize:15 }}>{name}</div>
-              <div style={{ textAlign:'right' }}>
-                <div style={{ fontSize:12, color:'#6b7280' }}>{data.total} u total</div>
-                <div style={{ fontWeight:800, color:'#b91c1c' }}>{data.valeur.toFixed(2)} EUR</div>
-              </div>
-            </div>
-            {Object.entries(data.btcs).map(function(e) {
-              var btc=getBTC(e[0]);
-              return <div key={e[0]} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', fontSize:12, borderBottom:'1px solid #f3f4f6' }}><span style={{color:'#6b7280'}}>#{e[0]} {btc.nom}</span><span style={{fontWeight:600}}>{e[1]} u - {(btc.prix*e[1]).toFixed(2)} EUR</span></div>;
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
+  var ch = {}; sorties.forEach(function(s) { if (!ch[s.chantier]) ch[s.chantier] = { total:0, valeur:0, btcs:{} }; ch[s.chantier].total += s.quantity; ch[s.chantier].valeur += s.totalHT||0; ch[s.chantier].btcs[s.btcId] = (ch[s.chantier].btcs[s.btcId]||0) + s.quantity; });
+  return (<div><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Recapitulatif par chantier</div>{Object.keys(ch).length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>Aucune sortie enregistree</div>}{Object.entries(ch).map(function(entry) { var name=entry[0]; var data=entry[1]; return (<div key={name} style={C.card}><div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}><div style={{ fontWeight:800, fontSize:15 }}>{name}</div><div style={{ textAlign:"right" }}><div style={{ fontSize:12, color:"#6b7280" }}>{data.total} u total</div><div style={{ fontWeight:800, color:"#b91c1c" }}>{data.valeur.toFixed(2)} EUR</div></div></div>{Object.entries(data.btcs).map(function(e) { var btc=getBTC(e[0]); return <div key={e[0]} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:12, borderBottom:"1px solid #f3f4f6" }}><span style={{color:"#6b7280"}}>#{e[0]} {btc.nom}</span><span style={{fontWeight:600}}>{e[1]} u - {(btc.prix*e[1]).toFixed(2)} EUR</span></div>; })}</div>); })}</div>);
 }
-
 function UsersTab(props) {
   var users = props.users;
-  var s1=useState(''); var name=s1[0]; var setName=s1[1];
-  var s2=useState(''); var email=s2[0]; var setEmail=s2[1];
-  var s3=useState(''); var pwd=s3[0]; var setPwd=s3[1];
-  var s4=useState('chef_chantier'); var role=s4[0]; var setRole=s4[1];
-  var s5=useState(''); var chantier=s5[0]; var setChantier=s5[1];
+  var s1=useState(""); var name=s1[0]; var setName=s1[1];
+  var s2=useState(""); var email=s2[0]; var setEmail=s2[1];
+  var s3=useState(""); var pwd=s3[0]; var setPwd=s3[1];
+  var s4=useState("chef_chantier"); var role=s4[0]; var setRole=s4[1];
+  var s5=useState(""); var chantier=s5[0]; var setChantier=s5[1];
   var s6=useState(false); var loading=s6[0]; var setLoading=s6[1];
   var toastState=useToast(); var toast=toastState[0]; var showToast=toastState[1];
-  var roleIcons = { chef_chantier:'👷', production:'🏭', stock:'📦', direction:'📊' };
-  var roleLabels = { chef_chantier:'Chef de Chantier', production:'Resp. Production', stock:'Resp. Stock', direction:'Direction' };
-
+  var roleIcons = { chef_chantier:"👷", production:"🏭", stock:"📦", direction:"📊" };
+  var roleLabels = { chef_chantier:"Chef de Chantier", production:"Resp. Production", stock:"Resp. Stock", direction:"Direction" };
   async function createUser(e) {
     e.preventDefault(); setLoading(true);
     try {
-      var cfg = FIREBASE_CONFIG;
-      var secApp;
-      try { secApp = firebase.app('btcsec'); } catch(err) { secApp = firebase.initializeApp(cfg, 'btcsec'); }
+      var cfg = FIREBASE_CONFIG; var secApp;
+      try { secApp = firebase.app("btcsec"); } catch(err) { secApp = firebase.initializeApp(cfg, "btcsec"); }
       var secAuth = secApp.auth();
       var cred = await secAuth.createUserWithEmailAndPassword(email, pwd);
-      await db.collection('users').doc(cred.user.uid).set({
-        email:email, name:name, role:role,
-        chantier: role==='chef_chantier' ? chantier : '',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      await db.collection("users").doc(cred.user.uid).set({ email:email, name:name, role:role, chantier:role==="chef_chantier"?chantier:"", createdAt:firebase.firestore.FieldValue.serverTimestamp() });
       await secAuth.signOut();
-      setName(''); setEmail(''); setPwd(''); setChantier('');
-      showToast('Compte cree : ' + name);
-    } catch(ex) { showToast(ex.message, 'error'); }
+      setName(""); setEmail(""); setPwd(""); setChantier(""); showToast("Compte cree : " + name);
+    } catch(ex) { showToast(ex.message, "error"); }
     setLoading(false);
   }
-
-  return (
-    <div>
-      <Toast msg={toast.msg} type={toast.type} />
-      <div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Gestion des utilisateurs</div>
-      <div style={C.card}>
-        <div style={{ fontWeight:700, marginBottom:12 }}>Creer un compte</div>
-        <form onSubmit={createUser} style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          <input value={name} onChange={function(e){setName(e.target.value);}} required placeholder="Nom complet" style={C.input} />
-          <input type="email" value={email} onChange={function(e){setEmail(e.target.value);}} required placeholder="Email" style={C.input} />
-          <input type="password" value={pwd} onChange={function(e){setPwd(e.target.value);}} required minLength={6} placeholder="Mot de passe (6+ car.)" style={C.input} />
-          <select value={role} onChange={function(e){setRole(e.target.value);}} style={C.input}>
-            {Object.entries(roleLabels).map(function(e){ return <option key={e[0]} value={e[0]}>{roleIcons[e[0]]} {e[1]}</option>; })}
-          </select>
-          {role==='chef_chantier' && <input value={chantier} onChange={function(e){setChantier(e.target.value);}} required placeholder="Nom du chantier" style={C.input} />}
-          <button type="submit" disabled={loading} style={C.btn()}>{loading?'...':'Creer le compte'}</button>
-        </form>
-      </div>
-      <div style={{ fontWeight:700, marginBottom:8 }}>Comptes existants ({users.length})</div>
-      {users.map(function(u) {
-        return (
-          <div key={u.id} style={{ ...C.card, display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ fontSize:24, flexShrink:0 }}>{roleIcons[u.role]||'?'}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:600, fontSize:13 }}>{u.name||'-'}</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>{u.email}</div>
-              {u.chantier && <div style={{ fontSize:11, color:'#1d4ed8' }}>Chantier : {u.chantier}</div>}
-            </div>
-            <span style={C.pill('#f3f4f6','#374151')}>{roleLabels[u.role]||u.role}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  return (<div><Toast msg={toast.msg} type={toast.type} /><div style={{ fontWeight:800, fontSize:17, marginBottom:12 }}>Gestion des utilisateurs</div><div style={C.card}><div style={{ fontWeight:700, marginBottom:12 }}>Creer un compte</div><form onSubmit={createUser} style={{ display:"flex", flexDirection:"column", gap:10 }}><input value={name} onChange={function(e){setName(e.target.value);}} required placeholder="Nom complet" style={C.input} /><input type="email" value={email} onChange={function(e){setEmail(e.target.value);}} required placeholder="Email" style={C.input} /><input type="password" value={pwd} onChange={function(e){setPwd(e.target.value);}} required minLength={6} placeholder="Mot de passe (6+ car.)" style={C.input} /><select value={role} onChange={function(e){setRole(e.target.value);}} style={C.input}>{Object.entries(roleLabels).map(function(e){ return <option key={e[0]} value={e[0]}>{roleIcons[e[0]]} {e[1]}</option>; })}</select>{role==="chef_chantier" && <input value={chantier} onChange={function(e){setChantier(e.target.value);}} required placeholder="Nom du chantier" style={C.input} />}<button type="submit" disabled={loading} style={C.btn()}>{loading?"...":"Creer le compte"}</button></form></div><div style={{ fontWeight:700, marginBottom:8 }}>Comptes existants ({users.length})</div>{users.map(function(u) { return (<div key={u.id} style={{ ...C.card, display:"flex", alignItems:"center", gap:12 }}><div style={{ fontSize:24, flexShrink:0 }}>{roleIcons[u.role]||"?"}</div><div style={{ flex:1 }}><div style={{ fontWeight:600, fontSize:13 }}>{u.name||"-"}</div><div style={{ fontSize:11, color:"#9ca3af" }}>{u.email}</div>{u.chantier && <div style={{ fontSize:11, color:"#1d4ed8" }}>Chantier : {u.chantier}</div>}</div><span style={C.pill("#f3f4f6","#374151")}>{roleLabels[u.role]||u.role}</span></div>); })}</div>);
 }
-
 function DirectionApp(props) {
   var user=props.user; var userDoc=props.userDoc;
-  var s=useState('dashboard'); var tab=s[0]; var setTab=s[1];
+  var s=useState("dashboard"); var tab=s[0]; var setTab=s[1];
   var s2=useState([]); var commandes=s2[0]; var setCommandes=s2[1];
-  var s3=useState([]); var users=s3[0]; var setUsers=s3[1];
-  var stock=useStock(); var prods=stock.prods; var sorties=stock.sorties; var cmdWait=stock.cmdWait; var stockSech=stock.stockSech; var stockPret=stock.stockPret;
-  var tabs = [{id:'dashboard',label:'Dashboard'},{id:'production',label:'Production'},{id:'stock',label:'Stock'},{id:'commandes',label:'Commandes'},{id:'chantiers',label:'Chantiers'},{id:'utilisateurs',label:'Utilisateurs'}];
-
+  var s3=useState([]); var cmdAttente=s3[0]; var setCmdAttente=s3[1];
+  var s4=useState([]); var users=s4[0]; var setUsers=s4[1];
+  var stock=useStock(); var prods=stock.prods; var sorties=stock.sorties; var stockSech=stock.stockSech; var stockPret=stock.stockPret; var cmdValidees=stock.cmdValidees;
+  var tabs = [{id:"dashboard",label:"Dashboard"},{id:"production",label:"Production"},{id:"stock",label:"Stock"},{id:"commandes",label:"Commandes"},{id:"chantiers",label:"Chantiers"},{id:"utilisateurs",label:"Utilisateurs"}];
   useEffect(function() {
-    var u1 = db.collection('commandes').orderBy('timestamp','desc').limit(200).onSnapshot(function(s){setCommandes(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
-    var u2 = db.collection('users').orderBy('name').onSnapshot(function(s){setUsers(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
-    return function(){ u1(); u2(); };
+    var u1 = db.collection("commandes").orderBy("timestamp","desc").limit(200).onSnapshot(function(s){setCommandes(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
+    var u2 = db.collection("commandes").where("status","==","En attente").orderBy("timestamp","desc").onSnapshot(function(s){setCmdAttente(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
+    var u3 = db.collection("users").orderBy("name").onSnapshot(function(s){setUsers(s.docs.map(function(d){return Object.assign({id:d.id},d.data());}));});
+    return function(){ u1(); u2(); u3(); };
   }, []);
-
   var todayProds = prods.filter(function(p){return p.date===todayStr();});
   var todaySorties = sorties.filter(function(s){return s.date===todayStr();});
-
-  return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3' }}>
-      <NavBar userDoc={userDoc} role="direction" tab={tab} setTab={setTab} tabs={tabs} badge={cmdWait.length} />
-      <div style={C.page} className="fade-in">
-        {tab==='dashboard' && <DashboardTab todayProds={todayProds} todaySorties={todaySorties} stockSech={stockSech} stockPret={stockPret} cmdWait={cmdWait} />}
-        {tab==='production' && <ProdListTab prods={prods} title="Toutes les productions" />}
-        {tab==='stock' && <div><SechageTab stockSech={stockSech} /><div style={{marginTop:8}} /><PretTab stockPret={stockPret} /></div>}
-        {tab==='commandes' && <AllCmdTab commandes={commandes} />}
-        {tab==='chantiers' && <ChantierRecapTab sorties={sorties} />}
-        {tab==='utilisateurs' && <UsersTab users={users} />}
-      </div>
-    </div>
-  );
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3" }}><NavBar userDoc={userDoc} role="direction" tab={tab} setTab={setTab} tabs={tabs} badge={cmdAttente.length} /><div style={C.page} className="fade-in">{tab==="dashboard" && <DashboardTab todayProds={todayProds} todaySorties={todaySorties} stockSech={stockSech} stockPret={stockPret} cmdAttente={cmdAttente} cmdValidees={cmdValidees} />}{tab==="production" && <ProdListTab prods={prods} title="Toutes les productions" />}{tab==="stock" && <div><div style={{marginBottom:8}}><PretTab stockPret={stockPret} showPrix={true} /></div><SechageTab stockSech={stockSech} /></div>}{tab==="commandes" && <AllCmdTab commandes={commandes} />}{tab==="chantiers" && <ChantierRecapTab sorties={sorties} />}{tab==="utilisateurs" && <UsersTab users={users} />}</div></div>);
 }
-
 function PendingScreen(props) {
-  return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-      <div style={{ background:'#fff', borderRadius:20, padding:28, maxWidth:340, textAlign:'center', boxShadow:'0 4px 24px rgba(0,0,0,.1)' }}>
-        <div style={{ fontSize:48, marginBottom:12 }}>⏳</div>
-        <div style={{ fontWeight:800, fontSize:18, marginBottom:8 }}>Compte en cours de configuration</div>
-        <div style={{ color:'#6b7280', fontSize:13 }}>Contactez votre responsable Direction.</div>
-        <div style={{ color:'#9ca3af', fontSize:11, marginTop:8 }}>{props.user.email}</div>
-        <button onClick={function(){auth.signOut();}} style={{ ...C.btn('#374151'), marginTop:16 }}>Deconnexion</button>
-      </div>
-    </div>
-  );
+  return (<div style={{ minHeight:"100vh", background:"#FDF6E3", display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}><div style={{ background:"#fff", borderRadius:20, padding:28, maxWidth:340, textAlign:"center", boxShadow:"0 4px 24px rgba(0,0,0,.1)" }}><div style={{ fontSize:48, marginBottom:12 }}>⏳</div><div style={{ fontWeight:800, fontSize:18, marginBottom:8 }}>Compte en cours de configuration</div><div style={{ color:"#6b7280", fontSize:13 }}>Contactez votre responsable Direction.</div><div style={{ color:"#9ca3af", fontSize:11, marginTop:8 }}>{props.user.email}</div><button onClick={function(){auth.signOut();}} style={{ ...C.btn("#374151"), marginTop:16 }}>Deconnexion</button></div></div>);
 }
-
 function App() {
   var s1=useState(false); var fbReady=s1[0]; var setFbReady=s1[1];
   var s2=useState(null); var user=s2[0]; var setUser=s2[1];
   var s3=useState(null); var userDoc=s3[0]; var setUserDoc=s3[1];
   var s4=useState(true); var loading=s4[0]; var setLoading=s4[1];
-
-  useEffect(function() {
-    try { initFB(); setFbReady(true); }
-    catch(e) { setLoading(false); }
-  }, []);
-
+  useEffect(function() { try { initFB(); setFbReady(true); } catch(e) { setLoading(false); } }, []);
   useEffect(function() {
     if (!fbReady) return;
     return auth.onAuthStateChanged(async function(u) {
       setUser(u);
-      if (u) {
-        var doc = await db.collection('users').doc(u.uid).get();
-        setUserDoc(doc.exists ? doc.data() : null);
-      } else { setUserDoc(null); }
+      if (u) { try { var doc = await db.collection("users").doc(u.uid).get(); setUserDoc(doc.exists ? doc.data() : null); } catch(e) { setUserDoc(null); } }
+      else { setUserDoc(null); }
       setLoading(false);
     });
   }, [fbReady]);
-
-  if (loading) return (
-    <div style={{ minHeight:'100vh', background:'#FDF6E3', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}>
-      <div style={{ fontSize:52 }}>🧱</div>
-      <div style={{ color:'#9ca3af', fontSize:14 }}>Chargement...</div>
-    </div>
-  );
-
+  if (loading) return (<div style={{ minHeight:"100vh", background:"#FDF6E3", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:12 }}><div style={{ fontSize:52 }}>🧱</div><div style={{ color:"#9ca3af", fontSize:14 }}>Chargement...</div></div>);
   if (!user) return <LoginScreen />;
   var role = userDoc && userDoc.role ? userDoc.role : null;
   if (!role) return <PendingScreen user={user} />;
-  if (role==='chef_chantier') return <ChefApp user={user} userDoc={userDoc} />;
-  if (role==='production') return <ProductionApp user={user} userDoc={userDoc} />;
-  if (role==='stock') return <StockApp user={user} userDoc={userDoc} />;
-  if (role==='direction') return <DirectionApp user={user} userDoc={userDoc} />;
+  if (role==="chef_chantier") return <ChefApp user={user} userDoc={userDoc} />;
+  if (role==="production") return <ProductionApp user={user} userDoc={userDoc} />;
+  if (role==="stock") return <StockApp user={user} userDoc={userDoc} />;
+  if (role==="direction") return <DirectionApp user={user} userDoc={userDoc} />;
   return <PendingScreen user={user} />;
 }
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 </script>
 </body>
 </html>
