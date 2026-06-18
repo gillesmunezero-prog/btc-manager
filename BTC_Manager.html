@@ -114,6 +114,10 @@ function Login() {
         await cu.updatePassword(udoc.data().pendingPassword);
         await db.collection("users").doc(cu.uid).update({pendingPassword:firebase.firestore.FieldValue.delete()});
       }
+      if(udoc.exists&&udoc.data().pendingEmail){
+        await cu.updateEmail(udoc.data().pendingEmail);
+        await db.collection("users").doc(cu.uid).update({email:udoc.data().pendingEmail,pendingEmail:firebase.firestore.FieldValue.delete()});
+      }
     }
   }catch(ep){}
 }
@@ -168,6 +172,7 @@ const [editUserTarget, setEditUserTarget] = useState(null);
 const [editUserNom, setEditUserNom] = useState("");
 const [editUserRole, setEditUserRole] = useState("chef_chantier");
 const [editUserPwd, setEditUserPwd] = useState("");
+  const [editUserEmail, setEditUserEmail] = useState('');
 const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
 
@@ -511,6 +516,7 @@ setInvSec({});setInvSechage({});
             {editUserTarget&&(
               <div style={{background:"#FEF9F0",border:"2px solid #C0392B",borderRadius:12,padding:16,marginBottom:16,maxWidth:420}}>
                 <h4 style={{color:"#8B1A10",marginBottom:12}}>Modifier: {editUserTarget.nom||editUserTarget.email}</h4>
+              <input placeholder="Adresse email" value={editUserEmail} onChange={e=>setEditUserEmail(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14}} />
                 <input placeholder="Nom complet" value={editUserNom} onChange={e=>setEditUserNom(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14}} />
                 <select value={editUserRole} onChange={e=>setEditUserRole(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14,background:"white"}}>
                   <option value="chef_chantier">Chef de chantier</option>
@@ -524,7 +530,9 @@ setInvSec({});setInvSechage({});
                   <button onClick={()=>{setEditUserTarget(null);setUserEditMsg("");}} style={{flex:1,padding:"8px",background:"#EEE",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Annuler</button>
                   <button onClick={async function(){
                     try {
-                      await db.collection("users").doc(editUserTarget.id).update(Object.assign({nom:editUserNom,role:editUserRole},editUserPwd?{pendingPassword:editUserPwd}:{}));
+                      var updateData2 = Object.assign({nom:editUserNom,role:editUserRole},editUserPwd?{pendingPassword:editUserPwd}:{});
+if(editUserEmail && editUserEmail.trim() && editUserEmail.trim()!==editUserTarget.email){updateData2.pendingEmail=editUserEmail.trim();}
+await db.collection("users").doc(editUserTarget.id).update(updateData2);
                       setUserEditMsg("Modifications enregistrees !");
                       setTimeout(()=>{setEditUserTarget(null);setUserEditMsg("");},1500);
                     } catch(e){setUserEditMsg("Erreur: "+e.message);}
@@ -549,7 +557,7 @@ setInvSec({});setInvSechage({});
                       </div>
                     </div>
                     <div style={{display:"flex",gap:6}}>
-                      <button onClick={()=>{setEditUserTarget(u);setEditUserNom(u.nom||"");setEditUserRole(u.role||"chef_chantier");setEditUserPwd("");setUserEditMsg("");}} style={{background:"#E67E22",color:"white",border:"none",padding:"6px 12px",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:12}}>Modifier</button>
+                      <button onClick={()=>{setEditUserTarget(u);setEditUserNom(u.nom||"");setEditUserRole(u.role||"chef_chantier");setEditUserPwd("");setEditUserEmail(u.email||"");setUserEditMsg("");}} style={{background:"#E67E22",color:"white",border:"none",padding:"6px 12px",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:12}}>Modifier</button>
                       <button onClick={async function(){
                         if(window.confirm("Supprimer "+u.nom+"?")) { try{await db.collection("users").doc(u.id).delete();}catch(e){alert("Erreur: "+e.message);} }
                       }} style={{background:"#E74C3C",color:"white",border:"none",padding:"6px 12px",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:12}}>Supprimer</button>
