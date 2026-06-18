@@ -677,9 +677,12 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   var passerCommande = async function() {
     if (!cmdType||!cmdQte) { setMsgCmd("Choisissez un type et entrez la quantite"); return; }
     try {
-      // Numéro de commande séquentiel
-      const snapBC = await db.collection("commandes").get();
-      var numBC = "N" + (snapBC.size + 1);
+      // Générer numéro BC unique
+      var now = new Date();
+      var yyyy = now.getFullYear();
+      var mm = String(now.getMonth()+1).padStart(2,"0");
+      var rand = Math.floor(1000+Math.random()*9000);
+      var numBC = "BC-"+yyyy+mm+"-"+rand;
       var catItem = CATALOGUE.find(function(p){return p.id===cmdType;})||{};
       await db.collection("commandes").add({
         numBC: numBC,
@@ -1227,7 +1230,12 @@ function DashboardComptable({ user, userData }) {
   }
 
   return (
-    React.createElement("div", { style: { padding: "8px" } },
+    React.createElement("div", { style: { minHeight: "100vh", background: "#FDF6E3" } },
+      React.createElement("div", { style: { background: "linear-gradient(90deg,#2C6E49,#52b788)", color: "white", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" } },
+        React.createElement("div", null, React.createElement("strong", null, "BTC Manager"), React.createElement("span", { style: { fontSize: 12, opacity: 0.8, marginLeft: 8 } }, "| Comptable - ", userData.nom || user.email)),
+        React.createElement("button", { onClick: () => auth.signOut(), style: { background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "white", padding: "5px 14px", borderRadius: 7, cursor: "pointer", fontSize: 13 } }, "Déconnexion")
+      ),
+      React.createElement("div", { style: { padding: "8px" } },
       React.createElement("h2", { style: { color: "#2C6E49" } }, "💶 Comptabilité"),
       msg && React.createElement("div", { style: { background: "#2C6E49", color: "#fff", padding: "8px 12px", borderRadius: "6px", marginBottom: "8px" } }, msg),
       React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" } },
@@ -1383,6 +1391,7 @@ function DashboardComptable({ user, userData }) {
           )
         )
       )
+    )
     )
   );
 }
