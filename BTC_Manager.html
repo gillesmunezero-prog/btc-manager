@@ -173,6 +173,7 @@ const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
   const [pertes, setPertes] = React.useState([]);
 
+  const [evenements, setEvenements] = React.useState([]);
   useEffect(() => {
     var u5 = db.collection("chantiers").onSnapshot(snap => {
       var allCh = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
@@ -193,14 +194,21 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     var u6 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => {
       setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+    const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
+    return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); };
   }, []);
 
   const validerCmd = async (id) => {
     await db.collection("commandes").doc(id).update({ status:"Validee", validePar: userData.nom||user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp() });
+    var cmdObjVal = commandes.find(function(c){return c.id===id;}) || {};
+
+    try { await db.collection("evenements").add({ numBC: cmdObjVal.numBC||id, chantier: cmdObjVal.chantierNom||"", action: "Commande validée par Direction", acteur: userData.nom||user.email, role: "direction", details: "N°"+(cmdObjVal.numBC||id)+" | Qté: "+(cmdObjVal.quantite||0)+" BTC | Chantier: "+(cmdObjVal.chantierNom||""), statut: "Validée - En attente livraison", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
   };
   const refuserCmd = async (id) => {
     await db.collection("commandes").doc(id).update({ status:"Refusee" });
+    var cmdObjRef = commandes.find(function(c){return c.id===id;}) || {};
+
+    try { await db.collection("evenements").add({ numBC: cmdObjRef.numBC||id, chantier: cmdObjRef.chantierNom||"", action: "Commande refusée", acteur: userData.nom||user.email, role: "direction", details: "N°"+(cmdObjRef.numBC||id)+" | Refusée par Direction", statut: "Refusée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
   };
   const creerUser = async () => {
     if (!newEmail||!newPassword||!newNom) { setMsgUser("Remplissez tous les champs"); return; }
@@ -573,75 +581,59 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
             })}
           </div>
         )}
-        {tab==="historique"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Historique des actions</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Traçabilite complete de toutes les actions. Visible uniquement par la direction.</p>
-            <h4 style={{color:"#8B1A10",marginBottom:8,marginTop:16}}>Commandes ({commandes.length})</h4>
-            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:24,overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{background:"#F8E8E0"}}>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Type</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Qte</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Chantier</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Commandé par</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date commande</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Validé par</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date validation</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Livré par</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date livraison</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Reçu le</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Statut</th>
-                </tr></thead>
+                {tab==="historique"&&(
+          <div>
+            <h3 style={{color:"#8B1A10",marginBottom:4}}>📋 Journal de traçabilité — Toutes les actions</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:12}}>Chaque action sur un bon de commande est enregistrée ici en temps réel.</p>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
+                <thead>
+                  <tr style={{background:"#8B1A10",color:"white",position:"sticky",top:0}}>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>🕐 Date / Heure</th>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>📄 N° BC</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>🏗️ Chantier</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>👤 Intervenant</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>🎭 Rôle</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>⚡ Action</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>📝 Détails</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>📊 Statut</th>
+                  </tr>
+                </thead>
                 <tbody>
-                {commandes.map(function(cmd,ci){
-                  function fmtDate(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(","," ");}catch(e){return"-";}}
-                  var stColor=cmd.status==="Validee"?"#27AE60":cmd.status==="Livree"?"#2980B9":cmd.status==="Refusee"?"#E74C3C":"#E67E22";
-                  return(<tr key={cmd.id} style={{borderBottom:"1px solid #F0E0D6",background:ci%2===0?"white":"#FDFAF8"}}>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.type}</td>
-                    <td style={{padding:"6px 6px",textAlign:"center",fontWeight:700}}>{cmd.quantite}</td>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.chantierNom||"-"}</td>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.chefNom||cmd.chefEmail||"-"}</td>
-                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.timestamp)}</td>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.validePar||"-"}</td>
-                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.valideAt)}</td>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.livrePar||"-"}</td>
-                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.livreAt)}</td>
-                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.chefConfirmeAt)}</td>
-                    <td style={{padding:"6px 6px"}}><span style={{background:stColor,color:"white",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{cmd.status}</span></td>
-                  </tr>);
-                })}
-                </tbody>
-              </table>
-            </div>
-            <h4 style={{color:"#8B1A10",marginBottom:8}}>Productions enregistrées ({productions.length})</h4>
-            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{background:"#F8E8E0"}}>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Type BTC</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Quantité</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Phase</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Enregistré par</th>
-                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date/Heure enregistrement</th>
-                </tr></thead>
-                <tbody>
-                {productions.map(function(p,pi){
-                  function fmtDate2(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(","," ");}catch(e){return"-";}}
-                  return(<tr key={p.id} style={{borderBottom:"1px solid #F0E0D6",background:pi%2===0?"white":"#FDFAF8"}}>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{p.date||"-"}</td>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{p.type}</td>
-                    <td style={{padding:"6px 6px",textAlign:"center",fontWeight:700}}>{p.quantite}</td>
-                    <td style={{padding:"6px 6px"}}><span style={{background:p.phase==="sechage"?"#E67E22":"#27AE60",color:"white",borderRadius:6,padding:"2px 8px",fontSize:10}}>{p.phase==="sechage"?"Séchage":"Sec"}</span></td>
-                    <td style={{padding:"6px 6px",fontSize:11}}>{p.responsable||"-"}</td>
-                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate2(p.timestamp)}</td>
-                  </tr>);
-                })}
+                  {evenements.length===0&&<tr><td colSpan={8} style={{padding:16,textAlign:"center",color:"#aaa"}}>Aucune action enregistrée. Les actions apparaîtront ici en temps réel.</td></tr>}
+                  {evenements.map((ev,idx)=>{
+                    const ts = ev.timestamp ? new Date(ev.timestamp.seconds ? ev.timestamp.seconds*1000 : ev.timestamp) : null;
+                    const dateStr = ts ? ts.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"}) : "-";
+                    const timeStr = ts ? ts.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "-";
+                    const roleColors = {direction:"#8B1A10",chef_chantier:"#1a5276",resp_stock:"#145a32",resp_production:"#784212",comptable:"#4a235a"};
+                    const roleColor = roleColors[ev.role] || "#555";
+                    const actionIcons = {"Commande créée":"📝","Commande validée par Direction":"✅","Commande refusée":"❌","Livraison effectuée":"🚚","Réception confirmée par chef":"📦","Ristourne validée":"🎁","Perte enregistrée":"📉"};
+                    const icon = actionIcons[ev.action] || "⚡";
+                    return (
+                      <tr key={ev.id} style={{background:idx%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                        <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"#555"}}>
+                          <div style={{fontWeight:600,color:"#333"}}>{dateStr}</div>
+                          <div style={{fontSize:11,color:"#888"}}>{timeStr}</div>
+                        </td>
+                        <td style={{padding:"7px 10px",fontFamily:"monospace",fontWeight:"bold",color:"#8B1A10",whiteSpace:"nowrap"}}>{ev.numBC||"-"}</td>
+                        <td style={{padding:"7px 10px",maxWidth:120}}>{ev.chantier||"-"}</td>
+                        <td style={{padding:"7px 10px",fontWeight:600}}>{ev.acteur||"-"}</td>
+                        <td style={{padding:"7px 10px"}}>
+                          <span style={{background:roleColor,color:"white",padding:"2px 7px",borderRadius:10,fontSize:11,whiteSpace:"nowrap"}}>{ev.role||"-"}</span>
+                        </td>
+                        <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>{icon} {ev.action||"-"}</td>
+                        <td style={{padding:"7px 10px",color:"#555",fontSize:11,maxWidth:200}}>{ev.details||"-"}</td>
+                        <td style={{padding:"7px 10px"}}>
+                          <span style={{background:"#EAF6E9",color:"#1a5276",padding:"2px 7px",borderRadius:8,fontSize:11,whiteSpace:"nowrap"}}>{ev.statut||"-"}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
-        )}
+        )}   )}
         {tab==="comptabilite"&&(
           React.createElement(DashboardComptable, { user: user, userData: userData })
         )}
@@ -693,6 +685,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
         prixUnit: catItem.prix||0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: cmdChantierNom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "direction", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte, statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       setMsgCmd("Commande envoyée ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
       setCmdQte(""); setCmdNotes(""); setCmdType("");
       setTabFiche("suivi");
@@ -721,6 +714,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
           source:"chantier", chantierNom:chantier.nom, cmdId:cmdId,
           timestamp:firebase.firestore.FieldValue.serverTimestamp()
         });
+      try { await db.collection("evenements").add({ numBC: cmd.numBC||cmdId, chantier: chantier.nom||"", action: "Réception confirmée par chef", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+(cmd.numBC||cmdId)+" | Qté reçue: "+(cmd.quantiteLivree||0)+" BTC | NC: "+nc, statut: "Réception confirmée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       }catch(ep){}
     }
     var v={...qteNonConformeInput}; delete v[cmdId]; setQteNonConformeInput(v);
@@ -1138,6 +1132,7 @@ function DashboardComptable({ user, userData }) {
         ristourneValidee: montant,
         ristourneValideeAt: new Date().toISOString()
       });
+      try { await db.collection("evenements").add({ numBC: cmd.numBC||cmd.id, chantier: cmd.chantierNom||"", action: "Ristourne validée", acteur: userData.nom||user.email, role: "comptable", details: "N°"+(cmd.numBC||cmd.id)+" | Ristourne: "+montant.toFixed(2)+"€ validée", statut: "Ristourne active", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       setMsg("Ristourne de " + montant.toFixed(2) + "€ validée pour BC " + (cmd.numBC || cmd.id));
     }
     setTimeout(() => setMsg(""), 3000);
@@ -1518,6 +1513,7 @@ function DashboardChef({ user, userData }) {
 
   const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
     background:tabChef===t?"#2980B9":"#D6EAF8", color:tabChef===t?"white":"#1A5276", fontWeight:tabChef===t?700:500, fontSize:13 });
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantierNom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+chantierNom, statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
 
   // Types disponibles pour le chantier sélectionné
   var typesChantier = [];
@@ -1734,6 +1730,7 @@ function DashboardStock({ user, userData }) {
       livrePar: userData.nom||user.email,
       livreAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    try { await db.collection("evenements").add({ numBC: cmd.numBC||cmd.id, chantier: cmd.chantierNom||"", action: "Livraison effectuée", acteur: userData.nom||user.email, role: "resp_stock", details: "N°"+(cmd.numBC||cmd.id)+" | Qté envoyée: "+qteEnvoi+" sur "+cmd.quantite+" | Statut: "+newStatus, statut: newStatus, timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
     await db.collection("stocks").doc(cmd.type).set({ sec: newSec, sechage: s.sechage||0 }, { merge:true });
     // Reset champ
     var newQte = Object.assign({}, qteEnvoi);
@@ -1900,6 +1897,7 @@ function DashboardProduction({ user, userData }) {
         source: "production",
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
+      try { await db.collection("evenements").add({ numBC: "PERTE", chantier: saisiePerteType, action: "Perte enregistrée", acteur: userData.nom||user.email, role: "resp_production", details: "Type: "+saisiePerteType+" | Qté: "+saisiePerteQte+" BTC | Raison: "+saisiePerteRaison, statut: "Perte enregistrée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       // Déduire du stock
       var stockDoc = await db.collection("stocks").doc(saisiePerteType).get();
       var sd = stockDoc.exists ? stockDoc.data() : {};
