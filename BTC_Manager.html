@@ -114,10 +114,6 @@ function Login() {
         await cu.updatePassword(udoc.data().pendingPassword);
         await db.collection("users").doc(cu.uid).update({pendingPassword:firebase.firestore.FieldValue.delete()});
       }
-      if(udoc.exists&&udoc.data().pendingEmail){
-        await cu.updateEmail(udoc.data().pendingEmail);
-        await db.collection("users").doc(cu.uid).update({email:udoc.data().pendingEmail,pendingEmail:firebase.firestore.FieldValue.delete()});
-      }
     }
   }catch(ep){}
 }
@@ -236,6 +232,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
         <button style={ts("chantiers")} onClick={()=>setTab("chantiers")}>Chantiers ({chantiers.length})</button>
         <button style={ts("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
       <button style={ts("inventaire")} onClick={()=>setTab("inventaire")}>Inventaire</button>
+      <button style={ts("historique")} onClick={()=>setTab("historique")}>Historique</button>
       </div>
       <div style={{padding:"0 16px 24px"}}>
 
@@ -517,6 +514,7 @@ setInvSec({});setInvSechage({});
               <div style={{background:"#FEF9F0",border:"2px solid #C0392B",borderRadius:12,padding:16,marginBottom:16,maxWidth:420}}>
                 <h4 style={{color:"#8B1A10",marginBottom:12}}>Modifier: {editUserTarget.nom||editUserTarget.email}</h4>
               <input placeholder="Adresse email" value={editUserEmail} onChange={e=>setEditUserEmail(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14}} />
+                <p style={{fontSize:11,color:"#888",marginTop:-4,marginBottom:4}}>Email de contact/affichage (modifiable librement). Le mot de passe sera changé à la prochaine connexion de l'utilisateur.</p>
                 <input placeholder="Nom complet" value={editUserNom} onChange={e=>setEditUserNom(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14}} />
                 <select value={editUserRole} onChange={e=>setEditUserRole(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14,background:"white"}}>
                   <option value="chef_chantier">Chef de chantier</option>
@@ -531,7 +529,7 @@ setInvSec({});setInvSechage({});
                   <button onClick={async function(){
                     try {
                       var updateData2 = Object.assign({nom:editUserNom,role:editUserRole},editUserPwd?{pendingPassword:editUserPwd}:{});
-if(editUserEmail && editUserEmail.trim() && editUserEmail.trim()!==editUserTarget.email){updateData2.pendingEmail=editUserEmail.trim();}
+                      if(editUserEmail && editUserEmail.trim()){updateData2.email=editUserEmail.trim();}
 await db.collection("users").doc(editUserTarget.id).update(updateData2);
                       setUserEditMsg("Modifications enregistrees !");
                       setTimeout(()=>{setEditUserTarget(null);setUserEditMsg("");},1500);
@@ -566,6 +564,75 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
                 </div>
               );
             })}
+          </div>
+        )}
+        {tab==="historique"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Historique des actions</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Traçabilite complete de toutes les actions. Visible uniquement par la direction.</p>
+            <h4 style={{color:"#8B1A10",marginBottom:8,marginTop:16}}>Commandes ({commandes.length})</h4>
+            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:24,overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#F8E8E0"}}>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Type</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Qte</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Chantier</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Commandé par</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date commande</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Validé par</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date validation</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Livré par</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date livraison</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Reçu le</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Statut</th>
+                </tr></thead>
+                <tbody>
+                {commandes.map(function(cmd,ci){
+                  function fmtDate(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(","," ");}catch(e){return"-";}}
+                  var stColor=cmd.status==="Validee"?"#27AE60":cmd.status==="Livree"?"#2980B9":cmd.status==="Refusee"?"#E74C3C":"#E67E22";
+                  return(<tr key={cmd.id} style={{borderBottom:"1px solid #F0E0D6",background:ci%2===0?"white":"#FDFAF8"}}>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.type}</td>
+                    <td style={{padding:"6px 6px",textAlign:"center",fontWeight:700}}>{cmd.quantite}</td>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.chantierNom||"-"}</td>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.chefNom||cmd.chefEmail||"-"}</td>
+                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.timestamp)}</td>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.validePar||"-"}</td>
+                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.valideAt)}</td>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{cmd.livrePar||"-"}</td>
+                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.livreAt)}</td>
+                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate(cmd.chefConfirmeAt)}</td>
+                    <td style={{padding:"6px 6px"}}><span style={{background:stColor,color:"white",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{cmd.status}</span></td>
+                  </tr>);
+                })}
+                </tbody>
+              </table>
+            </div>
+            <h4 style={{color:"#8B1A10",marginBottom:8}}>Productions enregistrées ({productions.length})</h4>
+            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#F8E8E0"}}>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Type BTC</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Quantité</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Phase</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Enregistré par</th>
+                  <th style={{padding:"8px 6px",textAlign:"left",borderBottom:"2px solid #C0392B"}}>Date/Heure enregistrement</th>
+                </tr></thead>
+                <tbody>
+                {productions.map(function(p,pi){
+                  function fmtDate2(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(","," ");}catch(e){return"-";}}
+                  return(<tr key={p.id} style={{borderBottom:"1px solid #F0E0D6",background:pi%2===0?"white":"#FDFAF8"}}>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{p.date||"-"}</td>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{p.type}</td>
+                    <td style={{padding:"6px 6px",textAlign:"center",fontWeight:700}}>{p.quantite}</td>
+                    <td style={{padding:"6px 6px"}}><span style={{background:p.phase==="sechage"?"#E67E22":"#27AE60",color:"white",borderRadius:6,padding:"2px 8px",fontSize:10}}>{p.phase==="sechage"?"Séchage":"Sec"}</span></td>
+                    <td style={{padding:"6px 6px",fontSize:11}}>{p.responsable||"-"}</td>
+                    <td style={{padding:"6px 6px",fontSize:10,color:"#555"}}>{fmtDate2(p.timestamp)}</td>
+                  </tr>);
+                })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
