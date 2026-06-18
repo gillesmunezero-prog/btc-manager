@@ -505,6 +505,7 @@ setInvSec({});setInvSechage({});
                 <option value="resp_stock">Responsable Stock</option>
                 <option value="resp_production">Responsable Production</option>
                 <option value="direction">Direction</option>
+                <option value="comptable">Comptable</option>
               </select>
               {msgUser&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgUser.includes("Compte")?"#EAFAF1":"#FFECEC",color:msgUser.includes("Compte")?"#1E8449":"#C0392B"}}>{msgUser}</div>}
               <button onClick={creerUser} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Creer le compte</button>
@@ -521,6 +522,7 @@ setInvSec({});setInvSechage({});
                   <option value="resp_stock">Responsable Stock</option>
                   <option value="resp_production">Responsable Production</option>
                   <option value="direction">Direction</option>
+                  <option value="comptable">Comptable</option>
                 </select>
                 <input type="password" placeholder="Nouveau mot de passe (laisser vide = inchange)" value={editUserPwd} onChange={e=>setEditUserPwd(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
                 {userEditMsg&&<div style={{padding:"7px 10px",borderRadius:6,marginBottom:8,fontSize:12,background:userEditMsg.includes("Modif")?"#EAFAF1":"#FFECEC",color:userEditMsg.includes("Modif")?"#1E8449":"#C0392B"}}>{userEditMsg}</div>}
@@ -649,6 +651,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   const [cmdQte, setCmdQte] = useState("");
   const [cmdNotes, setCmdNotes] = useState("");
   const [msgCmd, setMsgCmd] = useState("");
+  const [qteNonConformeInput, setQteNonConformeInput] = React.useState({});
 
   var cmdCh = commandes.filter(function(c){ return c.chantierId === chantier.id; });
   var besoins = chantier.besoins || {};
@@ -679,18 +682,21 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
 
-  var validerReception = async function(cmdId, qteRecue) {
-    // Chef confirme qu il a bien recu les BTC sur le chantier
+  var validerReception = async function(cmdId, qteRecue, nonConforme) {
     var cmd = cmdCh.find(function(c){return c.id===cmdId;});
     if (!cmd) return;
-    var dejaConfirme = cmd.quantiteConfirmeeChef || 0;
-    var nouveauTotal = dejaConfirme + qteRecue;
-    var cmdQteTotal = cmd.quantite || 0;
-    var newStatus = (cmd.status === "Livree" || nouveauTotal >= cmdQteTotal) ? "Livree" : cmd.status;
-    await db.collection("commandes").doc(cmdId).update({
-      quantiteConfirmeeChef: nouveauTotal,
-      chefConfirmeAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    var cmdQteTotal = (cmd.quantite||0);
+    var deja = (cmd.quantiteConfirmeeChef||0);
+    var nouveauTotal = Math.min(deja + qteRecue, cmdQteTotal);
+    var newStatus = (nouveauTotal >= cmdQteTotal) ? "Livree" : cmd.status;
+    var nc = parseInt(nonConforme)||0;
+    var prix = 0;
+    var catItem = CATALOGUE.find(function(p){return p.id===cmd.type;});
+    if(catItem) prix = catItem.prix||0;
+    var updateObj = { quantiteConfirmeeChef:nouveauTotal, chefConfirmeAt:firebase.firestore.FieldValue.serverTimestamp(), status:newStatus };
+    if(nc>0){ updateObj.qteNonConforme=(cmd.qteNonConforme||0)+nc; updateObj.montantNonConforme=((cmd.qteNonConforme||0)+nc)*prix; }
+    await db.collection("commandes").doc(cmdId).update(updateObj);
+    var v={...qteNonConformeInput}; delete v[cmdId]; setQteNonConformeInput(v);
     setMsgCmd("Reception confirmee !");
   };
 
@@ -818,8 +824,14 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                       <div style={{fontSize:12,color:"#666",marginTop:4}}>Commande: {(c.quantite||0).toLocaleString()} u | Livre par stock: <strong>{livree.toLocaleString()}</strong> u | Deja confirme: {confirme.toLocaleString()} u</div>
                       {aConfirmer > 0 ? (
                         <div style={{marginTop:10,padding:"10px 14px",background:"#EAFAF1",borderRadius:8}}>
-                          <div style={{fontSize:13,color:"#1E8449",fontWeight:600,marginBottom:6}}>A confirmer: {aConfirmer.toLocaleString()} u</div>
-                          <button onClick={()=>validerReception(c.id, aConfirmer)} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>✅ Confirmer reception de {aConfirmer.toLocaleString()} BTC</button>
+                          <div style={{fontSize:13,color:"#1E8449",fontWeight:600,marginBottom:8}}>A confirmer: {aConfirmer.toLocaleString()} u</div>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                            <label style={{fontSize:12,color:"#C0392B",fontWeight:700}}>⚠️ BTC non conformes :</label>
+                            <input type="number" min="0" placeholder="0" value={qteNonConformeInput[c.id]||""} onChange={e=>{var v={...qteNonConformeInput};v[c.id]=e.target.value;setQteNonConformeInput(v);}} style={{width:80,padding:"4px 8px",border:"2px solid #C0392B",borderRadius:6,fontSize:13,textAlign:"center"}} />
+                            <span style={{fontSize:11,color:"#888"}}>(laisser vide si aucun)</span>
+                          </div>
+                          {(parseInt(qteNonConformeInput[c.id])||0)>0&&<div style={{fontSize:11,color:"#C0392B",marginBottom:6,background:"#FDEBD0",padding:"4px 8px",borderRadius:6}}>⚠️ {parseInt(qteNonConformeInput[c.id])} BTC non conformes signalés pour ristourne.</div>}
+                          <button onClick={()=>validerReception(c.id,aConfirmer,qteNonConformeInput[c.id]||0)} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>✅ Confirmer la réception</button>
                         </div>
                       ):(
                         <div style={{marginTop:8,fontSize:12,color:"#27AE60",fontWeight:600}}>✅ Reception confirmee</div>
@@ -971,6 +983,8 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                   }
 
                   var totalGeneral = lignesFact.reduce(function(a,l){return a+l.montant;},0);
+                  var totalRistourne = lignesFact.reduce(function(a,l){return a+((l.cmd.qteNonConforme||0)*l.prod.prix);},0);
+                  var totalNet = totalGeneral - totalRistourne;
 
                   return (
                     <div>
@@ -983,6 +997,9 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                             <th style={{padding:"8px 10px",textAlign:"right"}}>Qte confirmee</th>
                             <th style={{padding:"8px 10px",textAlign:"right"}}>Prix unit.</th>
                             <th style={{padding:"8px 10px",textAlign:"right"}}>Montant</th>
+                            <th style={{padding:"8px 10px",textAlign:"right",background:"#C0392B"}}>Non conf.</th>
+                            <th style={{padding:"8px 10px",textAlign:"right",background:"#C0392B"}}>Ristourne</th>
+                            <th style={{padding:"8px 10px",textAlign:"right",background:"#27AE60"}}>Net facturable</th>
                           </tr></thead>
                           <tbody>
                             {lignesFact.map(function(l,i){
@@ -997,14 +1014,19 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(l.cmd.qteNonConforme||0).toLocaleString()} u</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>-{((l.cmd.qteNonConforme||0)*l.prod.prix).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{(l.montant-((l.cmd.qteNonConforme||0)*l.prod.prix)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                                 </tr>
                               );
                             })}
                           </tbody>
                           <tfoot>
                             <tr style={{background:"#8B1A10",color:"white",fontWeight:700,fontSize:15}}>
-                              <td colSpan={5} style={{padding:"12px 10px",textAlign:"right",letterSpacing:1}}>TOTAL GENERAL A FACTURER</td>
-                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:17}}>{totalGeneral.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                              <td colSpan={6} style={{padding:"12px 10px",textAlign:"right",letterSpacing:1}}>TOTAL GENERAL A FACTURER</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{totalGeneral.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,background:"#C0392B"}}>-{totalRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,background:"#27AE60",fontWeight:800}}>{totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1046,6 +1068,179 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function DashboardComptable({ user, userData }) {
+  const [commandes, setCommandes] = React.useState([]);
+  const [chantiers, setChantiers] = React.useState([]);
+  const [tab, setTab] = React.useState("facturation");
+  const [ristourneInput, setRistourneInput] = React.useState({});
+  const [msgRistourne, setMsgRistourne] = React.useState({});
+
+  React.useEffect(() => {
+    var u1 = db.collection("commandes").onSnapshot(snap => {
+      setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    var u2 = db.collection("chantiers").onSnapshot(snap => {
+      setChantiers(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { u1(); u2(); };
+  }, []);
+
+  // Chantiers avec au moins une réception confirmée
+  var chantiersFacturables = chantiers.filter(function(ch) {
+    return commandes.some(function(c){ return c.chantierId===ch.id && (c.quantiteConfirmeeChef||0)>0; });
+  });
+
+  // Commandes avec non-conformes
+  var cmdNonConformes = commandes.filter(function(c){ return (c.qteNonConforme||0)>0; });
+
+  function fmtDate(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"-";}}
+
+  var ts = function(t){ return {padding:"8px 18px",border:"none",cursor:"pointer",borderRadius:8,marginRight:6,background:tab===t?"#6C3483":"#E8DAEF",color:tab===t?"white":"#4A235A",fontWeight:tab===t?700:500,fontSize:14}; };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#F8F0FC",fontFamily:"Segoe UI,Arial,sans-serif"}}>
+      <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:26}}>💼</span>
+          <div>
+            <div style={{fontWeight:800,fontSize:18,letterSpacing:.5}}>BTC Manager</div>
+            <div style={{fontSize:12,opacity:.85}}>Comptabilité — {userData.nom||user.email}</div>
+          </div>
+        </div>
+        <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.18)",border:"none",color:"white",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Déconnexion</button>
+      </div>
+
+      <div style={{padding:"16px 20px 0"}}>
+        <button style={ts("facturation")} onClick={()=>setTab("facturation")}>💶 Facturation BTC</button>
+        <button style={ts("nonconforme")} onClick={()=>setTab("nonconforme")}>⚠️ BTC non conformes ({cmdNonConformes.length})</button>
+      </div>
+
+      <div style={{padding:"16px 20px 24px"}}>
+
+        {tab==="facturation"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:6,color:"#4A235A"}}>Chantiers à facturer</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Chantiers ayant au moins une réception confirmée par le chef de chantier.</p>
+            {chantiersFacturables.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucun chantier facturable pour le moment.</p>:
+            chantiersFacturables.map(function(ch){
+              var cmdsCh = commandes.filter(function(c){return c.chantierId===ch.id && (c.quantiteConfirmeeChef||0)>0;});
+              var totalBrut = cmdsCh.reduce(function(a,c){
+                var cat=CATALOGUE.find(function(p){return p.id===c.type;});
+                return a+(c.quantiteConfirmeeChef||0)*(cat?cat.prix:0);
+              },0);
+              var totalRistourne = cmdsCh.reduce(function(a,c){
+                var cat=CATALOGUE.find(function(p){return p.id===c.type;});
+                return a+(c.qteNonConforme||0)*(cat?cat.prix:0);
+              },0);
+              var totalNet = totalBrut - totalRistourne;
+              return (
+                <div key={ch.id} style={{background:"white",borderRadius:12,padding:20,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:12}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:16,color:"#4A235A"}}>{ch.nom}</div>
+                      <div style={{fontSize:13,color:"#666"}}>Client: <strong>{ch.client||"-"}</strong> | Chef: {ch.chefNom||"-"}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:12,color:"#888"}}>Montant brut</div>
+                      <div style={{fontWeight:700,fontSize:18,color:"#4A235A"}}>{totalBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+                      {totalRistourne>0&&<div style={{fontSize:12,color:"#C0392B",fontWeight:700}}>Ristourne: -{totalRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>}
+                      <div style={{fontSize:16,fontWeight:800,color:"#27AE60",borderTop:"2px solid #27AE60",paddingTop:4,marginTop:4}}>Net: {totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+                    </div>
+                  </div>
+                  <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead><tr style={{background:"#E8DAEF"}}>
+                      <th style={{padding:"7px 8px",textAlign:"left"}}>Type BTC</th>
+                      <th style={{padding:"7px 8px",textAlign:"right"}}>Qté confirmée</th>
+                      <th style={{padding:"7px 8px",textAlign:"right"}}>Prix unit.</th>
+                      <th style={{padding:"7px 8px",textAlign:"right"}}>Montant brut</th>
+                      <th style={{padding:"7px 8px",textAlign:"right",color:"#C0392B"}}>Non conf.</th>
+                      <th style={{padding:"7px 8px",textAlign:"right",color:"#E67E22"}}>Ristourne</th>
+                      <th style={{padding:"7px 8px",textAlign:"right",color:"#27AE60"}}>Net</th>
+                      <th style={{padding:"7px 8px",textAlign:"left"}}>Date récept.</th>
+                    </tr></thead>
+                    <tbody>
+                    {cmdsCh.map(function(c,ci){
+                      var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
+                      var montantBrut=(c.quantiteConfirmeeChef||0)*(cat.prix||0);
+                      var ristourne=(c.qteNonConforme||0)*(cat.prix||0);
+                      var net=montantBrut-ristourne;
+                      return(<tr key={c.id} style={{borderBottom:"1px solid #F0E8F8",background:ci%2===0?"white":"#FAF5FF"}}>
+                        <td style={{padding:"6px 8px",fontWeight:600}}>{cat.nom||c.type}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right"}}>{(c.quantiteConfirmeeChef||0).toLocaleString()}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:"#666"}}>{(cat.prix||0).toFixed(2)} EUR</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{montantBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(c.qteNonConforme||0).toLocaleString()}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:"#E67E22",fontWeight:700}}>{ristourne>0?"-"+ristourne.toLocaleString("fr-FR",{minimumFractionDigits:2})+" EUR":"0.00 EUR"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{net.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                        <td style={{padding:"6px 8px",color:"#666",fontSize:11}}>{fmtDate(c.chefConfirmeAt)}</td>
+                      </tr>);
+                    })}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+              );
+            })
+            }
+          </div>
+        )}
+
+        {tab==="nonconforme"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:6,color:"#C0392B"}}>⚠️ BTC non conformes</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Réceptions ayant signalé des BTC non conformes. Appliquez des ristournes ici.</p>
+            {cmdNonConformes.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucun BTC non conforme signalé.</p>:
+            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead><tr style={{background:"#FDEBD0"}}>
+                  <th style={{padding:"8px 10px",textAlign:"left"}}>Chantier</th>
+                  <th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th>
+                  <th style={{padding:"8px 10px",textAlign:"right"}}>Qté non conf.</th>
+                  <th style={{padding:"8px 10px",textAlign:"right"}}>Montant ristourne auto</th>
+                  <th style={{padding:"8px 10px",textAlign:"right"}}>Ristourne manuelle (EUR)</th>
+                  <th style={{padding:"8px 10px",textAlign:"left"}}>Statut</th>
+                </tr></thead>
+                <tbody>
+                {cmdNonConformes.map(function(c,ci){
+                  var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
+                  var ristourneAuto=(c.qteNonConforme||0)*(cat.prix||0);
+                  var ristourneFinale=c.ristourneValidee!=null?c.ristourneValidee:ristourneAuto;
+                  return(<tr key={c.id} style={{borderBottom:"1px solid #FDEBD0",background:ci%2===0?"white":"#FFFBF5"}}>
+                    <td style={{padding:"8px 10px",fontWeight:600,color:"#4A235A"}}>{c.chantierNom||"-"}</td>
+                    <td style={{padding:"8px 10px"}}>{cat.nom||c.type}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(c.qteNonConforme||0).toLocaleString()} u</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>{ristourneAuto.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                    <td style={{padding:"8px 10px",textAlign:"right"}}>
+                      <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}}>
+                        <input type="number" step="0.01" placeholder={ristourneAuto.toFixed(2)} value={ristourneInput[c.id]||""} onChange={e=>{var v={...ristourneInput};v[c.id]=e.target.value;setRistourneInput(v);}} style={{width:90,padding:"4px 6px",border:"1px solid #C0392B",borderRadius:6,fontSize:12,textAlign:"right"}} />
+                        <button onClick={async function(){
+                          var val=parseFloat(ristourneInput[c.id]);
+                          if(isNaN(val)) val=ristourneAuto;
+                          try{
+                            await db.collection("commandes").doc(c.id).update({ristourneValidee:val,ristourneValideeAt:firebase.firestore.FieldValue.serverTimestamp(),ristourneValideeParComptable:userData.nom||user.email});
+                            var v={...msgRistourne};v[c.id]="✅";setMsgRistourne(v);
+                          }catch(e){var v={...msgRistourne};v[c.id]="Erreur";setMsgRistourne(v);}
+                        }} style={{padding:"4px 10px",background:"#27AE60",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:12}}>✔</button>
+                        {msgRistourne[c.id]&&<span style={{color:"#27AE60",fontSize:12}}>{msgRistourne[c.id]}</span>}
+                      </div>
+                    </td>
+                    <td style={{padding:"8px 10px"}}>{c.ristourneValidee!=null?<span style={{color:"#27AE60",fontWeight:700,fontSize:12}}>✅ Validée: {c.ristourneValidee.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>:<span style={{color:"#E67E22",fontSize:12}}>En attente</span>}</td>
+                  </tr>);
+                })}
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -1688,6 +1883,7 @@ function App() {
   if (role==="chef_chantier") return <DashboardChef user={user} userData={userData} />;
   if (role==="resp_stock") return <DashboardStock user={user} userData={userData} />;
   if (role==="resp_production") return <DashboardProduction user={user} userData={userData} />;
+  if (role==="comptable") return <DashboardComptable user={user} userData={userData} />;
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDF6E3"}}>
