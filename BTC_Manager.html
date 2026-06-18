@@ -1506,6 +1506,7 @@ function DashboardChef({ user, userData }) {
         status: "EnAttente", quantiteLivree: 0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantierNom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+chantierNom, statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       setMsgCmd("Commande envoyee ! En attente de validation Direction.");
       setCmdQte(""); setCmdNotes("");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
@@ -1513,7 +1514,6 @@ function DashboardChef({ user, userData }) {
 
   const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
     background:tabChef===t?"#2980B9":"#D6EAF8", color:tabChef===t?"white":"#1A5276", fontWeight:tabChef===t?700:500, fontSize:13 });
-      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantierNom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+chantierNom, statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
 
   // Types disponibles pour le chantier sélectionné
   var typesChantier = [];
