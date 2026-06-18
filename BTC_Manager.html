@@ -171,6 +171,7 @@ const [editUserPwd, setEditUserPwd] = useState("");
   const [editUserEmail, setEditUserEmail] = useState('');
 const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
+  const [pertes, setPertes] = React.useState([]);
 
   useEffect(() => {
     var u5 = db.collection("chantiers").onSnapshot(snap => {
@@ -189,7 +190,10 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     var u4 = db.collection("users").onSnapshot(snap => {
       setUtilisateurs(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    return () => { u1(); u2(); u3(); u4(); u5(); };
+    var u6 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => {
+      setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
   }, []);
 
   const validerCmd = async (id) => {
@@ -233,6 +237,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
         <button style={ts("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
       <button style={ts("inventaire")} onClick={()=>setTab("inventaire")}>Inventaire</button>
       <button style={ts("historique")} onClick={()=>setTab("historique")}>Historique</button>
+      <button style={ts("comptabilite")} onClick={()=>setTab("comptabilite")}>💼 Comptabilité</button>
       </div>
       <div style={{padding:"0 16px 24px"}}>
 
@@ -637,6 +642,72 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
             </div>
           </div>
         )}
+        {tab==="comptabilite"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:6,color:"#4A235A"}}>💼 Suivi Comptabilité</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Vue complète: facturation, BTC non conformes et pertes. Même vue que le comptable.</p>
+            {(function(){
+              var chantiersF=chantiers.filter(function(ch){return commandes.some(function(c){return c.chantierId===ch.id&&(c.quantiteConfirmeeChef||0)>0;});});
+              var cmdNC=commandes.filter(function(c){return (c.qteNonConforme||0)>0;});
+              var totPerteProd=pertes.filter(function(p){return p.raison==="production";}).reduce(function(a,p){return a+p.quantite;},0);
+              var totPerteNC=pertes.filter(function(p){return p.raison==="retour_nc";}).reduce(function(a,p){return a+p.quantite;},0);
+              function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"-";}}
+              return(
+                <div>
+                  <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+                    <div style={{background:"white",borderRadius:10,padding:"12px 20px",boxShadow:"0 2px 6px rgba(0,0,0,0.07)",flex:1,minWidth:160}}>
+                      <div style={{fontSize:12,color:"#888"}}>Chantiers à facturer</div>
+                      <div style={{fontSize:28,fontWeight:800,color:"#4A235A"}}>{chantiersF.length}</div>
+                    </div>
+                    <div style={{background:"white",borderRadius:10,padding:"12px 20px",boxShadow:"0 2px 6px rgba(0,0,0,0.07)",flex:1,minWidth:160}}>
+                      <div style={{fontSize:12,color:"#888"}}>BTC non conformes</div>
+                      <div style={{fontSize:28,fontWeight:800,color:"#C0392B"}}>{cmdNC.reduce(function(a,c){return a+(c.qteNonConforme||0);},0).toLocaleString()}</div>
+                    </div>
+                    <div style={{background:"white",borderRadius:10,padding:"12px 20px",boxShadow:"0 2px 6px rgba(0,0,0,0.07)",flex:1,minWidth:160}}>
+                      <div style={{fontSize:12,color:"#888"}}>Total pertes (prod+NC)</div>
+                      <div style={{fontSize:28,fontWeight:800,color:"#E67E22"}}>{(totPerteProd+totPerteNC).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <h4 style={{color:"#4A235A",marginBottom:8}}>Commandes confirmées par chantier</h4>
+                  {chantiersF.map(function(ch){
+                    var cmdsCh=commandes.filter(function(c){return c.chantierId===ch.id&&(c.quantiteConfirmeeChef||0)>0;});
+                    var totalBrut=cmdsCh.reduce(function(a,c){var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};return a+(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);},0);
+                    var totalRist=cmdsCh.reduce(function(a,c){return a+(c.ristourneValidee||0);},0);
+                    return(
+                      <div key={ch.id} style={{background:"white",borderRadius:10,padding:16,marginBottom:12,boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:8}}>
+                          <div><strong style={{color:"#4A235A"}}>{ch.nom}</strong> <span style={{fontSize:12,color:"#666"}}>— {ch.client||"-"}</span></div>
+                          <div style={{textAlign:"right"}}><span style={{color:"#888",fontSize:12}}>Brut: {totalBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>{totalRist>0&&<span style={{color:"#C0392B",fontSize:12,marginLeft:8}}> | Rist: -{totalRist.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>}<div style={{fontWeight:800,color:"#27AE60",fontSize:15}}>Net: {(totalBrut-totalRist).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div></div>
+                        </div>
+                        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#E8DAEF"}}><th style={{padding:"6px 8px",textAlign:"left"}}>N° BC</th><th style={{padding:"6px 8px",textAlign:"left"}}>Type</th><th style={{padding:"6px 8px",textAlign:"right"}}>Qté</th><th style={{padding:"6px 8px",textAlign:"right"}}>Montant</th><th style={{padding:"6px 8px",textAlign:"right",color:"#C0392B"}}>Ristourne</th><th style={{padding:"6px 8px",textAlign:"right",color:"#27AE60"}}>Net</th><th style={{padding:"6px 8px"}}>Récept.</th><th style={{padding:"6px 8px"}}>Statut rist.</th></tr></thead>
+                        <tbody>{cmdsCh.map(function(c,ci){
+                          var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
+                          var mb=(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);
+                          var rv=c.ristourneValidee!=null?c.ristourneValidee:null;
+                          return(<tr key={c.id} style={{borderBottom:"1px solid #F0E8F8",background:ci%2===0?"white":"#FAF5FF"}}>
+                            <td style={{padding:"5px 8px",fontWeight:700,fontSize:11,color:"#4A235A"}}>{c.numBC||c.id.slice(0,8).toUpperCase()}</td>
+                            <td style={{padding:"5px 8px",fontSize:12}}>{cat.nom||c.type}</td>
+                            <td style={{padding:"5px 8px",textAlign:"right"}}>{(c.quantiteConfirmeeChef||0).toLocaleString()}</td>
+                            <td style={{padding:"5px 8px",textAlign:"right",fontWeight:700}}>{mb.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                            <td style={{padding:"5px 8px",textAlign:"right",color:"#C0392B"}}>{rv!=null?("-"+rv.toLocaleString("fr-FR",{minimumFractionDigits:2})+" EUR"):"—"}</td>
+                            <td style={{padding:"5px 8px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{(mb-(rv||0)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                            <td style={{padding:"5px 8px",color:"#666",fontSize:11}}>{fmtD(c.chefConfirmeAt)}</td>
+                            <td style={{padding:"5px 8px"}}>{rv!=null?<span style={{background:"#EAFAF1",color:"#27AE60",fontSize:11,padding:"2px 6px",borderRadius:4,fontWeight:700}}>✅ Validée</span>:(c.qteNonConforme?<span style={{background:"#FDEBD0",color:"#E67E22",fontSize:11,padding:"2px 6px",borderRadius:4}}>En attente</span>:<span style={{color:"#888",fontSize:11}}>—</span>)}</td>
+                          </tr>);
+                        })}</tbody></table></div>
+                      </div>
+                    );
+                  })}
+                  <h4 style={{color:"#C0392B",marginBottom:8,marginTop:20}}>📉 Pertes ({pertes.length})</h4>
+                  {pertes.length===0?<p style={{color:"#888"}}>Aucune perte enregistrée.</p>:
+                  <div style={{background:"white",borderRadius:10,padding:14,boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"6px 8px",textAlign:"left"}}>Date</th><th style={{padding:"6px 8px",textAlign:"left"}}>Type</th><th style={{padding:"6px 8px",textAlign:"right"}}>Qté</th><th style={{padding:"6px 8px",textAlign:"left"}}>Raison</th><th style={{padding:"6px 8px",textAlign:"left"}}>Source</th></tr></thead>
+                  <tbody>{pertes.map(function(p,pi){return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}><td style={{padding:"5px 8px",color:"#666",fontSize:11}}>{fmtD(p.timestamp)}</td><td style={{padding:"5px 8px",fontWeight:600,fontSize:12}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td><td style={{padding:"5px 8px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td><td style={{padding:"5px 8px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 6px",borderRadius:5,fontSize:11}}>{p.raison==="retour_nc"?"Retour NC":"Perte prod."}</span></td><td style={{padding:"5px 8px",fontSize:11,color:"#666"}}>{p.chantierNom||p.source||"-"}</td></tr>);})}</tbody></table></div>
+                  }
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -669,14 +740,23 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   var passerCommande = async function() {
     if (!cmdType||!cmdQte) { setMsgCmd("Choisissez un type et entrez la quantite"); return; }
     try {
+      // Générer numéro BC unique
+      var now = new Date();
+      var yyyy = now.getFullYear();
+      var mm = String(now.getMonth()+1).padStart(2,"0");
+      var rand = Math.floor(1000+Math.random()*9000);
+      var numBC = "BC-"+yyyy+mm+"-"+rand;
+      var catItem = CATALOGUE.find(function(p){return p.id===cmdType;})||{};
       await db.collection("commandes").add({
-        type: cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        numBC: numBC,
+        type: cmdType, typNom: catItem.nom||cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
         chantierId: chantier.id, chantierNom: chantier.nom, client: chantier.client,
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
         status: "EnAttente", quantiteLivree: 0,
+        prixUnit: catItem.prix||0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      setMsgCmd("Commande envoyee ! En attente de validation Direction.");
+      setMsgCmd("Commande envoyée ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
       setCmdQte(""); setCmdNotes(""); setCmdType("");
       setTabFiche("suivi");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
@@ -696,6 +776,16 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
     var updateObj = { quantiteConfirmeeChef:nouveauTotal, chefConfirmeAt:firebase.firestore.FieldValue.serverTimestamp(), status:newStatus };
     if(nc>0){ updateObj.qteNonConforme=(cmd.qteNonConforme||0)+nc; updateObj.montantNonConforme=((cmd.qteNonConforme||0)+nc)*prix; }
     await db.collection("commandes").doc(cmdId).update(updateObj);
+    if(nc>0){
+      try{
+        await db.collection("pertes").add({
+          type:cmd.type, quantite:nc, raison:"retour_nc",
+          responsable:userData.nom||user.email, responsableUid:user.uid,
+          source:"chantier", chantierNom:chantier.nom, cmdId:cmdId,
+          timestamp:firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }catch(ep){}
+    }
     var v={...qteNonConformeInput}; delete v[cmdId]; setQteNonConformeInput(v);
     setMsgCmd("Reception confirmee !");
   };
@@ -717,7 +807,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
         <div style={{padding:"12px 16px 0",display:"flex",flexWrap:"wrap"}}>
           <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>📊 Suivi</button>
           <button style={ts("commande")} onClick={()=>setTabFiche("commande")}>+ Passer une commande</button>
-          <button style={ts("reception")} onClick={()=>setTabFiche("reception")}>✅ Valider reception</button>
+          {(function(){var hasLiv=cmdCh.some(function(c){return (c.quantiteLivree||0)>0;});return(<button style={ts("reception")} onClick={()=>{if(hasLiv)setTabFiche("reception");}} disabled={!hasLiv} title={hasLiv?"":"En attente de livraison par le stock"} >{hasLiv?"✅ Valider réception":"🔒 Valider réception (en attente livraison)"}</button>);})()}
         </div>
 
         <div style={{padding:20}}>
@@ -1077,69 +1167,106 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
 function DashboardComptable({ user, userData }) {
   const [commandes, setCommandes] = React.useState([]);
   const [chantiers, setChantiers] = React.useState([]);
+  const [pertes, setPertes] = React.useState([]);
   const [tab, setTab] = React.useState("facturation");
+  const [msgR, setMsgR] = React.useState({});
   const [ristourneInput, setRistourneInput] = React.useState({});
-  const [msgRistourne, setMsgRistourne] = React.useState({});
+  const [factureCmd, setFactureCmd] = React.useState(null);
 
   React.useEffect(() => {
-    var u1 = db.collection("commandes").onSnapshot(snap => {
-      setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
-    });
-    var u2 = db.collection("chantiers").onSnapshot(snap => {
-      setChantiers(snap.docs.map(d=>({id:d.id,...d.data()})));
-    });
-    return () => { u1(); u2(); };
+    var u1 = db.collection("commandes").onSnapshot(snap => { setCommandes(snap.docs.map(d=>({id:d.id,...d.data()}))); });
+    var u2 = db.collection("chantiers").onSnapshot(snap => { setChantiers(snap.docs.map(d=>({id:d.id,...d.data()}))); });
+    var u3 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => { setPertes(snap.docs.map(d=>({id:d.id,...d.data()}))); });
+    return () => { u1(); u2(); u3(); };
   }, []);
 
-  // Chantiers avec au moins une réception confirmée
   var chantiersFacturables = chantiers.filter(function(ch) {
     return commandes.some(function(c){ return c.chantierId===ch.id && (c.quantiteConfirmeeChef||0)>0; });
   });
-
-  // Commandes avec non-conformes
   var cmdNonConformes = commandes.filter(function(c){ return (c.qteNonConforme||0)>0; });
 
   function fmtDate(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"-";}}
+  function fmtDateTime(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(","," ");}catch(e){return"-";}}
 
-  var ts = function(t){ return {padding:"8px 18px",border:"none",cursor:"pointer",borderRadius:8,marginRight:6,background:tab===t?"#6C3483":"#E8DAEF",color:tab===t?"white":"#4A235A",fontWeight:tab===t?700:500,fontSize:14}; };
+  var ts = function(t){ return {padding:"8px 18px",border:"none",cursor:"pointer",borderRadius:8,marginRight:6,marginBottom:6,background:tab===t?"#6C3483":"#E8DAEF",color:tab===t?"white":"#4A235A",fontWeight:tab===t?700:500,fontSize:14}; };
+
+  // Popup Facture
+  if(factureCmd) {
+    var fc=factureCmd;
+    var fcat=CATALOGUE.find(function(p){return p.id===fc.type;})||{};
+    var fMontantBrut=(fc.quantiteConfirmeeChef||0)*(fcat.prix||fc.prixUnit||0);
+    var fRistourne=fc.ristourneValidee!=null?fc.ristourneValidee:0;
+    var fNet=fMontantBrut-fRistourne;
+    return(
+      <div style={{minHeight:"100vh",background:"#F8F0FC",padding:20}}>
+        <div style={{maxWidth:680,margin:"0 auto",background:"white",borderRadius:12,padding:32,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:24}}>
+            <div>
+              <div style={{fontWeight:900,fontSize:24,color:"#4A235A"}}>🧾 FACTURE</div>
+              <div style={{fontSize:13,color:"#888",marginTop:4}}>Terre et Eau — Mamoudzou, Mayotte</div>
+              <div style={{fontSize:11,color:"#aaa"}}>SIRET: 93222797800016 | +262 639 57 92 44</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontWeight:700,fontSize:16,color:"#4A235A"}}>N° {fc.numBC||fc.id.slice(0,8).toUpperCase()}</div>
+              <div style={{fontSize:13,color:"#666"}}>Date: {fmtDate(fc.timestamp)}</div>
+              <div style={{fontSize:13,color:"#666"}}>Réception: {fmtDate(fc.chefConfirmeAt)}</div>
+            </div>
+          </div>
+          <div style={{background:"#F8F0FC",borderRadius:8,padding:"12px 16px",marginBottom:20}}>
+            <div style={{fontWeight:700,fontSize:15,color:"#4A235A"}}>CHANTIER: {fc.chantierNom}</div>
+            <div style={{fontSize:13,color:"#666"}}>Client: {fc.client||"-"}</div>
+            <div style={{fontSize:13,color:"#666"}}>Chef: {fc.chefNom||fc.chefEmail||"-"}</div>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:16}}>
+            <thead><tr style={{background:"#4A235A",color:"white"}}><th style={{padding:"9px 12px",textAlign:"left"}}>Description</th><th style={{padding:"9px 12px",textAlign:"right"}}>Qté</th><th style={{padding:"9px 12px",textAlign:"right"}}>Prix unit.</th><th style={{padding:"9px 12px",textAlign:"right"}}>Montant</th></tr></thead>
+            <tbody>
+              <tr style={{borderBottom:"1px solid #EEE"}}>
+                <td style={{padding:"10px 12px"}}><strong>{fcat.nom||fc.type}</strong><br/><span style={{fontSize:11,color:"#999"}}>{fcat.dim||""}</span></td>
+                <td style={{padding:"10px 12px",textAlign:"right"}}>{(fc.quantiteConfirmeeChef||0).toLocaleString()}</td>
+                <td style={{padding:"10px 12px",textAlign:"right"}}>{(fcat.prix||fc.prixUnit||0).toFixed(2)} EUR</td>
+                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700}}>{fMontantBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+              </tr>
+              {fRistourne>0&&<tr style={{borderBottom:"1px solid #FDEBD0",color:"#C0392B"}}><td style={{padding:"10px 12px"}} colSpan={3}>Ristourne ({fc.qteNonConforme||0} BTC non conformes)</td><td style={{padding:"10px 12px",textAlign:"right",fontWeight:700}}>-{fRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td></tr>}
+            </tbody>
+            <tfoot><tr style={{background:"#4A235A",color:"white",fontWeight:800,fontSize:16}}><td colSpan={3} style={{padding:"12px 12px",textAlign:"right"}}>TOTAL NET</td><td style={{padding:"12px 12px",textAlign:"right"}}>{fNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td></tr></tfoot>
+          </table>
+          <div style={{fontSize:11,color:"#aaa",marginBottom:20}}>Bon de commande: {fc.numBC||"-"} | Date commande: {fmtDateTime(fc.timestamp)}</div>
+          <div style={{display:"flex",gap:12}}>
+            <button onClick={()=>window.print()} style={{padding:"10px 24px",background:"#4A235A",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>🖨️ Imprimer</button>
+            <button onClick={()=>setFactureCmd(null)} style={{padding:"10px 24px",background:"#EEE",color:"#333",border:"none",borderRadius:8,cursor:"pointer"}}>← Retour</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{minHeight:"100vh",background:"#F8F0FC",fontFamily:"Segoe UI,Arial,sans-serif"}}>
       <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:26}}>💼</span>
-          <div>
-            <div style={{fontWeight:800,fontSize:18,letterSpacing:.5}}>BTC Manager</div>
-            <div style={{fontSize:12,opacity:.85}}>Comptabilité — {userData.nom||user.email}</div>
-          </div>
+          <div><div style={{fontWeight:800,fontSize:18}}>BTC Manager</div><div style={{fontSize:12,opacity:.85}}>Comptabilité — {userData.nom||user.email}</div></div>
         </div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.18)",border:"none",color:"white",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Déconnexion</button>
       </div>
-
-      <div style={{padding:"16px 20px 0"}}>
-        <button style={ts("facturation")} onClick={()=>setTab("facturation")}>💶 Facturation BTC</button>
-        <button style={ts("nonconforme")} onClick={()=>setTab("nonconforme")}>⚠️ BTC non conformes ({cmdNonConformes.length})</button>
+      <div style={{padding:"16px 20px 0",flexWrap:"wrap",display:"flex"}}>
+        <button style={ts("facturation")} onClick={()=>setTab("facturation")}>💶 Facturation ({chantiersFacturables.length})</button>
+        <button style={ts("nonconforme")} onClick={()=>setTab("nonconforme")}>⚠️ Non conformes ({cmdNonConformes.length})</button>
+        <button style={ts("pertes")} onClick={()=>setTab("pertes")}>📉 Pertes ({pertes.length})</button>
       </div>
-
       <div style={{padding:"16px 20px 24px"}}>
 
         {tab==="facturation"&&(
           <div className="fade-in">
             <h3 style={{marginBottom:6,color:"#4A235A"}}>Chantiers à facturer</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Chantiers ayant au moins une réception confirmée par le chef de chantier.</p>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Chantiers ayant des réceptions confirmées. Cliquez sur "Facture" pour générer la facture.</p>
             {chantiersFacturables.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucun chantier facturable pour le moment.</p>:
             chantiersFacturables.map(function(ch){
-              var cmdsCh = commandes.filter(function(c){return c.chantierId===ch.id && (c.quantiteConfirmeeChef||0)>0;});
-              var totalBrut = cmdsCh.reduce(function(a,c){
-                var cat=CATALOGUE.find(function(p){return p.id===c.type;});
-                return a+(c.quantiteConfirmeeChef||0)*(cat?cat.prix:0);
-              },0);
-              var totalRistourne = cmdsCh.reduce(function(a,c){
-                var cat=CATALOGUE.find(function(p){return p.id===c.type;});
-                return a+(c.qteNonConforme||0)*(cat?cat.prix:0);
-              },0);
-              var totalNet = totalBrut - totalRistourne;
-              return (
+              var cmdsCh=commandes.filter(function(c){return c.chantierId===ch.id&&(c.quantiteConfirmeeChef||0)>0;});
+              var totalBrut=cmdsCh.reduce(function(a,c){var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};return a+(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);},0);
+              var totalRist=cmdsCh.reduce(function(a,c){return a+(c.ristourneValidee||0);},0);
+              var totalNet=totalBrut-totalRist;
+              return(
                 <div key={ch.id} style={{background:"white",borderRadius:12,padding:20,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:12}}>
                     <div>
@@ -1147,39 +1274,30 @@ function DashboardComptable({ user, userData }) {
                       <div style={{fontSize:13,color:"#666"}}>Client: <strong>{ch.client||"-"}</strong> | Chef: {ch.chefNom||"-"}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:12,color:"#888"}}>Montant brut</div>
-                      <div style={{fontWeight:700,fontSize:18,color:"#4A235A"}}>{totalBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
-                      {totalRistourne>0&&<div style={{fontSize:12,color:"#C0392B",fontWeight:700}}>Ristourne: -{totalRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>}
-                      <div style={{fontSize:16,fontWeight:800,color:"#27AE60",borderTop:"2px solid #27AE60",paddingTop:4,marginTop:4}}>Net: {totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+                      <div style={{fontSize:12,color:"#888"}}>Montant brut: {totalBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+                      {totalRist>0&&<div style={{fontSize:12,color:"#C0392B"}}>Ristourne: -{totalRist.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>}
+                      <div style={{fontSize:18,fontWeight:800,color:"#27AE60"}}>Net: {totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
                     </div>
                   </div>
                   <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                    <thead><tr style={{background:"#E8DAEF"}}>
-                      <th style={{padding:"7px 8px",textAlign:"left"}}>Type BTC</th>
-                      <th style={{padding:"7px 8px",textAlign:"right"}}>Qté confirmée</th>
-                      <th style={{padding:"7px 8px",textAlign:"right"}}>Prix unit.</th>
-                      <th style={{padding:"7px 8px",textAlign:"right"}}>Montant brut</th>
-                      <th style={{padding:"7px 8px",textAlign:"right",color:"#C0392B"}}>Non conf.</th>
-                      <th style={{padding:"7px 8px",textAlign:"right",color:"#E67E22"}}>Ristourne</th>
-                      <th style={{padding:"7px 8px",textAlign:"right",color:"#27AE60"}}>Net</th>
-                      <th style={{padding:"7px 8px",textAlign:"left"}}>Date récept.</th>
-                    </tr></thead>
+                    <thead><tr style={{background:"#E8DAEF"}}><th style={{padding:"7px 8px",textAlign:"left"}}>N° BC</th><th style={{padding:"7px 8px",textAlign:"left"}}>Type BTC</th><th style={{padding:"7px 8px",textAlign:"right"}}>Qté conf.</th><th style={{padding:"7px 8px",textAlign:"right"}}>P.U.</th><th style={{padding:"7px 8px",textAlign:"right"}}>Montant brut</th><th style={{padding:"7px 8px",textAlign:"right",color:"#C0392B"}}>Ristourne</th><th style={{padding:"7px 8px",textAlign:"right",color:"#27AE60"}}>Net</th><th style={{padding:"7px 8px",textAlign:"left"}}>Date récept.</th><th style={{padding:"7px 8px"}}></th></tr></thead>
                     <tbody>
                     {cmdsCh.map(function(c,ci){
                       var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
-                      var montantBrut=(c.quantiteConfirmeeChef||0)*(cat.prix||0);
-                      var ristourne=(c.qteNonConforme||0)*(cat.prix||0);
-                      var net=montantBrut-ristourne;
+                      var mb=(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);
+                      var rv=c.ristourneValidee!=null?c.ristourneValidee:null;
+                      var net=mb-(rv||0);
                       return(<tr key={c.id} style={{borderBottom:"1px solid #F0E8F8",background:ci%2===0?"white":"#FAF5FF"}}>
-                        <td style={{padding:"6px 8px",fontWeight:600}}>{cat.nom||c.type}</td>
+                        <td style={{padding:"6px 8px",fontWeight:700,color:"#4A235A",fontSize:11}}>{c.numBC||c.id.slice(0,8).toUpperCase()}</td>
+                        <td style={{padding:"6px 8px"}}>{cat.nom||c.type}</td>
                         <td style={{padding:"6px 8px",textAlign:"right"}}>{(c.quantiteConfirmeeChef||0).toLocaleString()}</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",color:"#666"}}>{(cat.prix||0).toFixed(2)} EUR</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{montantBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(c.qteNonConforme||0).toLocaleString()}</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",color:"#E67E22",fontWeight:700}}>{ristourne>0?"-"+ristourne.toLocaleString("fr-FR",{minimumFractionDigits:2})+" EUR":"0.00 EUR"}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:"#666"}}>{(cat.prix||c.prixUnit||0).toFixed(2)}</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{mb.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                        <td style={{padding:"6px 8px",textAlign:"right",color:"#C0392B"}}>{rv!=null?("-"+rv.toLocaleString("fr-FR",{minimumFractionDigits:2})+" EUR"):"—"}</td>
                         <td style={{padding:"6px 8px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{net.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                         <td style={{padding:"6px 8px",color:"#666",fontSize:11}}>{fmtDate(c.chefConfirmeAt)}</td>
+                        <td style={{padding:"6px 8px"}}><button onClick={()=>setFactureCmd(c)} style={{padding:"4px 10px",background:"#4A235A",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>🧾 Facture</button></td>
                       </tr>);
                     })}
                     </tbody>
@@ -1187,51 +1305,93 @@ function DashboardComptable({ user, userData }) {
                   </div>
                 </div>
               );
-            })
-            }
+            })}
           </div>
         )}
 
         {tab==="nonconforme"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:6,color:"#C0392B"}}>⚠️ BTC non conformes</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Réceptions ayant signalé des BTC non conformes. Appliquez des ristournes ici.</p>
+            <h3 style={{marginBottom:6,color:"#C0392B"}}>⚠️ BTC non conformes — Gestion des ristournes</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Validez ou dévalidez les ristournes. Seules les ristournes validées apparaissent sur les factures.</p>
             {cmdNonConformes.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucun BTC non conforme signalé.</p>:
             <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead><tr style={{background:"#FDEBD0"}}>
-                  <th style={{padding:"8px 10px",textAlign:"left"}}>Chantier</th>
-                  <th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th>
-                  <th style={{padding:"8px 10px",textAlign:"right"}}>Qté non conf.</th>
-                  <th style={{padding:"8px 10px",textAlign:"right"}}>Montant ristourne auto</th>
-                  <th style={{padding:"8px 10px",textAlign:"right"}}>Ristourne manuelle (EUR)</th>
-                  <th style={{padding:"8px 10px",textAlign:"left"}}>Statut</th>
-                </tr></thead>
+                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"8px 10px",textAlign:"left"}}>N° BC</th><th style={{padding:"8px 10px",textAlign:"left"}}>Chantier</th><th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th><th style={{padding:"8px 10px",textAlign:"right"}}>Qté NC</th><th style={{padding:"8px 10px",textAlign:"right"}}>Ristourne auto</th><th style={{padding:"8px 10px",textAlign:"right"}}>Montant ristourne (EUR)</th><th style={{padding:"8px 10px",textAlign:"center"}}>Statut & Action</th></tr></thead>
                 <tbody>
                 {cmdNonConformes.map(function(c,ci){
                   var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
-                  var ristourneAuto=(c.qteNonConforme||0)*(cat.prix||0);
-                  var ristourneFinale=c.ristourneValidee!=null?c.ristourneValidee:ristourneAuto;
+                  var ristAuto=(c.qteNonConforme||0)*(cat.prix||c.prixUnit||0);
+                  var estValidee=c.ristourneValidee!=null;
                   return(<tr key={c.id} style={{borderBottom:"1px solid #FDEBD0",background:ci%2===0?"white":"#FFFBF5"}}>
+                    <td style={{padding:"8px 10px",fontWeight:700,fontSize:11,color:"#4A235A"}}>{c.numBC||c.id.slice(0,8).toUpperCase()}</td>
                     <td style={{padding:"8px 10px",fontWeight:600,color:"#4A235A"}}>{c.chantierNom||"-"}</td>
                     <td style={{padding:"8px 10px"}}>{cat.nom||c.type}</td>
                     <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(c.qteNonConforme||0).toLocaleString()} u</td>
-                    <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>{ristourneAuto.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22"}}>{ristAuto.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                     <td style={{padding:"8px 10px",textAlign:"right"}}>
-                      <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}}>
-                        <input type="number" step="0.01" placeholder={ristourneAuto.toFixed(2)} value={ristourneInput[c.id]||""} onChange={e=>{var v={...ristourneInput};v[c.id]=e.target.value;setRistourneInput(v);}} style={{width:90,padding:"4px 6px",border:"1px solid #C0392B",borderRadius:6,fontSize:12,textAlign:"right"}} />
+                      <input type="number" step="0.01" placeholder={ristAuto.toFixed(2)} value={ristourneInput[c.id]!=null?ristourneInput[c.id]:""} onChange={e=>{var v={...ristourneInput};v[c.id]=e.target.value;setRistourneInput(v);}} style={{width:90,padding:"4px 6px",border:"1px solid #C0392B",borderRadius:6,fontSize:12,textAlign:"right",background:estValidee?"#EAFAF1":"white"}} disabled={estValidee} />
+                    </td>
+                    <td style={{padding:"8px 10px",textAlign:"center"}}>
+                      {!estValidee?(
                         <button onClick={async function(){
-                          var val=parseFloat(ristourneInput[c.id]);
-                          if(isNaN(val)) val=ristourneAuto;
+                          var val=ristourneInput[c.id]!=null&&ristourneInput[c.id]!==""?parseFloat(ristourneInput[c.id]):ristAuto;
+                          if(isNaN(val))val=ristAuto;
                           try{
                             await db.collection("commandes").doc(c.id).update({ristourneValidee:val,ristourneValideeAt:firebase.firestore.FieldValue.serverTimestamp(),ristourneValideeParComptable:userData.nom||user.email});
-                            var v={...msgRistourne};v[c.id]="✅";setMsgRistourne(v);
-                          }catch(e){var v={...msgRistourne};v[c.id]="Erreur";setMsgRistourne(v);}
-                        }} style={{padding:"4px 10px",background:"#27AE60",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:12}}>✔</button>
-                        {msgRistourne[c.id]&&<span style={{color:"#27AE60",fontSize:12}}>{msgRistourne[c.id]}</span>}
-                      </div>
+                            var v={...msgR};v[c.id]="✅";setMsgR(v);
+                          }catch(e){var v={...msgR};v[c.id]="Erreur";setMsgR(v);}
+                        }} style={{padding:"5px 12px",background:"#27AE60",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Valider ristourne</button>
+                      ):(
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{color:"#27AE60",fontWeight:700,fontSize:12}}>✅ {c.ristourneValidee.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>
+                          <button onClick={async function(){
+                            try{
+                              await db.collection("commandes").doc(c.id).update({ristourneValidee:firebase.firestore.FieldValue.delete(),ristourneValideeAt:firebase.firestore.FieldValue.delete(),ristourneValideeParComptable:firebase.firestore.FieldValue.delete()});
+                              var v={...msgR};v[c.id]="";setMsgR(v);
+                            }catch(e){}
+                          }} style={{padding:"3px 8px",background:"#E74C3C",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:11}}>✗ Dévalider</button>
+                        </div>
+                      )}
+                      {msgR[c.id]&&<div style={{fontSize:11,color:"#27AE60",marginTop:3}}>{msgR[c.id]}</div>}
                     </td>
-                    <td style={{padding:"8px 10px"}}>{c.ristourneValidee!=null?<span style={{color:"#27AE60",fontWeight:700,fontSize:12}}>✅ Validée: {c.ristourneValidee.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>:<span style={{color:"#E67E22",fontSize:12}}>En attente</span>}</td>
+                  </tr>);
+                })}
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        )}
+
+        {tab==="pertes"&&(
+          <div className="fade-in">
+            <h3 style={{marginBottom:6,color:"#C0392B"}}>📉 Suivi des pertes</h3>
+            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Pertes de production et retours BTC non conformes des chantiers.</p>
+            {pertes.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucune perte enregistrée.</p>:
+            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
+              <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+                {(function(){
+                  var totProd=pertes.filter(function(p){return p.raison==="production";}).reduce(function(a,p){return a+p.quantite;},0);
+                  var totNC=pertes.filter(function(p){return p.raison==="retour_nc";}).reduce(function(a,p){return a+p.quantite;},0);
+                  return(<>
+                    <div style={{background:"#FADBD8",borderRadius:10,padding:"12px 20px",textAlign:"center"}}><div style={{fontSize:11,color:"#C0392B"}}>Pertes production</div><div style={{fontSize:22,fontWeight:800,color:"#C0392B"}}>{totProd.toLocaleString()}</div><div style={{fontSize:10,color:"#888"}}>BTC</div></div>
+                    <div style={{background:"#FDEBD0",borderRadius:10,padding:"12px 20px",textAlign:"center"}}><div style={{fontSize:11,color:"#E67E22"}}>Retours NC chantier</div><div style={{fontSize:22,fontWeight:800,color:"#E67E22"}}>{totNC.toLocaleString()}</div><div style={{fontSize:10,color:"#888"}}>BTC</div></div>
+                    <div style={{background:"#F5CBA7",borderRadius:10,padding:"12px 20px",textAlign:"center"}}><div style={{fontSize:11,color:"#8E44AD"}}>Total pertes</div><div style={{fontSize:22,fontWeight:800,color:"#8E44AD"}}>{(totProd+totNC).toLocaleString()}</div><div style={{fontSize:10,color:"#888"}}>BTC</div></div>
+                  </>);
+                })()}
+              </div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"8px 10px",textAlign:"left"}}>Date</th><th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th><th style={{padding:"8px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"8px 10px",textAlign:"left"}}>Type perte</th><th style={{padding:"8px 10px",textAlign:"left"}}>Chantier/Source</th><th style={{padding:"8px 10px",textAlign:"left"}}>Par</th></tr></thead>
+                <tbody>
+                {pertes.map(function(p,pi){
+                  var raisonLabel=p.raison==="retour_nc"?"⬅️ Retour NC chantier":"🔨 Perte production";
+                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
+                    <td style={{padding:"7px 10px",color:"#666",fontSize:11}}>{fmtDate(p.timestamp)}</td>
+                    <td style={{padding:"7px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
+                    <td style={{padding:"7px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
+                    <td style={{padding:"7px 10px",fontSize:12,color:"#666"}}>{p.chantierNom||p.source||"-"}</td>
+                    <td style={{padding:"7px 10px",fontSize:11,color:"#888"}}>{p.responsable}</td>
                   </tr>);
                 })}
                 </tbody>
@@ -1689,6 +1849,13 @@ function DashboardProduction({ user, userData }) {
   const [saisiePhase, setSaisiePhase] = useState("sec");
   const [msg, setMsg] = useState("");
   const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
+  const [pertes, setPertes] = React.useState([]);
+  const [commandes, setCommandes] = React.useState([]);
+  const [saisiePerteType, setSaisiePerteType] = React.useState("");
+  const [saisiePerteQte, setSaisiePerteQte] = React.useState("");
+  const [saisiePerteRaison, setSaisiePerteRaison] = React.useState("production");
+  const [msgPerte, setMsgPerte] = React.useState("");
+  const [tabProd, setTabProd] = React.useState("production");
 
   useEffect(() => {
     var u1 = db.collection("stocks").onSnapshot(snap => {
@@ -1697,7 +1864,13 @@ function DashboardProduction({ user, userData }) {
     var u2 = db.collection("productions").onSnapshot(snap => {
       setProductions(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    return () => { u1(); u2(); };
+    var u3 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => {
+      setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    var u4 = db.collection("commandes").onSnapshot(snap => {
+      setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   var typesParUrgence = CATALOGUE.map(function(prod) {
@@ -1726,6 +1899,26 @@ function DashboardProduction({ user, userData }) {
       setMsg("Production enregistree ! Stock mis a jour.");
       setSaisieQte("");
     } catch(e) { setMsg("Erreur: "+e.message); }
+  };
+
+  var enregistrerPerte = async function() {
+    if (!saisiePerteType||!saisiePerteQte) { setMsgPerte("Choisissez un type et une quantite"); return; }
+    try {
+      var qte = parseInt(saisiePerteQte);
+      await db.collection("pertes").add({
+        type: saisiePerteType, quantite: qte, raison: saisiePerteRaison,
+        responsable: userData.nom||user.email, responsableUid: user.uid,
+        source: "production",
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      // Déduire du stock
+      var stockDoc = await db.collection("stocks").doc(saisiePerteType).get();
+      var sd = stockDoc.exists ? stockDoc.data() : {};
+      var newSec = Math.max(0,(sd.sec||0)-qte);
+      await db.collection("stocks").doc(saisiePerteType).set({sec:newSec,sechage:sd.sechage||0},{merge:true});
+      setMsgPerte("Perte enregistrée !");
+      setSaisiePerteQte(""); setSaisiePerteType(""); setSaisiePerteRaison("production");
+    } catch(e) { setMsgPerte("Erreur: "+e.message); }
   };
 
   return (
@@ -1777,6 +1970,44 @@ function DashboardProduction({ user, userData }) {
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
           <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
         </div>
+        <h3 style={{marginTop:24,marginBottom:14,color:"#C0392B"}}>📉 Enregistrer une perte</h3>
+        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:16}}>
+          <p style={{fontSize:12,color:"#888",marginBottom:12}}>Enregistrez ici les pertes de production (BTC cassés, mal formés, inutilisables). Elles seront déduites du stock.</p>
+          <select value={saisiePerteType} onChange={e=>setSaisiePerteType(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
+            <option value="">-- Type de BTC perdu --</option>
+            {typesParUrgence.map(function(item){ return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom}</option>; })}
+          </select>
+          <input type="number" placeholder="Quantité perdue" value={saisiePerteQte} onChange={e=>setSaisiePerteQte(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14,boxSizing:"border-box"}} />
+          <select value={saisiePerteRaison} onChange={e=>setSaisiePerteRaison(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
+            <option value="production">Perte production (cassé/mal formé)</option>
+            <option value="retour_nc">Retour BTC non conforme chantier</option>
+          </select>
+          {msgPerte&&<div style={{padding:"8px 12px",background:msgPerte.indexOf("Erreur")>-1?"#FDEBD0":"#EAFAF1",borderRadius:8,marginBottom:8,fontSize:13,color:msgPerte.indexOf("Erreur")>-1?"#C0392B":"#1E8449"}}>{msgPerte}</div>}
+          <button onClick={enregistrerPerte} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>📉 Enregistrer la perte</button>
+        </div>
+        {pertes.length>0&&(
+          <div style={{marginBottom:24}}>
+            <h4 style={{marginBottom:8,color:"#C0392B"}}>Historique des pertes ({pertes.length})</h4>
+            <div style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"7px 10px",textAlign:"left"}}>Date</th><th style={{padding:"7px 10px",textAlign:"left"}}>Type</th><th style={{padding:"7px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"7px 10px",textAlign:"left"}}>Raison</th><th style={{padding:"7px 10px",textAlign:"left"}}>Par</th></tr></thead>
+                <tbody>
+                {pertes.map(function(p,pi){
+                  function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR");}catch(e){return"-";}}
+                  var raisonLabel=p.raison==="retour_nc"?"Retour NC chantier":"Perte production";
+                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
+                    <td style={{padding:"6px 10px",color:"#666",fontSize:11}}>{fmtD(p.timestamp)}</td>
+                    <td style={{padding:"6px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
+                    <td style={{padding:"6px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
+                    <td style={{padding:"6px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
+                    <td style={{padding:"6px 10px",fontSize:11,color:"#888"}}>{p.responsable}</td>
+                  </tr>);
+                })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {(function(){
 var seches=productions.filter(function(p){return p.phase==="sechage";}).map(function(p){return Object.assign({},p,{jr:joursRestants(p.timestamp)});}).filter(function(p){return p.jr>0;}).sort(function(a,b){return a.jr-b.jr;});
 if(seches.length>0) return(
