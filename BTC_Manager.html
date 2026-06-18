@@ -1356,6 +1356,7 @@ function DashboardStock({ user, userData }) {
   const [commandes, setCommandes] = useState([]);
   const [stocks, setStocks] = useState({});
   const [qteEnvoi, setQteEnvoi] = useState({}); // par cmdId
+  const [productions, setProductions] = React.useState([]);
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -1364,7 +1365,10 @@ function DashboardStock({ user, userData }) {
     var u2 = db.collection("stocks").onSnapshot(snap => {
       var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
     });
-    return () => { u1(); u2(); };
+    var u3 = db.collection("productions").orderBy("timestamp","desc").onSnapshot(snap => {
+      setProductions(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { u1(); u2(); u3(); };
   }, []);
 
   const enregistrerLivraison = async (cmd) => {
