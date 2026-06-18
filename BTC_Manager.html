@@ -1035,6 +1035,72 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                                   <td style={{padding:"8px 10px",color:"#666"}}>{l.dateStr}</td>
                                   <td style={{padding:"8px 10px"}}>
                                     <div style={{fontWeight:600}}>{l.prod.nom}</div>
+                                    <div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div>
+                                  </td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(l.cmd.qteNonConforme||0).toLocaleString()} u</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>-{((l.cmd.qteNonConforme||0)*l.prod.prix).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{(l.montant-((l.cmd.qteNonConforme||0)*l.prod.prix)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{background:"#8B1A10",color:"white",fontWeight:700,fontSize:15}}>
+                              <td colSpan={6} style={{padding:"12px 10px",textAlign:"right",letterSpacing:1}}>TOTAL GENERAL A FACTURER</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{totalGeneral.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,background:"#C0392B"}}>-{totalRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,background:"#27AE60",fontWeight:800}}>{totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                      <div style={{background:"#FEF9F0",border:"1px solid #EEE",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                        <div style={{fontSize:12,color:"#888"}}>
+                          <strong style={{color:"#2C1810"}}>{lignesFact.length}</strong> commande(s) confirmee(s) | Client: <strong>{chantier.client}</strong>
+                        </div>
+                        <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>
+                          MONTANT TOTAL CHANTIER (estimation): {totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {tabFiche==="commandes"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:12,color:"#8B1A10"}}>Historique des commandes ({cmdCh.length})</h4>
+              {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
+                cmdCh.map(function(c,i){
+                  var livree=c.quantiteLivree||0; var tot=c.quantite||0; var reste=Math.max(0,tot-livree);
+                  var confirme=c.quantiteConfirmeeChef||0;
+                  var couleur=c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22";
+                  return(
+                    <div key={c.id} style={{borderRadius:10,padding:"12px 14px",marginBottom:8,background:i%2===0?"#FEF9F0":"white",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
+                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4,marginBottom:4}}>
+                        <div style={{fontWeight:700}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
+                        <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
+                      </div>
+                      <div style={{fontSize:12,color:"#666"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong></div>
+                      {c.notes&&<div style={{fontSize:11,color:"#888",marginTop:3}}>Note: {c.notes}</div>}
+                    </div>
+                  );
+                })
+              }
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function DashboardComptable({ user, userData }) {
   const [tab, setTab] = React.useState("facturation");
   const [commandes, setCommandes] = React.useState([]);
@@ -1323,72 +1389,6 @@ function DashboardComptable({ user, userData }) {
     )
   );
 }
-                        }} style={{padding:"5px 12px",background:"#27AE60",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Valider ristourne</button>
-                      ):(
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <span style={{color:"#27AE60",fontWeight:700,fontSize:12}}>✅ {c.ristourneValidee.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>
-                          <button onClick={async function(){
-                            try{
-                              await db.collection("commandes").doc(c.id).update({ristourneValidee:firebase.firestore.FieldValue.delete(),ristourneValideeAt:firebase.firestore.FieldValue.delete(),ristourneValideeParComptable:firebase.firestore.FieldValue.delete()});
-                              var v={...msgR};v[c.id]="";setMsgR(v);
-                            }catch(e){}
-                          }} style={{padding:"3px 8px",background:"#E74C3C",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:11}}>✗ Dévalider</button>
-                        </div>
-                      )}
-                      {msgR[c.id]&&<div style={{fontSize:11,color:"#27AE60",marginTop:3}}>{msgR[c.id]}</div>}
-                    </td>
-                  </tr>);
-                })}
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        )}
-
-        {tab==="pertes"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:6,color:"#C0392B"}}>📉 Suivi des pertes</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Pertes de production et retours BTC non conformes des chantiers.</p>
-            {pertes.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucune perte enregistrée.</p>:
-            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-                {(function(){
-                  var totProd=pertes.filter(function(p){return p.raison==="production";}).reduce(function(a,p){return a+p.quantite;},0);
-                  var totNC=pertes.filter(function(p){return p.raison==="retour_nc";}).reduce(function(a,p){return a+p.quantite;},0);
-                  return(<>
-                    <div style={{background:"#FADBD8",borderRadius:10,padding:"12px 20px",textAlign:"center"}}><div style={{fontSize:11,color:"#C0392B"}}>Pertes production</div><div style={{fontSize:22,fontWeight:800,color:"#C0392B"}}>{totProd.toLocaleString()}</div><div style={{fontSize:10,color:"#888"}}>BTC</div></div>
-                    <div style={{background:"#FDEBD0",borderRadius:10,padding:"12px 20px",textAlign:"center"}}><div style={{fontSize:11,color:"#E67E22"}}>Retours NC chantier</div><div style={{fontSize:22,fontWeight:800,color:"#E67E22"}}>{totNC.toLocaleString()}</div><div style={{fontSize:10,color:"#888"}}>BTC</div></div>
-                    <div style={{background:"#F5CBA7",borderRadius:10,padding:"12px 20px",textAlign:"center"}}><div style={{fontSize:11,color:"#8E44AD"}}>Total pertes</div><div style={{fontSize:22,fontWeight:800,color:"#8E44AD"}}>{(totProd+totNC).toLocaleString()}</div><div style={{fontSize:10,color:"#888"}}>BTC</div></div>
-                  </>);
-                })()}
-              </div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"8px 10px",textAlign:"left"}}>Date</th><th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th><th style={{padding:"8px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"8px 10px",textAlign:"left"}}>Type perte</th><th style={{padding:"8px 10px",textAlign:"left"}}>Chantier/Source</th><th style={{padding:"8px 10px",textAlign:"left"}}>Par</th></tr></thead>
-                <tbody>
-                {pertes.map(function(p,pi){
-                  var raisonLabel=p.raison==="retour_nc"?"⬅️ Retour NC chantier":"🔨 Perte production";
-                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
-                    <td style={{padding:"7px 10px",color:"#666",fontSize:11}}>{fmtDate(p.timestamp)}</td>
-                    <td style={{padding:"7px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
-                    <td style={{padding:"7px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
-                    <td style={{padding:"7px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
-                    <td style={{padding:"7px 10px",fontSize:12,color:"#666"}}>{p.chantierNom||p.source||"-"}</td>
-                    <td style={{padding:"7px 10px",fontSize:11,color:"#888"}}>{p.responsable}</td>
-                  </tr>);
-                })}
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
 function DashboardChef({ user, userData }) {
   const [tabChef, setTabChef] = useState("chantiers");
   const [commandes, setCommandes] = useState([]);
