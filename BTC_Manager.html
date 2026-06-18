@@ -643,70 +643,7 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
           </div>
         )}
         {tab==="comptabilite"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:6,color:"#4A235A"}}>💼 Suivi Comptabilité</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Vue complète: facturation, BTC non conformes et pertes. Même vue que le comptable.</p>
-            {(function(){
-              var chantiersF=chantiers.filter(function(ch){return commandes.some(function(c){return c.chantierId===ch.id&&(c.quantiteConfirmeeChef||0)>0;});});
-              var cmdNC=commandes.filter(function(c){return (c.qteNonConforme||0)>0;});
-              var totPerteProd=pertes.filter(function(p){return p.raison==="production";}).reduce(function(a,p){return a+p.quantite;},0);
-              var totPerteNC=pertes.filter(function(p){return p.raison==="retour_nc";}).reduce(function(a,p){return a+p.quantite;},0);
-              function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"-";}}
-              return(
-                <div>
-                  <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-                    <div style={{background:"white",borderRadius:10,padding:"12px 20px",boxShadow:"0 2px 6px rgba(0,0,0,0.07)",flex:1,minWidth:160}}>
-                      <div style={{fontSize:12,color:"#888"}}>Chantiers à facturer</div>
-                      <div style={{fontSize:28,fontWeight:800,color:"#4A235A"}}>{chantiersF.length}</div>
-                    </div>
-                    <div style={{background:"white",borderRadius:10,padding:"12px 20px",boxShadow:"0 2px 6px rgba(0,0,0,0.07)",flex:1,minWidth:160}}>
-                      <div style={{fontSize:12,color:"#888"}}>BTC non conformes</div>
-                      <div style={{fontSize:28,fontWeight:800,color:"#C0392B"}}>{cmdNC.reduce(function(a,c){return a+(c.qteNonConforme||0);},0).toLocaleString()}</div>
-                    </div>
-                    <div style={{background:"white",borderRadius:10,padding:"12px 20px",boxShadow:"0 2px 6px rgba(0,0,0,0.07)",flex:1,minWidth:160}}>
-                      <div style={{fontSize:12,color:"#888"}}>Total pertes (prod+NC)</div>
-                      <div style={{fontSize:28,fontWeight:800,color:"#E67E22"}}>{(totPerteProd+totPerteNC).toLocaleString()}</div>
-                    </div>
-                  </div>
-                  <h4 style={{color:"#4A235A",marginBottom:8}}>Commandes confirmées par chantier</h4>
-                  {chantiersF.map(function(ch){
-                    var cmdsCh=commandes.filter(function(c){return c.chantierId===ch.id&&(c.quantiteConfirmeeChef||0)>0;});
-                    var totalBrut=cmdsCh.reduce(function(a,c){var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};return a+(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);},0);
-                    var totalRist=cmdsCh.reduce(function(a,c){return a+(c.ristourneValidee||0);},0);
-                    return(
-                      <div key={ch.id} style={{background:"white",borderRadius:10,padding:16,marginBottom:12,boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:8}}>
-                          <div><strong style={{color:"#4A235A"}}>{ch.nom}</strong> <span style={{fontSize:12,color:"#666"}}>— {ch.client||"-"}</span></div>
-                          <div style={{textAlign:"right"}}><span style={{color:"#888",fontSize:12}}>Brut: {totalBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>{totalRist>0&&<span style={{color:"#C0392B",fontSize:12,marginLeft:8}}> | Rist: -{totalRist.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</span>}<div style={{fontWeight:800,color:"#27AE60",fontSize:15}}>Net: {(totalBrut-totalRist).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div></div>
-                        </div>
-                        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#E8DAEF"}}><th style={{padding:"6px 8px",textAlign:"left"}}>N° BC</th><th style={{padding:"6px 8px",textAlign:"left"}}>Type</th><th style={{padding:"6px 8px",textAlign:"right"}}>Qté</th><th style={{padding:"6px 8px",textAlign:"right"}}>Montant</th><th style={{padding:"6px 8px",textAlign:"right",color:"#C0392B"}}>Ristourne</th><th style={{padding:"6px 8px",textAlign:"right",color:"#27AE60"}}>Net</th><th style={{padding:"6px 8px"}}>Récept.</th><th style={{padding:"6px 8px"}}>Statut rist.</th></tr></thead>
-                        <tbody>{cmdsCh.map(function(c,ci){
-                          var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
-                          var mb=(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);
-                          var rv=c.ristourneValidee!=null?c.ristourneValidee:null;
-                          return(<tr key={c.id} style={{borderBottom:"1px solid #F0E8F8",background:ci%2===0?"white":"#FAF5FF"}}>
-                            <td style={{padding:"5px 8px",fontWeight:700,fontSize:11,color:"#4A235A"}}>{c.numBC||c.id.slice(0,8).toUpperCase()}</td>
-                            <td style={{padding:"5px 8px",fontSize:12}}>{cat.nom||c.type}</td>
-                            <td style={{padding:"5px 8px",textAlign:"right"}}>{(c.quantiteConfirmeeChef||0).toLocaleString()}</td>
-                            <td style={{padding:"5px 8px",textAlign:"right",fontWeight:700}}>{mb.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                            <td style={{padding:"5px 8px",textAlign:"right",color:"#C0392B"}}>{rv!=null?("-"+rv.toLocaleString("fr-FR",{minimumFractionDigits:2})+" EUR"):"—"}</td>
-                            <td style={{padding:"5px 8px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{(mb-(rv||0)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                            <td style={{padding:"5px 8px",color:"#666",fontSize:11}}>{fmtD(c.chefConfirmeAt)}</td>
-                            <td style={{padding:"5px 8px"}}>{rv!=null?<span style={{background:"#EAFAF1",color:"#27AE60",fontSize:11,padding:"2px 6px",borderRadius:4,fontWeight:700}}>✅ Validée</span>:(c.qteNonConforme?<span style={{background:"#FDEBD0",color:"#E67E22",fontSize:11,padding:"2px 6px",borderRadius:4}}>En attente</span>:<span style={{color:"#888",fontSize:11}}>—</span>)}</td>
-                          </tr>);
-                        })}</tbody></table></div>
-                      </div>
-                    );
-                  })}
-                  <h4 style={{color:"#C0392B",marginBottom:8,marginTop:20}}>📉 Pertes ({pertes.length})</h4>
-                  {pertes.length===0?<p style={{color:"#888"}}>Aucune perte enregistrée.</p>:
-                  <div style={{background:"white",borderRadius:10,padding:14,boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"6px 8px",textAlign:"left"}}>Date</th><th style={{padding:"6px 8px",textAlign:"left"}}>Type</th><th style={{padding:"6px 8px",textAlign:"right"}}>Qté</th><th style={{padding:"6px 8px",textAlign:"left"}}>Raison</th><th style={{padding:"6px 8px",textAlign:"left"}}>Source</th></tr></thead>
-                  <tbody>{pertes.map(function(p,pi){return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}><td style={{padding:"5px 8px",color:"#666",fontSize:11}}>{fmtD(p.timestamp)}</td><td style={{padding:"5px 8px",fontWeight:600,fontSize:12}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td><td style={{padding:"5px 8px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td><td style={{padding:"5px 8px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 6px",borderRadius:5,fontSize:11}}>{p.raison==="retour_nc"?"Retour NC":"Perte prod."}</span></td><td style={{padding:"5px 8px",fontSize:11,color:"#666"}}>{p.chantierNom||p.source||"-"}</td></tr>);})}</tbody></table></div>
-                  }
-                </div>
-              );
-            })()}
-          </div>
+          React.createElement(DashboardComptable, { user: user, userData: userData })
         )}
       </div>
     </div>
@@ -1098,248 +1035,294 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                                   <td style={{padding:"8px 10px",color:"#666"}}>{l.dateStr}</td>
                                   <td style={{padding:"8px 10px"}}>
                                     <div style={{fontWeight:600}}>{l.prod.nom}</div>
-                                    <div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div>
-                                  </td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(l.cmd.qteNonConforme||0).toLocaleString()} u</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>-{((l.cmd.qteNonConforme||0)*l.prod.prix).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{(l.montant-((l.cmd.qteNonConforme||0)*l.prod.prix)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                          <tfoot>
-                            <tr style={{background:"#8B1A10",color:"white",fontWeight:700,fontSize:15}}>
-                              <td colSpan={6} style={{padding:"12px 10px",textAlign:"right",letterSpacing:1}}>TOTAL GENERAL A FACTURER</td>
-                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15}}>{totalGeneral.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,background:"#C0392B"}}>-{totalRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                              <td style={{padding:"12px 10px",textAlign:"right",fontSize:15,background:"#27AE60",fontWeight:800}}>{totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                      <div style={{background:"#FEF9F0",border:"1px solid #EEE",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-                        <div style={{fontSize:12,color:"#888"}}>
-                          <strong style={{color:"#2C1810"}}>{lignesFact.length}</strong> commande(s) confirmee(s) | Client: <strong>{chantier.client}</strong>
-                        </div>
-                        <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>
-                          MONTANT TOTAL CHANTIER (estimation): {totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {tabFiche==="commandes"&&(
-            <div className="fade-in">
-              <h4 style={{marginBottom:12,color:"#8B1A10"}}>Historique des commandes ({cmdCh.length})</h4>
-              {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
-                cmdCh.map(function(c,i){
-                  var livree=c.quantiteLivree||0; var tot=c.quantite||0; var reste=Math.max(0,tot-livree);
-                  var confirme=c.quantiteConfirmeeChef||0;
-                  var couleur=c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22";
-                  return(
-                    <div key={c.id} style={{borderRadius:10,padding:"12px 14px",marginBottom:8,background:i%2===0?"#FEF9F0":"white",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
-                      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4,marginBottom:4}}>
-                        <div style={{fontWeight:700}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
-                        <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
-                      </div>
-                      <div style={{fontSize:12,color:"#666"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong></div>
-                      {c.notes&&<div style={{fontSize:11,color:"#888",marginTop:3}}>Note: {c.notes}</div>}
-                    </div>
-                  );
-                })
-              }
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
 function DashboardComptable({ user, userData }) {
+  const [tab, setTab] = React.useState("facturation");
   const [commandes, setCommandes] = React.useState([]);
   const [chantiers, setChantiers] = React.useState([]);
   const [pertes, setPertes] = React.useState([]);
-  const [tab, setTab] = React.useState("facturation");
-  const [msgR, setMsgR] = React.useState({});
   const [ristourneInput, setRistourneInput] = React.useState({});
-  const [factureCmd, setFactureCmd] = React.useState(null);
+  const [factureCourante, setFactureCourante] = React.useState(null);
+  const [msg, setMsg] = React.useState("");
 
   React.useEffect(() => {
-    var u1 = db.collection("commandes").onSnapshot(snap => { setCommandes(snap.docs.map(d=>({id:d.id,...d.data()}))); });
-    var u2 = db.collection("chantiers").onSnapshot(snap => { setChantiers(snap.docs.map(d=>({id:d.id,...d.data()}))); });
-    var u3 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => { setPertes(snap.docs.map(d=>({id:d.id,...d.data()}))); });
+    const u1 = db.collection("commandes").orderBy("timestamp","desc").onSnapshot(snap => {
+      setCommandes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const u2 = db.collection("chantiers").onSnapshot(snap => {
+      setChantiers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const u3 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => {
+      setPertes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
     return () => { u1(); u2(); u3(); };
   }, []);
 
-  var chantiersFacturables = chantiers.filter(function(ch) {
-    return commandes.some(function(c){ return c.chantierId===ch.id && (c.quantiteConfirmeeChef||0)>0; });
-  });
-  var cmdNonConformes = commandes.filter(function(c){ return (c.qteNonConforme||0)>0; });
+  const getChantier = (id) => chantiers.find(c => c.id === id) || {};
 
-  function fmtDate(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});}catch(e){return"-";}}
-  function fmtDateTime(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}).replace(","," ");}catch(e){return"-";}}
+  const toggleRistourne = async (cmd) => {
+    const montant = parseFloat(ristourneInput[cmd.id] || 0);
+    if (cmd.ristourneValidee !== undefined && cmd.ristourneValidee !== null) {
+      // Désactiver la ristourne
+      await db.collection("commandes").doc(cmd.id).update({ ristourneValidee: null, ristourneValideeAt: null });
+      setMsg("Ristourne désactivée pour BC " + (cmd.numBC || cmd.id));
+    } else {
+      // Activer la ristourne
+      if (isNaN(montant) || montant < 0) { setMsg("Montant ristourne invalide"); return; }
+      await db.collection("commandes").doc(cmd.id).update({
+        ristourneValidee: montant,
+        ristourneValideeAt: new Date().toISOString()
+      });
+      setMsg("Ristourne de " + montant.toFixed(2) + "€ validée pour BC " + (cmd.numBC || cmd.id));
+    }
+    setTimeout(() => setMsg(""), 3000);
+  };
 
-  var ts = function(t){ return {padding:"8px 18px",border:"none",cursor:"pointer",borderRadius:8,marginRight:6,marginBottom:6,background:tab===t?"#6C3483":"#E8DAEF",color:tab===t?"white":"#4A235A",fontWeight:tab===t?700:500,fontSize:14}; };
+  const cmdLivrees = commandes.filter(c => c.status === "livree" || c.status === "confirmee" || c.quantiteLivree > 0);
 
-  // Popup Facture
-  if(factureCmd) {
-    var fc=factureCmd;
-    var fcat=CATALOGUE.find(function(p){return p.id===fc.type;})||{};
-    var fMontantBrut=(fc.quantiteConfirmeeChef||0)*(fcat.prix||fc.prixUnit||0);
-    var fRistourne=fc.ristourneValidee!=null?fc.ristourneValidee:0;
-    var fNet=fMontantBrut-fRistourne;
-    return(
-      <div style={{minHeight:"100vh",background:"#F8F0FC",padding:20}}>
-        <div style={{maxWidth:680,margin:"0 auto",background:"white",borderRadius:12,padding:32,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:24}}>
-            <div>
-              <div style={{fontWeight:900,fontSize:24,color:"#4A235A"}}>🧾 FACTURE</div>
-              <div style={{fontSize:13,color:"#888",marginTop:4}}>Terre et Eau — Mamoudzou, Mayotte</div>
-              <div style={{fontSize:11,color:"#aaa"}}>SIRET: 93222797800016 | +262 639 57 92 44</div>
-            </div>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontWeight:700,fontSize:16,color:"#4A235A"}}>N° {fc.numBC||fc.id.slice(0,8).toUpperCase()}</div>
-              <div style={{fontSize:13,color:"#666"}}>Date: {fmtDate(fc.timestamp)}</div>
-              <div style={{fontSize:13,color:"#666"}}>Réception: {fmtDate(fc.chefConfirmeAt)}</div>
-            </div>
-          </div>
-          <div style={{background:"#F8F0FC",borderRadius:8,padding:"12px 16px",marginBottom:20}}>
-            <div style={{fontWeight:700,fontSize:15,color:"#4A235A"}}>CHANTIER: {fc.chantierNom}</div>
-            <div style={{fontSize:13,color:"#666"}}>Client: {fc.client||"-"}</div>
-            <div style={{fontSize:13,color:"#666"}}>Chef: {fc.chefNom||fc.chefEmail||"-"}</div>
-          </div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:16}}>
-            <thead><tr style={{background:"#4A235A",color:"white"}}><th style={{padding:"9px 12px",textAlign:"left"}}>Description</th><th style={{padding:"9px 12px",textAlign:"right"}}>Qté</th><th style={{padding:"9px 12px",textAlign:"right"}}>Prix unit.</th><th style={{padding:"9px 12px",textAlign:"right"}}>Montant</th></tr></thead>
-            <tbody>
-              <tr style={{borderBottom:"1px solid #EEE"}}>
-                <td style={{padding:"10px 12px"}}><strong>{fcat.nom||fc.type}</strong><br/><span style={{fontSize:11,color:"#999"}}>{fcat.dim||""}</span></td>
-                <td style={{padding:"10px 12px",textAlign:"right"}}>{(fc.quantiteConfirmeeChef||0).toLocaleString()}</td>
-                <td style={{padding:"10px 12px",textAlign:"right"}}>{(fcat.prix||fc.prixUnit||0).toFixed(2)} EUR</td>
-                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:700}}>{fMontantBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-              </tr>
-              {fRistourne>0&&<tr style={{borderBottom:"1px solid #FDEBD0",color:"#C0392B"}}><td style={{padding:"10px 12px"}} colSpan={3}>Ristourne ({fc.qteNonConforme||0} BTC non conformes)</td><td style={{padding:"10px 12px",textAlign:"right",fontWeight:700}}>-{fRistourne.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td></tr>}
-            </tbody>
-            <tfoot><tr style={{background:"#4A235A",color:"white",fontWeight:800,fontSize:16}}><td colSpan={3} style={{padding:"12px 12px",textAlign:"right"}}>TOTAL NET</td><td style={{padding:"12px 12px",textAlign:"right"}}>{fNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td></tr></tfoot>
-          </table>
-          <div style={{fontSize:11,color:"#aaa",marginBottom:20}}>Bon de commande: {fc.numBC||"-"} | Date commande: {fmtDateTime(fc.timestamp)}</div>
-          <div style={{display:"flex",gap:12}}>
-            <button onClick={()=>window.print()} style={{padding:"10px 24px",background:"#4A235A",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>🖨️ Imprimer</button>
-            <button onClick={()=>setFactureCmd(null)} style={{padding:"10px 24px",background:"#EEE",color:"#333",border:"none",borderRadius:8,cursor:"pointer"}}>← Retour</button>
-          </div>
-        </div>
-      </div>
+  const genererFacture = (cmdId) => {
+    const cmd = commandes.find(c => c.id === cmdId);
+    if (!cmd) return;
+    setFactureCourante(cmd);
+    setTab("facture");
+  };
+
+  const totalPertesProduction = pertes.filter(p => p.raison === "production").reduce((a, p) => a + (p.quantite || 0), 0);
+  const totalPertesRetour = pertes.filter(p => p.raison === "retour_nc").reduce((a, p) => a + (p.quantite || 0), 0);
+
+  if (factureCourante && tab === "facture") {
+    const cmd = factureCourante;
+    const ch = getChantier(cmd.chantierId || "");
+    const prixUnit = cmd.prixUnit || 0;
+    const qteOk = cmd.quantiteConfirmeeChef || cmd.quantiteLivree || 0;
+    const qteNC = cmd.qteNonConforme || 0;
+    const montantBrut = qteOk * prixUnit;
+    const ristourne = (cmd.ristourneValidee !== undefined && cmd.ristourneValidee !== null) ? parseFloat(cmd.ristourneValidee) : 0;
+    const net = montantBrut - ristourne;
+    const dateCmd = cmd.timestamp ? new Date(cmd.timestamp.seconds ? cmd.timestamp.seconds*1000 : cmd.timestamp).toLocaleDateString("fr-FR") : "-";
+    const dateLivr = cmd.livreAt ? new Date(cmd.livreAt).toLocaleDateString("fr-FR") : "-";
+    return (
+      React.createElement("div", { style: { padding: "16px", maxWidth: "700px", margin: "0 auto" } },
+        React.createElement("button", {
+          onClick: () => { setFactureCourante(null); setTab("facturation"); },
+          style: { marginBottom: "12px", padding: "6px 16px", background: "#888", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer" }
+        }, "← Retour"),
+        React.createElement("button", {
+          onClick: () => window.print(),
+          style: { marginBottom: "12px", marginLeft: "8px", padding: "6px 16px", background: "#2C6E49", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer" }
+        }, "🖨️ Imprimer"),
+        React.createElement("div", { id: "zone-facture", style: { background: "#fff", border: "2px solid #2C6E49", borderRadius: "10px", padding: "28px", fontFamily: "Arial, sans-serif" } },
+          React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" } },
+            React.createElement("div", null,
+              React.createElement("h2", { style: { color: "#2C6E49", margin: 0 } }, "Terre et Eau"),
+              React.createElement("div", { style: { fontSize: "13px", color: "#555" } }, "226 Imp. Vilvilini 97600 Mamoudzou"),
+              React.createElement("div", { style: { fontSize: "13px", color: "#555" } }, "SIRET : 93222797800016"),
+              React.createElement("div", { style: { fontSize: "13px", color: "#555" } }, "Tél : +262 639 57 92 44")
+            ),
+            React.createElement("div", { style: { textAlign: "right" } },
+              React.createElement("h2", { style: { color: "#2C6E49", margin: 0 } }, "FACTURE"),
+              React.createElement("div", { style: { fontSize: "13px" } }, "N° BC : ", React.createElement("strong", null, cmd.numBC || cmd.id)),
+              React.createElement("div", { style: { fontSize: "13px" } }, "Date commande : ", dateCmd),
+              React.createElement("div", { style: { fontSize: "13px" } }, "Date livraison : ", dateLivr)
+            )
+          ),
+          React.createElement("hr", { style: { borderColor: "#2C6E49" } }),
+          React.createElement("div", { style: { marginBottom: "16px" } },
+            React.createElement("strong", null, "Client : "), cmd.client || ch.client || "-", React.createElement("br", null),
+            React.createElement("strong", null, "Chantier : "), cmd.chantierNom || ch.nom || "-", React.createElement("br", null),
+            React.createElement("strong", null, "Chef de chantier : "), cmd.chefNom || "-"
+          ),
+          React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: "12px" } },
+            React.createElement("thead", null,
+              React.createElement("tr", { style: { background: "#2C6E49", color: "#fff" } },
+                React.createElement("th", { style: { padding: "8px", textAlign: "left" } }, "Désignation"),
+                React.createElement("th", { style: { padding: "8px", textAlign: "right" } }, "Qté livrée"),
+                React.createElement("th", { style: { padding: "8px", textAlign: "right" } }, "Qté NC"),
+                React.createElement("th", { style: { padding: "8px", textAlign: "right" } }, "Prix unit."),
+                React.createElement("th", { style: { padding: "8px", textAlign: "right" } }, "Montant HT")
+              )
+            ),
+            React.createElement("tbody", null,
+              React.createElement("tr", { style: { borderBottom: "1px solid #ddd" } },
+                React.createElement("td", { style: { padding: "8px" } }, cmd.typNom || cmd.type || "-"),
+                React.createElement("td", { style: { padding: "8px", textAlign: "right" } }, qteOk),
+                React.createElement("td", { style: { padding: "8px", textAlign: "right", color: qteNC > 0 ? "#c0392b" : "#555" } }, qteNC > 0 ? qteNC : "-"),
+                React.createElement("td", { style: { padding: "8px", textAlign: "right" } }, prixUnit.toFixed(2) + " €"),
+                React.createElement("td", { style: { padding: "8px", textAlign: "right" } }, montantBrut.toFixed(2) + " €")
+              )
+            )
+          ),
+          React.createElement("div", { style: { textAlign: "right", fontSize: "14px" } },
+            React.createElement("div", null, "Montant HT : ", React.createElement("strong", null, montantBrut.toFixed(2) + " €")),
+            ristourne > 0 && React.createElement("div", { style: { color: "#e67e22" } }, "Ristourne : - ", ristourne.toFixed(2) + " €"),
+            React.createElement("div", { style: { fontSize: "17px", marginTop: "6px", color: "#2C6E49" } }, "NET À PAYER : ", React.createElement("strong", null, net.toFixed(2) + " €"))
+          ),
+          React.createElement("hr", { style: { borderColor: "#ccc", marginTop: "20px" } }),
+          React.createElement("div", { style: { fontSize: "12px", color: "#888", textAlign: "center" } }, "Terre et Eau SAS — TVA non applicable, art. 293B du CGI")
+        )
+      )
     );
   }
 
   return (
-    <div style={{minHeight:"100vh",background:"#F8F0FC",fontFamily:"Segoe UI,Arial,sans-serif"}}>
-      <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <span style={{fontSize:26}}>💼</span>
-          <div><div style={{fontWeight:800,fontSize:18}}>BTC Manager</div><div style={{fontSize:12,opacity:.85}}>Comptabilité — {userData.nom||user.email}</div></div>
-        </div>
-        <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.18)",border:"none",color:"white",padding:"8px 18px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Déconnexion</button>
-      </div>
-      <div style={{padding:"16px 20px 0",flexWrap:"wrap",display:"flex"}}>
-        <button style={ts("facturation")} onClick={()=>setTab("facturation")}>💶 Facturation ({chantiersFacturables.length})</button>
-        <button style={ts("nonconforme")} onClick={()=>setTab("nonconforme")}>⚠️ Non conformes ({cmdNonConformes.length})</button>
-        <button style={ts("pertes")} onClick={()=>setTab("pertes")}>📉 Pertes ({pertes.length})</button>
-      </div>
-      <div style={{padding:"16px 20px 24px"}}>
+    React.createElement("div", { style: { padding: "8px" } },
+      React.createElement("h2", { style: { color: "#2C6E49" } }, "💶 Comptabilité"),
+      msg && React.createElement("div", { style: { background: "#2C6E49", color: "#fff", padding: "8px 12px", borderRadius: "6px", marginBottom: "8px" } }, msg),
+      React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" } },
+        [["facturation","📋 Facturation"],["ristournes","🎁 Non-conf. & Ristournes"],["pertes","📉 Pertes"]].map(([k,l]) =>
+          React.createElement("button", {
+            key: k,
+            onClick: () => setTab(k),
+            style: { padding: "7px 16px", borderRadius: "6px", border: "none", background: tab===k ? "#2C6E49" : "#e0e0e0", color: tab===k ? "#fff" : "#333", cursor: "pointer", fontWeight: tab===k ? "bold" : "normal" }
+          }, l)
+        )
+      ),
 
-        {tab==="facturation"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:6,color:"#4A235A"}}>Chantiers à facturer</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Chantiers ayant des réceptions confirmées. Cliquez sur "Facture" pour générer la facture.</p>
-            {chantiersFacturables.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucun chantier facturable pour le moment.</p>:
-            chantiersFacturables.map(function(ch){
-              var cmdsCh=commandes.filter(function(c){return c.chantierId===ch.id&&(c.quantiteConfirmeeChef||0)>0;});
-              var totalBrut=cmdsCh.reduce(function(a,c){var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};return a+(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);},0);
-              var totalRist=cmdsCh.reduce(function(a,c){return a+(c.ristourneValidee||0);},0);
-              var totalNet=totalBrut-totalRist;
-              return(
-                <div key={ch.id} style={{background:"white",borderRadius:12,padding:20,marginBottom:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8,marginBottom:12}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:16,color:"#4A235A"}}>{ch.nom}</div>
-                      <div style={{fontSize:13,color:"#666"}}>Client: <strong>{ch.client||"-"}</strong> | Chef: {ch.chefNom||"-"}</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:12,color:"#888"}}>Montant brut: {totalBrut.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
-                      {totalRist>0&&<div style={{fontSize:12,color:"#C0392B"}}>Ristourne: -{totalRist.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>}
-                      <div style={{fontSize:18,fontWeight:800,color:"#27AE60"}}>Net: {totalNet.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
-                    </div>
-                  </div>
-                  <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                    <thead><tr style={{background:"#E8DAEF"}}><th style={{padding:"7px 8px",textAlign:"left"}}>N° BC</th><th style={{padding:"7px 8px",textAlign:"left"}}>Type BTC</th><th style={{padding:"7px 8px",textAlign:"right"}}>Qté conf.</th><th style={{padding:"7px 8px",textAlign:"right"}}>P.U.</th><th style={{padding:"7px 8px",textAlign:"right"}}>Montant brut</th><th style={{padding:"7px 8px",textAlign:"right",color:"#C0392B"}}>Ristourne</th><th style={{padding:"7px 8px",textAlign:"right",color:"#27AE60"}}>Net</th><th style={{padding:"7px 8px",textAlign:"left"}}>Date récept.</th><th style={{padding:"7px 8px"}}></th></tr></thead>
-                    <tbody>
-                    {cmdsCh.map(function(c,ci){
-                      var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
-                      var mb=(c.quantiteConfirmeeChef||0)*(cat.prix||c.prixUnit||0);
-                      var rv=c.ristourneValidee!=null?c.ristourneValidee:null;
-                      var net=mb-(rv||0);
-                      return(<tr key={c.id} style={{borderBottom:"1px solid #F0E8F8",background:ci%2===0?"white":"#FAF5FF"}}>
-                        <td style={{padding:"6px 8px",fontWeight:700,color:"#4A235A",fontSize:11}}>{c.numBC||c.id.slice(0,8).toUpperCase()}</td>
-                        <td style={{padding:"6px 8px"}}>{cat.nom||c.type}</td>
-                        <td style={{padding:"6px 8px",textAlign:"right"}}>{(c.quantiteConfirmeeChef||0).toLocaleString()}</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",color:"#666"}}>{(cat.prix||c.prixUnit||0).toFixed(2)}</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{mb.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",color:"#C0392B"}}>{rv!=null?("-"+rv.toLocaleString("fr-FR",{minimumFractionDigits:2})+" EUR"):"—"}</td>
-                        <td style={{padding:"6px 8px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{net.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                        <td style={{padding:"6px 8px",color:"#666",fontSize:11}}>{fmtDate(c.chefConfirmeAt)}</td>
-                        <td style={{padding:"6px 8px"}}><button onClick={()=>setFactureCmd(c)} style={{padding:"4px 10px",background:"#4A235A",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:700}}>🧾 Facture</button></td>
-                      </tr>);
-                    })}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      tab === "facturation" && React.createElement("div", null,
+        React.createElement("h3", null, "📋 Commandes — Suivi facturation"),
+        cmdLivrees.length === 0 && React.createElement("p", { style: { color: "#888" } }, "Aucune commande livrée pour l'instant."),
+        React.createElement("div", { style: { overflowX: "auto" } },
+          React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: "13px" } },
+            React.createElement("thead", null,
+              React.createElement("tr", { style: { background: "#2C6E49", color: "#fff" } },
+                React.createElement("th", { style: { padding: "7px" } }, "N° BC"),
+                React.createElement("th", { style: { padding: "7px" } }, "Chantier"),
+                React.createElement("th", { style: { padding: "7px" } }, "Client"),
+                React.createElement("th", { style: { padding: "7px" } }, "BTC"),
+                React.createElement("th", { style: { padding: "7px" } }, "Qté livrée"),
+                React.createElement("th", { style: { padding: "7px" } }, "Statut"),
+                React.createElement("th", { style: { padding: "7px" } }, "Actions")
+              )
+            ),
+            React.createElement("tbody", null,
+              commandes.map(cmd => {
+                const ch = getChantier(cmd.chantierId || "");
+                return React.createElement("tr", { key: cmd.id, style: { borderBottom: "1px solid #eee" } },
+                  React.createElement("td", { style: { padding: "7px", fontFamily: "monospace", fontWeight: "bold", color: "#2C6E49" } }, cmd.numBC || "-"),
+                  React.createElement("td", { style: { padding: "7px" } }, cmd.chantierNom || ch.nom || "-"),
+                  React.createElement("td", { style: { padding: "7px" } }, cmd.client || ch.client || "-"),
+                  React.createElement("td", { style: { padding: "7px" } }, cmd.typNom || cmd.type || "-"),
+                  React.createElement("td", { style: { padding: "7px", textAlign: "center" } }, cmd.quantiteLivree || 0),
+                  React.createElement("td", { style: { padding: "7px", textAlign: "center" } },
+                    React.createElement("span", { style: { padding: "2px 8px", borderRadius: "10px", fontSize: "12px",
+                      background: cmd.status==="confirmee"?"#27ae60":cmd.status==="livree"?"#f39c12":cmd.status==="validee"?"#2980b9":"#bbb",
+                      color: "#fff" } },
+                      cmd.status==="confirmee"?"✅ Confirmé":cmd.status==="livree"?"🚚 Livré":cmd.status==="validee"?"✔ Validé":cmd.status||"-"
+                    )
+                  ),
+                  React.createElement("td", { style: { padding: "7px", textAlign: "center" } },
+                    React.createElement("button", {
+                      onClick: () => genererFacture(cmd.id),
+                      style: { padding: "4px 10px", background: "#2C6E49", color: "#fff", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "12px" }
+                    }, "🧾 Facture")
+                  )
+                );
+              })
+            )
+          )
+        )
+      ),
 
-        {tab==="nonconforme"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:6,color:"#C0392B"}}>⚠️ BTC non conformes — Gestion des ristournes</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>Validez ou dévalidez les ristournes. Seules les ristournes validées apparaissent sur les factures.</p>
-            {cmdNonConformes.length===0?<p style={{color:"#888",padding:16,background:"white",borderRadius:10}}>Aucun BTC non conforme signalé.</p>:
-            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.07)"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"8px 10px",textAlign:"left"}}>N° BC</th><th style={{padding:"8px 10px",textAlign:"left"}}>Chantier</th><th style={{padding:"8px 10px",textAlign:"left"}}>Type BTC</th><th style={{padding:"8px 10px",textAlign:"right"}}>Qté NC</th><th style={{padding:"8px 10px",textAlign:"right"}}>Ristourne auto</th><th style={{padding:"8px 10px",textAlign:"right"}}>Montant ristourne (EUR)</th><th style={{padding:"8px 10px",textAlign:"center"}}>Statut & Action</th></tr></thead>
-                <tbody>
-                {cmdNonConformes.map(function(c,ci){
-                  var cat=CATALOGUE.find(function(p){return p.id===c.type;})||{};
-                  var ristAuto=(c.qteNonConforme||0)*(cat.prix||c.prixUnit||0);
-                  var estValidee=c.ristourneValidee!=null;
-                  return(<tr key={c.id} style={{borderBottom:"1px solid #FDEBD0",background:ci%2===0?"white":"#FFFBF5"}}>
-                    <td style={{padding:"8px 10px",fontWeight:700,fontSize:11,color:"#4A235A"}}>{c.numBC||c.id.slice(0,8).toUpperCase()}</td>
-                    <td style={{padding:"8px 10px",fontWeight:600,color:"#4A235A"}}>{c.chantierNom||"-"}</td>
-                    <td style={{padding:"8px 10px"}}>{cat.nom||c.type}</td>
-                    <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(c.qteNonConforme||0).toLocaleString()} u</td>
-                    <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22"}}>{ristAuto.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                    <td style={{padding:"8px 10px",textAlign:"right"}}>
-                      <input type="number" step="0.01" placeholder={ristAuto.toFixed(2)} value={ristourneInput[c.id]!=null?ristourneInput[c.id]:""} onChange={e=>{var v={...ristourneInput};v[c.id]=e.target.value;setRistourneInput(v);}} style={{width:90,padding:"4px 6px",border:"1px solid #C0392B",borderRadius:6,fontSize:12,textAlign:"right",background:estValidee?"#EAFAF1":"white"}} disabled={estValidee} />
-                    </td>
-                    <td style={{padding:"8px 10px",textAlign:"center"}}>
-                      {!estValidee?(
-                        <button onClick={async function(){
-                          var val=ristourneInput[c.id]!=null&&ristourneInput[c.id]!==""?parseFloat(ristourneInput[c.id]):ristAuto;
-                          if(isNaN(val))val=ristAuto;
-                          try{
-                            await db.collection("commandes").doc(c.id).update({ristourneValidee:val,ristourneValideeAt:firebase.firestore.FieldValue.serverTimestamp(),ristourneValideeParComptable:userData.nom||user.email});
-                            var v={...msgR};v[c.id]="✅";setMsgR(v);
-                          }catch(e){var v={...msgR};v[c.id]="Erreur";setMsgR(v);}
+      tab === "ristournes" && React.createElement("div", null,
+        React.createElement("h3", null, "🎁 Non-conformes & Ristournes"),
+        React.createElement("p", { style: { color: "#888", fontSize: "13px" } }, "Activez ou désactivez la ristourne pour chaque commande. Elle n'apparaît sur la facture que si validée."),
+        commandes.length === 0 && React.createElement("p", { style: { color: "#aaa" } }, "Aucune commande."),
+        commandes.map(cmd => {
+          const ch = getChantier(cmd.chantierId || "");
+          const qteNC = cmd.qteNonConforme || 0;
+          const prixUnit = cmd.prixUnit || 0;
+          const montantNC = qteNC * prixUnit;
+          const ristourneActive = cmd.ristourneValidee !== undefined && cmd.ristourneValidee !== null;
+          return React.createElement("div", { key: cmd.id, style: { background: "#fff", border: "1px solid #ddd", borderRadius: "8px", padding: "12px", marginBottom: "10px" } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" } },
+              React.createElement("div", null,
+                React.createElement("strong", null, cmd.numBC || cmd.id), " — ", cmd.chantierNom || ch.nom || "-",
+                React.createElement("span", { style: { marginLeft: "8px", fontSize: "12px", color: "#888" } }, cmd.typNom || cmd.type),
+                React.createElement("br", null),
+                React.createElement("span", { style: { fontSize: "12px", color: "#555" } }, "Client : ", cmd.client || ch.client || "-")
+              ),
+              React.createElement("div", { style: { textAlign: "right", fontSize: "13px" } },
+                React.createElement("div", null, "Qté NC : ", React.createElement("strong", { style: { color: qteNC > 0 ? "#c0392b" : "#555" } }, qteNC)),
+                qteNC > 0 && React.createElement("div", null, "Montant NC : ", React.createElement("strong", null, montantNC.toFixed(2) + " €"))
+              )
+            ),
+            React.createElement("div", { style: { marginTop: "10px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+              React.createElement("label", { style: { fontSize: "13px" } }, "Montant ristourne (€) : "),
+              React.createElement("input", {
+                type: "number", min: "0", step: "0.01",
+                value: ristourneInput[cmd.id] !== undefined ? ristourneInput[cmd.id] : (ristourneActive ? cmd.ristourneValidee : ""),
+                onChange: e => setRistourneInput(prev => ({ ...prev, [cmd.id]: e.target.value })),
+                style: { padding: "5px 8px", border: "1px solid #ccc", borderRadius: "5px", width: "100px" },
+                disabled: ristourneActive
+              }),
+              React.createElement("button", {
+                onClick: () => toggleRistourne(cmd),
+                style: {
+                  padding: "6px 14px", border: "none", borderRadius: "6px", cursor: "pointer",
+                  background: ristourneActive ? "#c0392b" : "#2C6E49", color: "#fff", fontWeight: "bold"
+                }
+              }, ristourneActive ? "❌ Désactiver ristourne" : "✅ Valider ristourne"),
+              ristourneActive && React.createElement("span", { style: { fontSize: "12px", color: "#2C6E49" } },
+                "✔ Ristourne de ", parseFloat(cmd.ristourneValidee).toFixed(2), "€ active"
+              )
+            )
+          );
+        })
+      ),
+
+      tab === "pertes" && React.createElement("div", null,
+        React.createElement("h3", null, "📉 Suivi des pertes"),
+        React.createElement("div", { style: { display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "16px" } },
+          React.createElement("div", { style: { background: "#fff3cd", border: "1px solid #ffc107", borderRadius: "8px", padding: "12px 20px", textAlign: "center" } },
+            React.createElement("div", { style: { fontSize: "22px", fontWeight: "bold", color: "#856404" } }, totalPertesProduction),
+            React.createElement("div", { style: { fontSize: "12px", color: "#856404" } }, "Pertes production")
+          ),
+          React.createElement("div", { style: { background: "#f8d7da", border: "1px solid #f5c6cb", borderRadius: "8px", padding: "12px 20px", textAlign: "center" } },
+            React.createElement("div", { style: { fontSize: "22px", fontWeight: "bold", color: "#721c24" } }, totalPertesRetour),
+            React.createElement("div", { style: { fontSize: "12px", color: "#721c24" } }, "Retours NC")
+          ),
+          React.createElement("div", { style: { background: "#d1ecf1", border: "1px solid #bee5eb", borderRadius: "8px", padding: "12px 20px", textAlign: "center" } },
+            React.createElement("div", { style: { fontSize: "22px", fontWeight: "bold", color: "#0c5460" } }, totalPertesProduction + totalPertesRetour),
+            React.createElement("div", { style: { fontSize: "12px", color: "#0c5460" } }, "Total pertes")
+          )
+        ),
+        React.createElement("div", { style: { overflowX: "auto" } },
+          React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: "13px" } },
+            React.createElement("thead", null,
+              React.createElement("tr", { style: { background: "#2C6E49", color: "#fff" } },
+                React.createElement("th", { style: { padding: "7px" } }, "Date"),
+                React.createElement("th", { style: { padding: "7px" } }, "Type BTC"),
+                React.createElement("th", { style: { padding: "7px" } }, "Quantité"),
+                React.createElement("th", { style: { padding: "7px" } }, "Raison"),
+                React.createElement("th", { style: { padding: "7px" } }, "Source"),
+                React.createElement("th", { style: { padding: "7px" } }, "Responsable")
+              )
+            ),
+            React.createElement("tbody", null,
+              pertes.length === 0 && React.createElement("tr", null,
+                React.createElement("td", { colSpan: 6, style: { padding: "12px", textAlign: "center", color: "#888" } }, "Aucune perte enregistrée.")
+              ),
+              pertes.map(p => {
+                const dateP = p.timestamp ? new Date(p.timestamp.seconds ? p.timestamp.seconds*1000 : p.timestamp).toLocaleDateString("fr-FR") : "-";
+                return React.createElement("tr", { key: p.id, style: { borderBottom: "1px solid #eee" } },
+                  React.createElement("td", { style: { padding: "7px" } }, dateP),
+                  React.createElement("td", { style: { padding: "7px" } }, p.type || "-"),
+                  React.createElement("td", { style: { padding: "7px", textAlign: "center", fontWeight: "bold", color: "#c0392b" } }, p.quantite),
+                  React.createElement("td", { style: { padding: "7px" } },
+                    p.raison === "retour_nc" ? "🔄 Retour NC chantier" : "💥 Perte production"
+                  ),
+                  React.createElement("td", { style: { padding: "7px" } },
+                    p.source === "chantier" ? ("Chantier: " + (p.chantierNom || "-")) : "Production"
+                  ),
+                  React.createElement("td", { style: { padding: "7px" } }, p.responsable || "-")
+                );
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+}
                         }} style={{padding:"5px 12px",background:"#27AE60",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700,fontSize:12}}>✅ Valider ristourne</button>
                       ):(
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
