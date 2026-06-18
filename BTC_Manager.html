@@ -677,12 +677,9 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   var passerCommande = async function() {
     if (!cmdType||!cmdQte) { setMsgCmd("Choisissez un type et entrez la quantite"); return; }
     try {
-      // Générer numéro BC unique
-      var now = new Date();
-      var yyyy = now.getFullYear();
-      var mm = String(now.getMonth()+1).padStart(2,"0");
-      var rand = Math.floor(1000+Math.random()*9000);
-      var numBC = "BC-"+yyyy+mm+"-"+rand;
+      // Numéro de commande séquentiel
+      const snapBC = await db.collection("commandes").get();
+      var numBC = "N" + (snapBC.size + 1);
       var catItem = CATALOGUE.find(function(p){return p.id===cmdType;})||{};
       await db.collection("commandes").add({
         numBC: numBC,
