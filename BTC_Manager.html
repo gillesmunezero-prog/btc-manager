@@ -1165,7 +1165,7 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
               </table>
             </div>
           </div>
-        )}   )}
+        )}
         {tab==="comptabilite"&&(
           React.createElement(DashboardComptable, { user: user, userData: userData })
         )}
@@ -1622,6 +1622,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
           )}
         </div>
       </div>
+    </div>
   );
 }
 
@@ -2735,7 +2736,10 @@ return(
         }
       </div>
     </div>
-  );
+
+      </div>
+    </div>  );
+}
 }
 
 
