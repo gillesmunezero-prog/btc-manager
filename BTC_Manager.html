@@ -676,7 +676,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
               <strong style={{color:'var(--btp-gold)'}}> Les données réelles ne seront pas affectées.</strong>
             </p>
             {resetMsg ? (
-              <div className={`btp-alert ${resetMsg.startsWith('✅') ? 'alert-success' : resetMsg.startsWith('❌') ? 'alert-error' : 'alert-info'}`}>{resetMsg}</div>
+              <div className={"btp-alert " + (resetMsg.startsWith("✅") ? "alert-success" : resetMsg.startsWith("❌") ? "alert-error" : "alert-info")}>{resetMsg}</div>
             ) : (
               <div style={{display:'flex',gap:12}}>
                 <button className="btn btn-danger btn-full" onClick={executerResetDemo}>🗑️ Confirmer la réinitialisation</button>
@@ -698,7 +698,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
         </div>
         <div className="btp-header-right">
           <div 
-            className={`mode-badge ${modeDemo ? 'mode-badge-demo' : 'mode-badge-real'}`}
+            className={"mode-badge " + (modeDemo ? "mode-badge-demo" : "mode-badge-real")}
             onClick={toggleModeDemo}
             title="Cliquer pour basculer le mode"
           >
@@ -742,7 +742,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
           {key:"comptabilite",icon:"💼",label:"Comptabilité"},
         ].map(({key,icon,label}) => (
           <button key={key} 
-            className={`btp-nav-btn ${tab===key?'active':''`}
+            className={"btp-nav-btn " + (tab===key?"active":"")}
             onClick={()=>setTab(key)}>
             {icon} {label}
           </button>
@@ -775,10 +775,10 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 var statusColor=level==='ok'?'var(--btp-green)':level==='warn'?'var(--btp-gold)':'var(--btp-red)';
                 var cardClass=level==='ok'?'kpi-card-green':level==='warn'?'kpi-card-gold':'kpi-card-red';
                 return(
-                  <div key={prod.id} className={`kpi-card ${cardClass}`}>
+                  <div key={prod.id} className={"kpi-card " + cardClass}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                       <div style={{fontSize:11,fontWeight:700,color:'var(--btp-text2)',textTransform:'uppercase',letterSpacing:'.5px',flex:1,lineHeight:1.3}}>{prod.nom}</div>
-                      <span className={`badge ${level==='ok'?'badge-green':level==='warn'?'badge-gold':'badge-red'}`}>
+                      <span className={"badge " + (level==="ok"?"badge-green":level==="warn"?"badge-gold":"badge-red")}>
                         {level==='ok'?'✅ OK':level==='warn'?'⚠️ Bas':'🔴 Critique'}
                       </span>
                     </div>
@@ -788,7 +788,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                       <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--btp-text2)',marginBottom:4}}>
                         <span>Progression</span><span style={{color:statusColor,fontWeight:700}}>{pct}%</span>
                       </div>
-                      <div className={`btp-progress stock-level-${level}`}>
+                      <div className={"btp-progress stock-level-" + level}>
                         <div className="btp-progress-bar" style={{width:pct+'%'}}></div>
                       </div>
                     </div>
@@ -1772,7 +1772,7 @@ function DashboardComptable({ user, userData }) {
       ),
       React.createElement("div", { className: "btp-nav" },
         [["facturation","📋 Facturation"],["ristournes","🎁 Non-conf. & Ristournes"],["pertes","📉 Pertes"]].map(([k,l]) =>
-          React.createElement("button", { key: k, className: `btp-nav-btn ${tab===k?'active':''}`, onClick: () => setTab(k) }, l)
+          React.createElement("button", { key: k, className: "btp-nav-btn " + (tab===k?"active":""), onClick: () => setTab(k) }, l)
         )
       ),
       React.createElement("div", { className: "btp-content" },
@@ -2110,7 +2110,7 @@ function DashboardChef({ user, userData }) {
           {key:"commande",icon:"📋",label:"Nouvelle Commande"},
           {key:"reception",icon:"📦",label:"Réception"},
         ].map(({key,icon,label})=>(
-          <button key={key} className={`btp-nav-btn ${tabChef===key?'active':''}`}
+          <button key={key} className={"btp-nav-btn " + (tabChef===key?"active":"")}
             onClick={()=>setTabChef(key)}>
             {icon} {label}
           </button>
@@ -2503,7 +2503,7 @@ function DashboardProduction({ user, userData }) {
           {key:"production",icon:"⚙️",label:"Production"},
           {key:"pertes",icon:"📉",label:"Pertes"},
         ].map(({key,icon,label})=>(
-          <button key={key} className={`btp-nav-btn ${tabProd===key?'active':''}`}
+          <button key={key} className={"btp-nav-btn " + (tabProd===key?"active":"")}
             onClick={()=>setTabProd(key)}>
             {icon} {label}
           </button>
