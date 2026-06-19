@@ -12,13 +12,415 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: "Segoe UI", Arial, sans-serif; background: #FDF6E3; color: #2C1810; }
-input, select, textarea, button { font-family: inherit; }
-.fade-in { animation: fadeIn .2s ease; }
-.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
-@media(max-width:600px){.g2{grid-template-columns:1fr 1fr!important}.g1{grid-template-columns:1fr!important}}
-@keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+:root{
+  --btp-dark:#0D1B2A;
+  --btp-navy:#1B2838;
+  --btp-steel:#243447;
+  --btp-orange:#E8601C;
+  --btp-orange2:#FF7A3D;
+  --btp-gold:#F0A500;
+  --btp-green:#1DB954;
+  --btp-red:#E74C3C;
+  --btp-blue:#2980B9;
+  --btp-purple:#8E44AD;
+  --btp-text:#ECF0F1;
+  --btp-text2:#BDC3C7;
+  --btp-card:#1E2D3D;
+  --btp-card2:#253545;
+  --btp-border:#2C3E50;
+  --btp-shadow:0 8px 32px rgba(0,0,0,.45);
+  --btp-shadow2:0 4px 16px rgba(0,0,0,.3);
+  --btp-radius:12px;
+  --btp-radius2:8px;
+  --btp-font:"Segoe UI",system-ui,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--btp-font);background:var(--btp-dark);color:var(--btp-text);min-height:100vh;}
+input,select,textarea,button{font-family:inherit;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--btp-dark);}
+::-webkit-scrollbar-thumb{background:var(--btp-orange);border-radius:3px;}
+
+/* ANIMATIONS */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-20px);}to{opacity:1;transform:translateX(0);}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px var(--btp-orange);}50%{box-shadow:0 0 24px var(--btp-orange2),0 0 48px rgba(232,96,28,.3);}}
+@keyframes shimmer{0%{background-position:-200% 0;}100%{background-position:200% 0;}}
+@keyframes spin{to{transform:rotate(360deg);}}
+.fade-up{animation:fadeUp .3s ease both;}
+.slide-in{animation:slideIn .25s ease both;}
+.pulse{animation:pulse 2s ease-in-out infinite;}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+/* APP SHELL */
+.btp-app{min-height:100vh;background:linear-gradient(135deg,var(--btp-dark) 0%,var(--btp-navy) 100%);}
+
+/* HEADER */
+.btp-header{
+  background:linear-gradient(90deg,var(--btp-steel) 0%,var(--btp-navy) 100%);
+  border-bottom:2px solid var(--btp-orange);
+  padding:0 20px;
+  height:64px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;
+  box-shadow:0 4px 24px rgba(0,0,0,.5);
+}
+.btp-header-logo{display:flex;align-items:center;gap:12px;}
+.btp-header-logo-icon{
+  width:40px;height:40px;
+  background:linear-gradient(135deg,var(--btp-orange),var(--btp-gold));
+  border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;box-shadow:0 4px 12px rgba(232,96,28,.4);
+}
+.btp-header-title{font-size:18px;font-weight:800;letter-spacing:.5px;color:white;}
+.btp-header-sub{font-size:11px;color:var(--btp-text2);letter-spacing:1px;text-transform:uppercase;}
+.btp-header-right{display:flex;align-items:center;gap:12px;}
+.btp-user-chip{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:20px;padding:6px 14px;
+  font-size:13px;color:var(--btp-text2);
+}
+.btp-user-chip strong{color:white;}
+
+/* MODE BADGE */
+.mode-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;
+  letter-spacing:.5px;text-transform:uppercase;cursor:pointer;
+  transition:all .2s;border:2px solid;
+}
+.mode-badge-demo{
+  background:rgba(240,165,0,.15);border-color:var(--btp-gold);
+  color:var(--btp-gold);animation:glow 2s ease-in-out infinite;
+}
+.mode-badge-real{
+  background:rgba(29,185,84,.12);border-color:var(--btp-green);
+  color:var(--btp-green);
+}
+.mode-badge-dot{width:8px;height:8px;border-radius:50%;}
+.mode-badge-demo .mode-badge-dot{background:var(--btp-gold);}
+.mode-badge-real .mode-badge-dot{background:var(--btp-green);}
+
+/* NAV TABS */
+.btp-nav{
+  background:var(--btp-navy);
+  border-bottom:1px solid var(--btp-border);
+  padding:0 20px;
+  display:flex;overflow-x:auto;gap:2px;
+}
+.btp-nav::-webkit-scrollbar{height:0;}
+.btp-nav-btn{
+  background:none;border:none;
+  color:var(--btp-text2);font-size:13px;font-weight:600;
+  padding:14px 18px;cursor:pointer;
+  border-bottom:3px solid transparent;
+  transition:all .2s;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;
+}
+.btp-nav-btn:hover{color:white;background:rgba(255,255,255,.05);}
+.btp-nav-btn.active{
+  color:var(--btp-orange2);
+  border-bottom-color:var(--btp-orange);
+  background:rgba(232,96,28,.08);
+}
+
+/* CARDS */
+.btp-card{
+  background:var(--btp-card);
+  border:1px solid var(--btp-border);
+  border-radius:var(--btp-radius);
+  padding:20px;
+  box-shadow:var(--btp-shadow2);
+  transition:transform .2s,box-shadow .2s;
+}
+.btp-card:hover{box-shadow:var(--btp-shadow);}
+.btp-card-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:16px;padding-bottom:14px;
+  border-bottom:1px solid var(--btp-border);
+}
+.btp-card-title{font-size:15px;font-weight:700;color:white;}
+.btp-card-subtitle{font-size:12px;color:var(--btp-text2);margin-top:2px;}
+
+/* KPI CARDS */
+.kpi-card{
+  background:linear-gradient(135deg,var(--btp-card) 0%,var(--btp-card2) 100%);
+  border:1px solid var(--btp-border);
+  border-radius:var(--btp-radius);
+  padding:20px 22px;
+  position:relative;overflow:hidden;
+}
+.kpi-card::before{
+  content:'';position:absolute;top:0;right:0;
+  width:80px;height:80px;border-radius:50%;
+  opacity:.08;transform:translate(20px,-20px);
+}
+.kpi-card-icon{font-size:28px;margin-bottom:8px;}
+.kpi-card-value{font-size:28px;font-weight:900;color:white;line-height:1.1;}
+.kpi-card-label{font-size:12px;color:var(--btp-text2);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;}
+.kpi-card-trend{
+  position:absolute;top:16px;right:16px;
+  font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;
+}
+.kpi-card-orange{border-top:3px solid var(--btp-orange);}
+.kpi-card-green{border-top:3px solid var(--btp-green);}
+.kpi-card-blue{border-top:3px solid var(--btp-blue);}
+.kpi-card-gold{border-top:3px solid var(--btp-gold);}
+.kpi-card-red{border-top:3px solid var(--btp-red);}
+
+/* BUTTONS */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:10px 18px;border-radius:var(--btp-radius2);
+  font-size:13px;font-weight:700;cursor:pointer;
+  border:none;transition:all .2s;letter-spacing:.3px;
+  text-decoration:none;outline:none;
+}
+.btn:active{transform:scale(.97);}
+.btn-primary{
+  background:linear-gradient(135deg,var(--btp-orange),var(--btp-orange2));
+  color:white;box-shadow:0 4px 12px rgba(232,96,28,.35);
+}
+.btn-primary:hover{box-shadow:0 6px 20px rgba(232,96,28,.5);transform:translateY(-1px);}
+.btn-success{
+  background:linear-gradient(135deg,#1a7a3a,var(--btp-green));
+  color:white;box-shadow:0 4px 12px rgba(29,185,84,.3);
+}
+.btn-success:hover{box-shadow:0 6px 20px rgba(29,185,84,.45);transform:translateY(-1px);}
+.btn-danger{
+  background:linear-gradient(135deg,#c0392b,var(--btp-red));
+  color:white;box-shadow:0 4px 12px rgba(231,76,60,.3);
+}
+.btn-danger:hover{box-shadow:0 6px 20px rgba(231,76,60,.45);transform:translateY(-1px);}
+.btn-ghost{
+  background:rgba(255,255,255,.06);border:1px solid var(--btp-border);
+  color:var(--btp-text2);
+}
+.btn-ghost:hover{background:rgba(255,255,255,.12);color:white;}
+.btn-gold{
+  background:linear-gradient(135deg,#b8860b,var(--btp-gold));
+  color:#0D1B2A;
+}
+.btn-gold:hover{box-shadow:0 6px 20px rgba(240,165,0,.4);transform:translateY(-1px);}
+.btn-sm{padding:6px 12px;font-size:12px;}
+.btn-lg{padding:13px 24px;font-size:15px;}
+.btn-full{width:100%;}
+.btn-icon{padding:8px;border-radius:8px;}
+.btn-reset-demo{
+  background:linear-gradient(135deg,#7d3c98,var(--btp-purple));
+  color:white;box-shadow:0 4px 12px rgba(142,68,173,.35);
+  animation:pulse 2s ease-in-out infinite;
+}
+.btn-reset-demo:hover{box-shadow:0 6px 20px rgba(142,68,173,.5);transform:translateY(-1px);animation:none;}
+
+/* INPUTS */
+.btp-input{
+  width:100%;background:var(--btp-steel);
+  border:1.5px solid var(--btp-border);border-radius:var(--btp-radius2);
+  padding:10px 14px;color:white;font-size:14px;
+  transition:border-color .2s,box-shadow .2s;outline:none;
+}
+.btp-input:focus{border-color:var(--btp-orange);box-shadow:0 0 0 3px rgba(232,96,28,.15);}
+.btp-input::placeholder{color:rgba(189,195,199,.4);}
+.btp-label{font-size:12px;font-weight:700;color:var(--btp-text2);margin-bottom:6px;
+  display:block;text-transform:uppercase;letter-spacing:.5px;}
+
+/* SELECT */
+.btp-select{
+  width:100%;background:var(--btp-steel);
+  border:1.5px solid var(--btp-border);border-radius:var(--btp-radius2);
+  padding:10px 14px;color:white;font-size:14px;
+  transition:border-color .2s;outline:none;cursor:pointer;
+}
+.btp-select:focus{border-color:var(--btp-orange);box-shadow:0 0 0 3px rgba(232,96,28,.15);}
+.btp-select option{background:var(--btp-steel);}
+
+/* TABLES */
+.btp-table-wrap{overflow-x:auto;border-radius:var(--btp-radius);border:1px solid var(--btp-border);}
+.btp-table{width:100%;border-collapse:collapse;font-size:13px;}
+.btp-table th{
+  background:var(--btp-steel);color:var(--btp-text2);
+  padding:12px 14px;text-align:left;font-size:11px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.8px;
+  border-bottom:2px solid var(--btp-border);white-space:nowrap;
+}
+.btp-table td{
+  padding:12px 14px;border-bottom:1px solid rgba(44,62,80,.6);
+  color:var(--btp-text);vertical-align:middle;
+}
+.btp-table tr:last-child td{border-bottom:none;}
+.btp-table tbody tr:hover{background:rgba(255,255,255,.04);}
+.btp-table tr.demo-row{background:rgba(240,165,0,.06)!important;}
+
+/* BADGES */
+.badge{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:3px 10px;border-radius:20px;
+  font-size:11px;font-weight:700;letter-spacing:.3px;
+}
+.badge-orange{background:rgba(232,96,28,.15);color:var(--btp-orange2);border:1px solid rgba(232,96,28,.25);}
+.badge-green{background:rgba(29,185,84,.12);color:#2ecc71;border:1px solid rgba(29,185,84,.25);}
+.badge-red{background:rgba(231,76,60,.12);color:#e74c3c;border:1px solid rgba(231,76,60,.25);}
+.badge-blue{background:rgba(41,128,185,.12);color:#5dade2;border:1px solid rgba(41,128,185,.25);}
+.badge-gold{background:rgba(240,165,0,.12);color:var(--btp-gold);border:1px solid rgba(240,165,0,.25);}
+.badge-purple{background:rgba(142,68,173,.12);color:#bb8fce;border:1px solid rgba(142,68,173,.25);}
+.badge-gray{background:rgba(255,255,255,.06);color:var(--btp-text2);border:1px solid var(--btp-border);}
+.badge-demo{background:rgba(240,165,0,.2);color:var(--btp-gold);border:1px solid var(--btp-gold);}
+
+/* PROGRESS BAR */
+.btp-progress{height:8px;background:var(--btp-border);border-radius:4px;overflow:hidden;}
+.btp-progress-bar{height:100%;border-radius:4px;transition:width .4s ease;}
+
+/* STOCK INDICATOR */
+.stock-level-ok .btp-progress-bar{background:linear-gradient(90deg,var(--btp-green),#58d68d);}
+.stock-level-warn .btp-progress-bar{background:linear-gradient(90deg,var(--btp-gold),#f8c471);}
+.stock-level-low .btp-progress-bar{background:linear-gradient(90deg,var(--btp-red),#f1948a);}
+
+/* DEMO BANNER */
+.demo-banner{
+  background:linear-gradient(90deg,rgba(240,165,0,.15),rgba(232,96,28,.1),rgba(240,165,0,.15));
+  border-top:1px solid var(--btp-gold);border-bottom:1px solid var(--btp-gold);
+  padding:10px 20px;display:flex;align-items:center;justify-content:space-between;
+  background-size:200% 100%;animation:shimmer 3s linear infinite;
+}
+.demo-banner-text{font-size:13px;color:var(--btp-gold);font-weight:700;letter-spacing:.5px;}
+
+/* MODAL */
+.btp-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:1000;display:flex;align-items:center;justify-content:center;
+  animation:fadeUp .2s ease;backdrop-filter:blur(4px);
+}
+.btp-modal{
+  background:var(--btp-card);border:1px solid var(--btp-border);
+  border-radius:16px;padding:28px;width:90%;max-width:520px;
+  box-shadow:0 24px 80px rgba(0,0,0,.6);
+  animation:fadeUp .25s ease;
+}
+.btp-modal-title{font-size:18px;font-weight:800;color:white;margin-bottom:20px;
+  display:flex;align-items:center;gap:10px;}
+
+/* FORM GROUP */
+.form-group{margin-bottom:16px;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+
+/* SECTION HEADER */
+.section-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:20px;
+}
+.section-title{font-size:20px;font-weight:900;color:white;
+  display:flex;align-items:center;gap:10px;}
+.section-title-icon{
+  width:36px;height:36px;border-radius:10px;
+  background:linear-gradient(135deg,var(--btp-orange),var(--btp-gold));
+  display:flex;align-items:center;justify-content:center;font-size:18px;
+}
+
+/* CONTENT AREA */
+.btp-content{padding:24px;max-width:1400px;margin:0 auto;}
+
+/* GRID */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+
+/* STATUS COLORS */
+.text-orange{color:var(--btp-orange2);}
+.text-green{color:#2ecc71;}
+.text-red{color:var(--btp-red);}
+.text-gold{color:var(--btp-gold);}
+.text-blue{color:#5dade2;}
+.text-gray{color:var(--btp-text2);}
+
+/* LOGIN SCREEN */
+.login-screen{
+  min-height:100vh;
+  background:linear-gradient(135deg,#0D1B2A 0%,#1B2838 50%,#0D1B2A 100%);
+  display:flex;align-items:center;justify-content:center;
+}
+.login-card{
+  background:var(--btp-card);border:1px solid var(--btp-border);
+  border-radius:20px;padding:40px;width:90%;max-width:420px;
+  box-shadow:0 32px 80px rgba(0,0,0,.6);animation:fadeUp .4s ease;
+  position:relative;overflow:hidden;
+}
+.login-card::before{
+  content:'';position:absolute;top:-60px;right:-60px;
+  width:200px;height:200px;border-radius:50%;
+  background:radial-gradient(circle,rgba(232,96,28,.15),transparent);
+}
+.login-logo{
+  width:64px;height:64px;border-radius:16px;
+  background:linear-gradient(135deg,var(--btp-orange),var(--btp-gold));
+  display:flex;align-items:center;justify-content:center;font-size:32px;
+  margin:0 auto 20px;box-shadow:0 8px 24px rgba(232,96,28,.4);
+}
+.login-title{text-align:center;font-size:24px;font-weight:900;color:white;margin-bottom:4px;}
+.login-sub{text-align:center;font-size:13px;color:var(--btp-text2);margin-bottom:28px;}
+
+/* ALERT */
+.btp-alert{
+  padding:12px 16px;border-radius:var(--btp-radius2);
+  font-size:13px;font-weight:600;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.alert-error{background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.3);color:#e74c3c;}
+.alert-success{background:rgba(29,185,84,.12);border:1px solid rgba(29,185,84,.3);color:#2ecc71;}
+.alert-warning{background:rgba(240,165,0,.12);border:1px solid rgba(240,165,0,.3);color:var(--btp-gold);}
+.alert-info{background:rgba(41,128,185,.12);border:1px solid rgba(41,128,185,.3);color:#5dade2;}
+
+/* TOGGLE SWITCH */
+.toggle-wrap{display:flex;align-items:center;gap:10px;}
+.toggle{position:relative;width:48px;height:26px;cursor:pointer;}
+.toggle input{display:none;}
+.toggle-track{
+  position:absolute;inset:0;border-radius:13px;
+  background:var(--btp-border);transition:background .2s;
+}
+.toggle input:checked+.toggle-track{background:var(--btp-green);}
+.toggle-thumb{
+  position:absolute;top:3px;left:3px;
+  width:20px;height:20px;border-radius:50%;
+  background:white;transition:transform .2s;
+  box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
+.toggle input:checked~.toggle-thumb{transform:translateX(22px);}
+
+/* EMPTY STATE */
+.empty-state{
+  text-align:center;padding:48px 20px;
+  color:var(--btp-text2);
+}
+.empty-state-icon{font-size:48px;margin-bottom:12px;opacity:.5;}
+.empty-state-text{font-size:15px;font-weight:600;color:var(--btp-text);}
+.empty-state-sub{font-size:13px;margin-top:4px;}
+
+/* SEPARATOR */
+.btp-sep{height:1px;background:var(--btp-border);margin:16px 0;}
+
+/* PRINT STYLES */
+@media print{
+  .btp-header,.btp-nav,.no-print{display:none!important;}
+  body{background:white!important;color:black!important;}
+  .btp-content{padding:0!important;}
+}
+
+/* RESPONSIVE */
+@media(max-width:900px){
+  .grid-4{grid-template-columns:1fr 1fr;}
+  .grid-3{grid-template-columns:1fr 1fr;}
+}
+@media(max-width:600px){
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr;}
+  .form-row{grid-template-columns:1fr;}
+  .btp-content{padding:14px;}
+  .btp-header{height:56px;}
+  .btp-header-title{font-size:15px;}
+}
 </style>
 </head>
 <body>
@@ -98,49 +500,55 @@ function getProduit(id) {
 
 
 function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const handleLogin = async () => {
-    setLoading(true); setError("");
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setError(""); setLoading(true);
     try {
-  await auth.signInWithEmailAndPassword(email, password);
-  try{
-    var cu=auth.currentUser;
-    if(cu){
-      var udoc=await db.collection("users").doc(cu.uid).get();
-      if(udoc.exists&&udoc.data().pendingPassword){
-        await cu.updatePassword(udoc.data().pendingPassword);
-        await db.collection("users").doc(cu.uid).update({pendingPassword:firebase.firestore.FieldValue.delete()});
-      }
+      await auth.signInWithEmailAndPassword(email.trim(), password);
+    } catch(err) {
+      var msgs = {
+        "auth/user-not-found": "Compte introuvable",
+        "auth/wrong-password": "Mot de passe incorrect",
+        "auth/invalid-email": "Email invalide",
+        "auth/too-many-requests": "Trop de tentatives, réessayez plus tard"
+      };
+      setError(msgs[err.code] || "Erreur de connexion");
     }
-  }catch(ep){}
-}
-catch (e) { setError("Email ou mot de passe incorrect"); }
-setLoading(false);
-  };
+    setLoading(false);
+  }
+
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#8B1A10,#C0392B)"}}>
-      <div style={{background:"white",borderRadius:16,padding:36,width:340,boxShadow:"0 8px 32px rgba(0,0,0,0.25)"}}>
-        <div style={{textAlign:"center",marginBottom:24}}>
-          <div style={{fontSize:48,marginBottom:8}}>🧱</div>
-          <h2 style={{color:"#C0392B",fontWeight:700}}>BTC Manager</h2>
-          <p style={{color:"#888",fontSize:13}}>Terre et Eau - Mamoudzou</p>
-        </div>
-        {error && <div style={{background:"#FFECEC",color:"#C0392B",padding:"8px 12px",borderRadius:8,marginBottom:12,fontSize:13}}>{error}</div>}
-        <input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}
-          style={{width:"100%",padding:"10px 14px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14}} />
-        <input type="password" placeholder="Mot de passe" value={password} onChange={e=>setPassword(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-          style={{width:"100%",padding:"10px 14px",borderRadius:8,border:"1px solid #ddd",marginBottom:16,fontSize:14}} />
-        <button onClick={handleLogin} disabled={loading}
-          style={{width:"100%",padding:"11px",background:"#C0392B",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:15}}>
-          {loading ? "Connexion..." : "Se connecter"}
-        </button>
-        <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #EEE",textAlign:"center"}}>
-          <div style={{fontSize:11,color:"#aaa",marginBottom:6}}>Scannez pour ouvrir sur telephone</div>
-          <div ref={el=>{if(el&&!el.dataset.qr&&typeof QRCode!=="undefined"){el.dataset.qr="1";new QRCode(el,{text:"https://gillesmunezero-prog.github.io/btc-manager/BTC_Manager.html",width:96,height:96,colorDark:"#C0392B",colorLight:"#fff",correctLevel:QRCode.CorrectLevel.M})}}} style={{display:"inline-block",margin:"0 auto"}}></div>
+    <div className="login-screen">
+      <div className="login-card fade-up">
+        <div className="login-logo">🧱</div>
+        <div className="login-title">BTC Manager</div>
+        <div className="login-sub">Terre et Eau — Mamoudzou, Mayotte</div>
+        <form onSubmit={handleLogin}>
+          <div className="form-group">
+            <label className="btp-label">Adresse email</label>
+            <input className="btp-input" type="email" placeholder="votre@email.com"
+              value={email} onChange={e=>setEmail(e.target.value)} required />
+          </div>
+          <div className="form-group" style={{marginBottom:24}}>
+            <label className="btp-label">Mot de passe</label>
+            <input className="btp-input" type="password" placeholder="••••••••"
+              value={password} onChange={e=>setPassword(e.target.value)} required />
+          </div>
+          {error && <div className="btp-alert alert-error">⚠️ {error}</div>}
+          <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading}>
+            {loading ? <span style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{width:16,height:16,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'white',borderRadius:'50%',animation:'spin .7s linear infinite',display:'inline-block'}}></span>
+              Connexion...
+            </span> : "🔐 Se connecter"}
+          </button>
+        </form>
+        <div style={{marginTop:20,textAlign:'center',fontSize:12,color:'var(--btp-text2)'}}>
+          Version 2.0 · © 2025 Terre et Eau
         </div>
       </div>
     </div>
@@ -150,6 +558,9 @@ setLoading(false);
 
 function DashboardDirection({ user, userData }) {
   const [tab, setTab] = useState("stock");
+  const [modeDemo, setModeDemo] = React.useState(true);
+  const [showResetModal, setShowResetModal] = React.useState(false);
+  const [resetMsg, setResetMsg] = React.useState("");
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
   const [commandes, setCommandes] = useState([]);
@@ -195,7 +606,32 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
     const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
-    return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); };
+  
+  async function toggleModeDemo() {
+    var newMode = !modeDemo;
+    setModeDemo(newMode);
+    try { await db.collection("config").doc("mode").set({demo: newMode, updatedAt: new Date()}); } catch(e) {}
+  }
+
+  async function executerResetDemo() {
+    setResetMsg("Réinitialisation en cours...");
+    try {
+      var collections = ["commandes","productions","pertes","evenements"];
+      for(var c of collections){
+        var snap = await db.collection(c).get();
+        var batch = db.batch();
+        var count = 0;
+        snap.docs.forEach(d => { 
+          if(d.data().isDemo === true){ batch.delete(d.ref); count++; }
+        });
+        if(count > 0) await batch.commit();
+      }
+      setResetMsg("✅ Données démo supprimées !");
+    } catch(e) { setResetMsg("❌ Erreur: " + e.message); }
+    setTimeout(()=>setShowResetModal(false),2000);
+  }
+
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); };
   }, []);
 
   const validerCmd = async (id) => {
@@ -227,64 +663,160 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     background:tab===t?"#C0392B":"#F5E6D3", color:tab===t?"white":"#2C1810", fontWeight:tab===t?700:500, fontSize:13 });
 
   return (
-    <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
+    <div className="btp-app">
       {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
-      <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-        <div><span style={{fontSize:20}}>🧱</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Direction - {userData.nom||user.email}</span></div>
-        <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
+      
+      {/* RESET DEMO MODAL */}
+      {showResetModal && (
+        <div className="btp-modal-overlay" onClick={()=>setShowResetModal(false)}>
+          <div className="btp-modal" onClick={e=>e.stopPropagation()}>
+            <div className="btp-modal-title">🗑️ Réinitialiser les données démo</div>
+            <p style={{color:'var(--btp-text2)',marginBottom:20,lineHeight:1.6}}>
+              Cette action supprimera toutes les commandes, productions, pertes et événements marqués comme données de démo. 
+              <strong style={{color:'var(--btp-gold)'}}> Les données réelles ne seront pas affectées.</strong>
+            </p>
+            {resetMsg ? (
+              <div className={`btp-alert ${resetMsg.startsWith('✅') ? 'alert-success' : resetMsg.startsWith('❌') ? 'alert-error' : 'alert-info'}`}>{resetMsg}</div>
+            ) : (
+              <div style={{display:'flex',gap:12}}>
+                <button className="btn btn-danger btn-full" onClick={executerResetDemo}>🗑️ Confirmer la réinitialisation</button>
+                <button className="btn btn-ghost" onClick={()=>setShowResetModal(false)}>Annuler</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* HEADER */}
+      <div className="btp-header">
+        <div className="btp-header-logo">
+          <div className="btp-header-logo-icon">🧱</div>
+          <div>
+            <div className="btp-header-title">BTC Manager</div>
+            <div className="btp-header-sub">Terre et Eau · Mamoudzou</div>
+          </div>
+        </div>
+        <div className="btp-header-right">
+          <div 
+            className={`mode-badge ${modeDemo ? 'mode-badge-demo' : 'mode-badge-real'}`}
+            onClick={toggleModeDemo}
+            title="Cliquer pour basculer le mode"
+          >
+            <span className="mode-badge-dot"></span>
+            {modeDemo ? '🎓 MODE DÉMO' : '✅ MODE RÉEL'}
+          </div>
+          {modeDemo && (
+            <button className="btn btn-sm btn-reset-demo" onClick={()=>setShowResetModal(true)}>
+              🔄 Reset démo
+            </button>
+          )}
+          <div className="btp-user-chip">
+            👤 <strong>{userData.nom || user.email}</strong>
+          </div>
+          <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>
+            ⏻ Déco.
+          </button>
+        </div>
       </div>
-      <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
-        <button style={ts("stock")} onClick={()=>setTab("stock")}>Stock</button>
-        <button style={ts("production")} onClick={()=>setTab("production")}>Production</button>
-        <button style={ts("commandes")} onClick={()=>setTab("commandes")}>
-          Commandes {cmdAttente.length>0&&<span style={{background:"#E74C3C",color:"white",borderRadius:10,padding:"1px 6px",marginLeft:4,fontSize:11}}>{cmdAttente.length}</span>}
-        </button>
-        <button style={ts("finance")} onClick={()=>setTab("finance")}>Finances</button>
-        <button style={ts("catalogue")} onClick={()=>setTab("catalogue")}>Catalogue</button>
-        <button style={ts("chantiers")} onClick={()=>setTab("chantiers")}>Chantiers ({chantiers.length})</button>
-        <button style={ts("utilisateurs")} onClick={()=>setTab("utilisateurs")}>Utilisateurs</button>
-      <button style={ts("inventaire")} onClick={()=>setTab("inventaire")}>Inventaire</button>
-      <button style={ts("historique")} onClick={()=>setTab("historique")}>Historique</button>
-      <button style={ts("comptabilite")} onClick={()=>setTab("comptabilite")}>💼 Comptabilité</button>
+
+      {/* DEMO BANNER */}
+      {modeDemo && (
+        <div className="demo-banner">
+          <span className="demo-banner-text">⚠️ MODE DÉMO ACTIVÉ — Les données créées sont pour l'entraînement. Cliquez sur le badge doré pour passer en mode réel.</span>
+          <button className="btn btn-sm btn-gold" onClick={toggleModeDemo}>Passer en mode réel →</button>
+        </div>
+      )}
+
+      {/* NAV TABS */}
+      <div className="btp-nav">
+        {[
+          {key:"stock",icon:"📦",label:"Stock"},
+          {key:"production",icon:"⚙️",label:"Production"},
+          {key:"commandes",icon:"📋",label:"Commandes"},
+          {key:"finances",icon:"💰",label:"Finances"},
+          {key:"catalogue",icon:"🏷️",label:"Catalogue"},
+          {key:"chantiers",icon:"🏗️",label:"Chantiers"},
+          {key:"utilisateurs",icon:"👥",label:"Utilisateurs"},
+          {key:"inventaire",icon:"📊",label:"Inventaire"},
+          {key:"historique",icon:"🕐",label:"Historique"},
+          {key:"comptabilite",icon:"💼",label:"Comptabilité"},
+        ].map(({key,icon,label}) => (
+          <button key={key} 
+            className={`btp-nav-btn ${tab===key?'active':''`}
+            onClick={()=>setTab(key)}>
+            {icon} {label}
+          </button>
+        ))}
       </div>
-      <div style={{padding:"0 16px 24px"}}>
+
+      {/* CONTENT */}
+      <div className="btp-content">
+      
+
+
 
         {tab==="stock"&&(
-          <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Etat du stock</h3>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}}>
+          <div className="fade-up">
+            <div className="section-header">
+              <div className="section-title">
+                <div className="section-title-icon">📦</div>
+                État du Stock
+              </div>
+              <div style={{fontSize:12,color:'var(--btp-text2)'}}>
+                Stock min: <strong style={{color:'var(--btp-gold)'}}>7 500</strong> · Cible: <strong style={{color:'var(--btp-green)'}}>10 000</strong> unités/type
+              </div>
+            </div>
+            <div className="grid-3">
               {CATALOGUE.map(prod=>{
                 var s=stocks[prod.id]||{};
                 var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
-                var couleur=couleurUrgence(total);
+                var pct=Math.min(100,Math.round(total/10000*100));
+                var level=total>=7500?'ok':total>=4000?'warn':'low';
+                var statusColor=level==='ok'?'var(--btp-green)':level==='warn'?'var(--btp-gold)':'var(--btp-red)';
+                var cardClass=level==='ok'?'kpi-card-green':level==='warn'?'kpi-card-gold':'kpi-card-red';
                 return(
-                  <div key={prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
-                    <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{prod.nom}</div>
-                    <div style={{fontSize:11,color:"#999",marginBottom:8}}>{prod.dim}</div>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                  <span style={{color:"#27AE60",fontWeight:600}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
-                  <span style={{color:"#E67E22",fontWeight:600}}>Sechage: <strong>{sechage.toLocaleString()}</strong></span>
-                </div>
-                {calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {calcSechageActif(productions,prod.id).toLocaleString()} u pas encore matures</div>}
-                    <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
-                      <div style={{height:6,borderRadius:4,background:couleur,width:Math.min(100,Math.round(total/STOCK_CIBLE*100))+"%"}}></div>
+                  <div key={prod.id} className={`kpi-card ${cardClass}`}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                      <div style={{fontSize:11,fontWeight:700,color:'var(--btp-text2)',textTransform:'uppercase',letterSpacing:'.5px',flex:1,lineHeight:1.3}}>{prod.nom}</div>
+                      <span className={`badge ${level==='ok'?'badge-green':level==='warn'?'badge-gold':'badge-red'}`}>
+                        {level==='ok'?'✅ OK':level==='warn'?'⚠️ Bas':'🔴 Critique'}
+                      </span>
                     </div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
-                      <span style={{fontSize:12,fontWeight:700,color:couleur}}>{total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span>
-                      <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(total)}</span>
+                    <div className="kpi-card-value" style={{color:statusColor}}>{total.toLocaleString()}</div>
+                    <div className="kpi-card-label">Unités disponibles</div>
+                    <div style={{marginTop:12}}>
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--btp-text2)',marginBottom:4}}>
+                        <span>Progression</span><span style={{color:statusColor,fontWeight:700}}>{pct}%</span>
+                      </div>
+                      <div className={`btp-progress stock-level-${level}`}>
+                        <div className="btp-progress-bar" style={{width:pct+'%'}}></div>
+                      </div>
                     </div>
-                    <div style={{fontSize:11,color:"#8B1A10",fontWeight:600,marginTop:6}}>{prod.prix.toFixed(2)} EUR/u</div>
+                    <div style={{display:'flex',justifyContent:'space-between',marginTop:10,fontSize:12}}>
+                      <span style={{color:'var(--btp-text2)'}}>💧 Sec: <strong style={{color:'white'}}>{sec.toLocaleString()}</strong></span>
+                      <span style={{color:'var(--btp-text2)'}}>⏳ Séchage: <strong style={{color:'var(--btp-gold)'}}>{sechage.toLocaleString()}</strong></span>
+                    </div>
+                    {sechage>0&&s.dateFab&&(()=>{
+                      var df=s.dateFab.toDate?s.dateFab.toDate():new Date(s.dateFab);
+                      var joursPasses=Math.floor((new Date()-df)/(1000*3600*24));
+                      var joursRestants=Math.max(0,28-joursPasses);
+                      return <div style={{marginTop:6,fontSize:11,color:joursRestants<5?'var(--btp-red)':'var(--btp-gold)'}}>
+                        ⏰ Prêt dans: <strong>{joursRestants}j</strong>
+                      </div>;
+                    })()}
+                    <div style={{marginTop:8,fontSize:11,color:'var(--btp-text2)'}}>
+                      💶 {prod.prix.toFixed(2)}€/u
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
         )}
-
         {tab==="production"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Productions recentes</h3>
-            {productions.length===0?<p style={{color:"#888"}}>Aucune production enregistree.</p>:(
+            <h3 style={{marginBottom:14,color:"var(--btp-orange)"}}>Productions recentes</h3>
+            {productions.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune production enregistree.</p>:(
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
                   <thead><tr style={{background:"#8B1A10",color:"white"}}>
@@ -311,15 +843,15 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
         {tab==="commandes"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:12,color:"#8B1A10"}}>A valider ({cmdAttente.length})</h3>
-            {cmdAttente.length===0?<p style={{color:"#888",marginBottom:16}}>Aucune commande en attente.</p>:
+            <h3 style={{marginBottom:12,color:"var(--btp-orange)"}}>A valider ({cmdAttente.length})</h3>
+            {cmdAttente.length===0?<p style={{color:"var(--btp-text2)",marginBottom:16}}>Aucune commande en attente.</p>:
               cmdAttente.map(cmd=>(
-                <div key={cmd.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #E67E22"}}>
+                <div key={cmd.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #E67E22"}}>
                   <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
-                      <div style={{fontSize:12,color:"#666",marginTop:3}}>Par: {cmd.chefNom||cmd.chefEmail||"-"} | Client: {cmd.client||"-"}</div>
-                      {cmd.notes&&<div style={{fontSize:12,color:"#888",marginTop:2}}>Note: {cmd.notes}</div>}
+                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:3}}>Par: {cmd.chefNom||cmd.chefEmail||"-"} | Client: {cmd.client||"-"}</div>
+                      {cmd.notes&&<div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Note: {cmd.notes}</div>}
                     </div>
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={()=>validerCmd(cmd.id)} style={{background:"#27AE60",color:"white",border:"none",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700}}>Valider</button>
@@ -329,18 +861,18 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 </div>
               ))
             }
-            <h3 style={{marginBottom:10,marginTop:20,color:"#2980B9"}}>Validees ({cmdValidees.length})</h3>
+            <h3 style={{marginBottom:10,marginTop:20,color:"var(--btp-blue)"}}>Validees ({cmdValidees.length})</h3>
             {cmdValidees.map(cmd=>(
               <div key={cmd.id} style={{background:"#EBF5FB",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #2980B9"}}>
                 <div style={{fontWeight:600}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
-                <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"-"}</div>
+                <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"-"}</div>
               </div>
             ))}
-            <h3 style={{marginBottom:10,marginTop:20,color:"#27AE60"}}>Livrees ({cmdLivrees.length})</h3>
+            <h3 style={{marginBottom:10,marginTop:20,color:"var(--btp-green)"}}>Livrees ({cmdLivrees.length})</h3>
             {cmdLivrees.map(cmd=>(
               <div key={cmd.id} style={{background:"#EAFAF1",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #27AE60"}}>
                 <div style={{fontWeight:600}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
-                <div style={{fontSize:12,color:"#555",marginTop:2}}>Client: {cmd.client||"-"}</div>
+                <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Client: {cmd.client||"-"}</div>
               </div>
             ))}
           </div>
@@ -348,19 +880,19 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
         {tab==="finance"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Valeur financiere du stock BTC</h3>
+            <h3 style={{marginBottom:14,color:"var(--btp-orange)"}}>Valeur financiere du stock BTC</h3>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12,marginBottom:20}}>
               {CATALOGUE.map(prod=>{
                 var s=stocks[prod.id]||{};
                 var total=(s.sec||0)+(s.sechage||0);
                 var valeur=total*prod.prix;
                 return(
-                  <div key={prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
+                  <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
                     <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{prod.nom}</div>
                     <div style={{fontSize:11,color:"#999",marginBottom:6}}>{prod.dim}</div>
-                    <div style={{fontSize:12,color:"#666"}}>Stock: {total.toLocaleString()} u</div>
-                    <div style={{fontSize:13,color:"#666"}}>Prix unit.: {prod.prix.toFixed(2)} EUR</div>
-                    <div style={{fontSize:15,fontWeight:700,color:"#8B1A10",marginTop:6}}>{valeur.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
+                    <div style={{fontSize:12,color:"var(--btp-text2)"}}>Stock: {total.toLocaleString()} u</div>
+                    <div style={{fontSize:13,color:"var(--btp-text2)"}}>Prix unit.: {prod.prix.toFixed(2)} EUR</div>
+                    <div style={{fontSize:15,fontWeight:700,color:"var(--btp-orange)",marginTop:6}}>{valeur.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
                   </div>
                 );
               })}
@@ -374,14 +906,14 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 },0).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
               </div>
             </div>
-            <h3 style={{marginBottom:12,color:"#8B1A10"}}>Tarifs fournitures</h3>
+            <h3 style={{marginBottom:12,color:"var(--btp-orange)"}}>Tarifs fournitures</h3>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}}>
               {FOURNITURES.map(f=>(
-                <div key={f.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
+                <div key={f.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
                   <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{f.nom}</div>
                   <div style={{fontSize:11,color:"#999",marginBottom:4}}>{f.cond}</div>
-                  <div style={{fontSize:12,color:"#666",marginBottom:6}}>{f.usage}</div>
-                  <div style={{fontSize:15,fontWeight:700,color:"#8B1A10"}}>{f.prix.toFixed(2)} EUR</div>
+                  <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:6}}>{f.usage}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:"var(--btp-orange)"}}>{f.prix.toFixed(2)} EUR</div>
                 </div>
               ))}
             </div>
@@ -390,27 +922,27 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
         {tab==="catalogue"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:6,color:"#8B1A10"}}>Catalogue BTC - Terre et Eau</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:16}}>226 Imp. Vilvilini 97600 Mamoudzou | SIRET: 93222797800016 | Tel: +262 639 57 92 44</p>
-            <h4 style={{marginBottom:10,color:"#555"}}>Blocs de Terre Comprimee ({CATALOGUE.length} references)</h4>
+            <h3 style={{marginBottom:6,color:"var(--btp-orange)"}}>Catalogue BTC - Terre et Eau</h3>
+            <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:16}}>226 Imp. Vilvilini 97600 Mamoudzou | SIRET: 93222797800016 | Tel: +262 639 57 92 44</p>
+            <h4 style={{marginBottom:10,color:"var(--btp-text2)"}}>Blocs de Terre Comprimee ({CATALOGUE.length} references)</h4>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:24}}>
               {CATALOGUE.map(prod=>(
-                <div key={prod.id} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #C0392B"}}>
+                <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #C0392B"}}>
                   <div style={{fontWeight:700,fontSize:14,color:"#2C1810",marginBottom:4}}>{prod.nom}</div>
-                  <div style={{fontSize:12,color:"#888",marginBottom:4}}>Dim: {prod.dim}</div>
-                  <div style={{fontSize:12,color:"#555",marginBottom:8}}>{prod.usage}</div>
-                  <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>{prod.prix.toFixed(2)} EUR/u</div>
+                  <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Dim: {prod.dim}</div>
+                  <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:8}}>{prod.usage}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--btp-orange)"}}>{prod.prix.toFixed(2)} EUR/u</div>
                 </div>
               ))}
             </div>
-            <h4 style={{marginBottom:10,color:"#555"}}>Fournitures ({FOURNITURES.length} references)</h4>
+            <h4 style={{marginBottom:10,color:"var(--btp-text2)"}}>Fournitures ({FOURNITURES.length} references)</h4>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
               {FOURNITURES.map(f=>(
-                <div key={f.id} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
+                <div key={f.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
                   <div style={{fontWeight:700,fontSize:14,color:"#2C1810",marginBottom:4}}>{f.nom}</div>
-                  <div style={{fontSize:12,color:"#888",marginBottom:4}}>{f.cond}</div>
-                  <div style={{fontSize:12,color:"#555",marginBottom:8}}>{f.usage}</div>
-                  <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>{f.prix.toFixed(2)} EUR</div>
+                  <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>{f.cond}</div>
+                  <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:8}}>{f.usage}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--btp-orange)"}}>{f.prix.toFixed(2)} EUR</div>
                 </div>
               ))}
             </div>
@@ -419,8 +951,8 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
         {tab==="chantiers"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Chantiers en cours</h3>
-            {chantiers.length===0?<p style={{color:"#888"}}>Aucun chantier enregistre.</p>:
+            <h3 style={{marginBottom:14,color:"var(--btp-orange)"}}>Chantiers en cours</h3>
+            {chantiers.length===0?<p style={{color:"var(--btp-text2)"}}>Aucun chantier enregistre.</p>:
               chantiers.map(function(ch) {
                 var cmdCh = commandes.filter(function(c){return c.chantierId===ch.id;});
                 var recu = cmdCh.filter(function(c){return c.status==="Livree";}).reduce(function(a,c){return a+(c.quantite||0);},0);
@@ -429,22 +961,22 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 var reste = Math.max(0, besoinTotal - recu);
                 var pct = besoinTotal>0?Math.min(100,Math.round(recu/besoinTotal*100)):0;
                 return (
-                  <div key={ch.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#C0392B")}}>
+                  <div key={ch.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#C0392B")}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:700,fontSize:15}}>{ch.nom}</div>
-                        <div style={{fontSize:13,color:"#555",marginTop:2}}>Client: {ch.client} | Chef: {ch.chefNom||"-"}</div>
-                        {ch.adresse&&<div style={{fontSize:12,color:"#888"}}>{ch.adresse}</div>}
+                        <div style={{fontSize:13,color:"var(--btp-text2)",marginTop:2}}>Client: {ch.client} | Chef: {ch.chefNom||"-"}</div>
+                        {ch.adresse&&<div style={{fontSize:12,color:"var(--btp-text2)"}}>{ch.adresse}</div>}
                         <div style={{display:"flex",gap:12,marginTop:8,fontSize:12,flexWrap:"wrap"}}>
                           <span>Besoin total: <strong>{besoinTotal.toLocaleString()}</strong></span>
-                          <span style={{color:"#2980B9"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong></span>
-                          <span style={{color:"#27AE60"}}>Recu: <strong>{recu.toLocaleString()}</strong></span>
+                          <span style={{color:"var(--btp-blue)"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong></span>
+                          <span style={{color:"var(--btp-green)"}}>Recu: <strong>{recu.toLocaleString()}</strong></span>
                           <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong></span>
                         </div>
                         <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:8}}>
                           <div style={{height:8,borderRadius:4,background:pct===100?"#27AE60":"#C0392B",width:pct+"%"}}></div>
                         </div>
-                        <div style={{fontSize:11,color:"#888",marginTop:3}}>{pct}% livre</div>
+                        <div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>{pct}% livre</div>
                       </div>
                       <button onClick={()=>setFicheOuverte(ch)} style={{background:"#8B1A10",color:"white",border:"none",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Voir la fiche</button>
                     </div>
@@ -456,9 +988,9 @@ const [showPwdUid, setShowPwdUid] = useState(null);
         )}
         {tab==="inventaire"&&(
 <div className="fade-in">
-<h3 style={{marginBottom:6,color:"#8B1A10"}}>Inventaire physique — Mise a jour du stock reel</h3>
-<p style={{fontSize:12,color:"#888",marginBottom:16}}>Saisissez les quantites reelles comptees en entrepot. Les valeurs actuelles sont pre-remplies.</p>
-<div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:12}}>
+<h3 style={{marginBottom:6,color:"var(--btp-orange)"}}>Inventaire physique — Mise a jour du stock reel</h3>
+<p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:16}}>Saisissez les quantites reelles comptees en entrepot. Les valeurs actuelles sont pre-remplies.</p>
+<div style={{background:"var(--btp-card)",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:12}}>
 {CATALOGUE.map(function(prod){
 var s=stocks[prod.id]||{};
 var couleur=couleurUrgence((s.sec||0)+(s.sechage||0));
@@ -471,16 +1003,16 @@ return(
 </div>
 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
 <div>
-<label style={{fontSize:11,color:"#555",display:"block",marginBottom:2}}>Stock sec</label>
+<label style={{fontSize:11,color:"var(--btp-text2)",display:"block",marginBottom:2}}>Stock sec</label>
 <input type="number" min="0" value={invSec[prod.id]!==undefined?invSec[prod.id]:(s.sec||0)}
 onChange={e=>{var v=e.target.value;setInvSec(function(prev){var n=Object.assign({},prev);n[prod.id]=v===""?"":parseInt(v)||0;return n;})}}
-style={{width:85,padding:"6px 8px",borderRadius:6,border:"1px solid #ddd",fontSize:14,textAlign:"right"}} />
+style={{width:85,padding:"6px 8px",borderRadius:6,border:"1px solid var(--btp-border)",fontSize:14,textAlign:"right"}} />
 </div>
 <div>
-<label style={{fontSize:11,color:"#555",display:"block",marginBottom:2}}>En sechage</label>
+<label style={{fontSize:11,color:"var(--btp-text2)",display:"block",marginBottom:2}}>En sechage</label>
 <input type="number" min="0" value={invSechage[prod.id]!==undefined?invSechage[prod.id]:(s.sechage||0)}
 onChange={e=>{var v=e.target.value;setInvSechage(function(prev){var n=Object.assign({},prev);n[prod.id]=v===""?"":parseInt(v)||0;return n;})}}
-style={{width:85,padding:"6px 8px",borderRadius:6,border:"1px solid #ddd",fontSize:14,textAlign:"right"}} />
+style={{width:85,padding:"6px 8px",borderRadius:6,border:"1px solid var(--btp-border)",fontSize:14,textAlign:"right"}} />
 </div>
 </div>
 </div>
@@ -508,12 +1040,12 @@ setInvSec({});setInvSechage({});
 
 {tab==="utilisateurs"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#8B1A10"}}>Creer un compte</h3>
-            <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20,maxWidth:420}}>
-              <input placeholder="Nom complet" value={newNom} onChange={e=>setNewNom(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
-              <input placeholder="Email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
-              <input type="password" placeholder="Mot de passe" value={newPassword} onChange={e=>setNewPassword(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
-              <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,background:"white"}}>
+            <h3 style={{marginBottom:14,color:"var(--btp-orange)"}}>Creer un compte</h3>
+            <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20,maxWidth:420}}>
+              <input placeholder="Nom complet" value={newNom} onChange={e=>setNewNom(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
+              <input placeholder="Email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
+              <input type="password" placeholder="Mot de passe" value={newPassword} onChange={e=>setNewPassword(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
+              <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,background:"var(--btp-card)"}}>
                 <option value="chef_chantier">Chef de chantier</option>
                 <option value="resp_stock">Responsable Stock</option>
                 <option value="resp_production">Responsable Production</option>
@@ -523,21 +1055,21 @@ setInvSec({});setInvSechage({});
               {msgUser&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgUser.includes("Compte")?"#EAFAF1":"#FFECEC",color:msgUser.includes("Compte")?"#1E8449":"#C0392B"}}>{msgUser}</div>}
               <button onClick={creerUser} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Creer le compte</button>
             </div>
-            <h3 style={{marginBottom:10,color:"#8B1A10"}}>Comptes existants ({utilisateurs.length})</h3>
+            <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Comptes existants ({utilisateurs.length})</h3>
             {editUserTarget&&(
               <div style={{background:"#FEF9F0",border:"2px solid #C0392B",borderRadius:12,padding:16,marginBottom:16,maxWidth:420}}>
-                <h4 style={{color:"#8B1A10",marginBottom:12}}>Modifier: {editUserTarget.nom||editUserTarget.email}</h4>
-              <input placeholder="Adresse email" value={editUserEmail} onChange={e=>setEditUserEmail(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14}} />
-                <p style={{fontSize:11,color:"#888",marginTop:-4,marginBottom:4}}>Email de contact/affichage (modifiable librement). Le mot de passe sera changé à la prochaine connexion de l'utilisateur.</p>
-                <input placeholder="Nom complet" value={editUserNom} onChange={e=>setEditUserNom(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14}} />
-                <select value={editUserRole} onChange={e=>setEditUserRole(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:8,fontSize:14,background:"white"}}>
+                <h4 style={{color:"var(--btp-orange)",marginBottom:12}}>Modifier: {editUserTarget.nom||editUserTarget.email}</h4>
+              <input placeholder="Adresse email" value={editUserEmail} onChange={e=>setEditUserEmail(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14}} />
+                <p style={{fontSize:11,color:"var(--btp-text2)",marginTop:-4,marginBottom:4}}>Email de contact/affichage (modifiable librement). Le mot de passe sera changé à la prochaine connexion de l'utilisateur.</p>
+                <input placeholder="Nom complet" value={editUserNom} onChange={e=>setEditUserNom(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14}} />
+                <select value={editUserRole} onChange={e=>setEditUserRole(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14,background:"var(--btp-card)"}}>
                   <option value="chef_chantier">Chef de chantier</option>
                   <option value="resp_stock">Responsable Stock</option>
                   <option value="resp_production">Responsable Production</option>
                   <option value="direction">Direction</option>
                   <option value="comptable">Comptable</option>
                 </select>
-                <input type="password" placeholder="Nouveau mot de passe (laisser vide = inchange)" value={editUserPwd} onChange={e=>setEditUserPwd(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,fontSize:14}} />
+                <input type="password" placeholder="Nouveau mot de passe (laisser vide = inchange)" value={editUserPwd} onChange={e=>setEditUserPwd(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
                 {userEditMsg&&<div style={{padding:"7px 10px",borderRadius:6,marginBottom:8,fontSize:12,background:userEditMsg.includes("Modif")?"#EAFAF1":"#FFECEC",color:userEditMsg.includes("Modif")?"#1E8449":"#C0392B"}}>{userEditMsg}</div>}
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>{setEditUserTarget(null);setUserEditMsg("");}} style={{flex:1,padding:"8px",background:"#EEE",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Annuler</button>
@@ -558,15 +1090,15 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
               var roleColor={direction:"#8B1A10",chef_chantier:"#2980B9",resp_stock:"#145A32",resp_production:"#4A235A"};
               var rColor=roleColor[u.role]||"#888";
               return(
-                <div key={u.id} style={{background:"white",borderRadius:10,padding:"12px 14px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",border:"1px solid #EEE"}}>
+                <div key={u.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"12px 14px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",border:"1px solid #EEE"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:700,fontSize:14}}>{u.nom||"(sans nom)"}</div>
-                      <div style={{fontSize:12,color:"#555",marginTop:2}}>📧 {u.email}</div>
+                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>📧 {u.email}</div>
                       <div style={{marginTop:4,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:rColor,color:"white"}}>{roleLabel[u.role]||u.role}</span>
-                        <span style={{fontSize:12,color:"#888"}}>🔑 {showPwdUid===u.id?(u.password||u.pwd||"(mdp non stocke)"):"**********"}</span>
-                        <button onClick={()=>setShowPwdUid(showPwdUid===u.id?null:u.id)} style={{fontSize:11,padding:"2px 8px",border:"1px solid #ddd",borderRadius:6,cursor:"pointer",background:"#F9F9F9"}}>{showPwdUid===u.id?"Masquer":"Voir mdp"}</button>
+                        <span style={{fontSize:12,color:"var(--btp-text2)"}}>🔑 {showPwdUid===u.id?(u.password||u.pwd||"(mdp non stocke)"):"**********"}</span>
+                        <button onClick={()=>setShowPwdUid(showPwdUid===u.id?null:u.id)} style={{fontSize:11,padding:"2px 8px",border:"1px solid var(--btp-border)",borderRadius:6,cursor:"pointer",background:"#F9F9F9"}}>{showPwdUid===u.id?"Masquer":"Voir mdp"}</button>
                       </div>
                     </div>
                     <div style={{display:"flex",gap:6}}>
@@ -583,8 +1115,8 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
         )}
                 {tab==="historique"&&(
           <div>
-            <h3 style={{color:"#8B1A10",marginBottom:4}}>📋 Journal de traçabilité — Toutes les actions</h3>
-            <p style={{fontSize:12,color:"#888",marginBottom:12}}>Chaque action sur un bon de commande est enregistrée ici en temps réel.</p>
+            <h3 style={{color:"var(--btp-orange)",marginBottom:4}}>📋 Journal de traçabilité — Toutes les actions</h3>
+            <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Chaque action sur un bon de commande est enregistrée ici en temps réel.</p>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
                 <thead>
@@ -611,18 +1143,18 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
                     const icon = actionIcons[ev.action] || "⚡";
                     return (
                       <tr key={ev.id} style={{background:idx%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
-                        <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"#555"}}>
-                          <div style={{fontWeight:600,color:"#333"}}>{dateStr}</div>
-                          <div style={{fontSize:11,color:"#888"}}>{timeStr}</div>
+                        <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>
+                          <div style={{fontWeight:600,color:"var(--btp-text)"}}>{dateStr}</div>
+                          <div style={{fontSize:11,color:"var(--btp-text2)"}}>{timeStr}</div>
                         </td>
-                        <td style={{padding:"7px 10px",fontFamily:"monospace",fontWeight:"bold",color:"#8B1A10",whiteSpace:"nowrap"}}>{ev.numBC||"-"}</td>
+                        <td style={{padding:"7px 10px",fontFamily:"monospace",fontWeight:"bold",color:"var(--btp-orange)",whiteSpace:"nowrap"}}>{ev.numBC||"-"}</td>
                         <td style={{padding:"7px 10px",maxWidth:120}}>{ev.chantier||"-"}</td>
                         <td style={{padding:"7px 10px",fontWeight:600}}>{ev.acteur||"-"}</td>
                         <td style={{padding:"7px 10px"}}>
                           <span style={{background:roleColor,color:"white",padding:"2px 7px",borderRadius:10,fontSize:11,whiteSpace:"nowrap"}}>{ev.role||"-"}</span>
                         </td>
                         <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>{icon} {ev.action||"-"}</td>
-                        <td style={{padding:"7px 10px",color:"#555",fontSize:11,maxWidth:200}}>{ev.details||"-"}</td>
+                        <td style={{padding:"7px 10px",color:"var(--btp-text2)",fontSize:11,maxWidth:200}}>{ev.details||"-"}</td>
                         <td style={{padding:"7px 10px"}}>
                           <span style={{background:"#EAF6E9",color:"#1a5276",padding:"2px 7px",borderRadius:8,fontSize:11,whiteSpace:"nowrap"}}>{ev.statut||"-"}</span>
                         </td>
@@ -726,7 +1258,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
 
   return (
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.55)",zIndex:1000,overflowY:"auto",padding:16}}>
-      <div style={{background:"white",borderRadius:16,maxWidth:720,margin:"0 auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+      <div style={{background:"var(--btp-card)",borderRadius:16,maxWidth:720,margin:"0 auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
         <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div>
             <h2 style={{marginBottom:4,fontSize:18}}>{chantier.nom}</h2>
@@ -746,8 +1278,8 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
 
           {tabFiche==="suivi"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:12,color:"#1A5276"}}>Besoins et etat des livraisons</h4>
-              {lignes.length===0?<p style={{color:"#888"}}>Aucun type de BTC renseigne dans ce chantier.</p>:(
+              <h4 style={{marginBottom:12,color:"var(--btp-blue)"}}>Besoins et etat des livraisons</h4>
+              {lignes.length===0?<p style={{color:"var(--btp-text2)"}}>Aucun type de BTC renseigne dans ce chantier.</p>:(
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                     <thead><tr style={{background:"#1A5276",color:"white"}}>
@@ -761,11 +1293,11 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                     <tbody>{lignes.map(function(l,i){
                       var pct=l.besoin>0?Math.min(100,Math.round(l.recu/l.besoin*100)):0;
                       return(
-                        <tr key={l.prod.id} style={{background:i%2===0?"white":"#EBF5FB",borderBottom:"1px solid #ddd"}}>
+                        <tr key={l.prod.id} style={{background:i%2===0?"white":"#EBF5FB",borderBottom:"1px solid var(--btp-border)"}}>
                           <td style={{padding:"8px 10px",fontWeight:600}}>{l.prod.nom}</td>
                           <td style={{padding:"8px 10px",fontSize:11,color:"#999"}}>{l.prod.dim}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
-                          <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{l.cmdTotal.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{l.cmdTotal.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>
                             <div>{l.recu.toLocaleString()}</div>
                             <div style={{background:"#EEE",borderRadius:3,height:4,marginTop:3}}>
@@ -779,15 +1311,15 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                     <tfoot><tr style={{background:"#D6EAF8",fontWeight:700}}>
                       <td colSpan={2} style={{padding:"8px 10px"}}>TOTAL</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.besoin;},0).toLocaleString()}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{lignes.reduce(function(a,l){return a+l.cmdTotal;},0).toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{lignes.reduce(function(a,l){return a+l.cmdTotal;},0).toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.recu;},0).toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{lignes.reduce(function(a,l){return a+l.reste;},0).toLocaleString()}</td>
                     </tr></tfoot>
                   </table>
                 </div>
               )}
-              <h4 style={{marginTop:20,marginBottom:10,color:"#1A5276"}}>Historique des commandes ({cmdCh.length})</h4>
-              {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande passee.</p>:
+              <h4 style={{marginTop:20,marginBottom:10,color:"var(--btp-blue)"}}>Historique des commandes ({cmdCh.length})</h4>
+              {cmdCh.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune commande passee.</p>:
                 cmdCh.map(function(c,i){
                   var livree=c.quantiteLivree||0; var tot=c.quantite||0; var reste=Math.max(0,tot-livree);
                   var confirme=c.quantiteConfirmeeChef||0;
@@ -798,7 +1330,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                         <div style={{fontWeight:600,fontSize:13}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
                       </div>
-                      <div style={{fontSize:12,color:"#666",marginTop:3}}>Livre: {livree.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong> | Confirme par chef: {confirme.toLocaleString()}</div>
+                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:3}}>Livre: {livree.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong> | Confirme par chef: {confirme.toLocaleString()}</div>
                     </div>
                   );
                 })
@@ -808,12 +1340,12 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
 
           {tabFiche==="commande"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:14,color:"#1A5276"}}>Nouvelle commande pour ce chantier</h4>
+              <h4 style={{marginBottom:14,color:"var(--btp-blue)"}}>Nouvelle commande pour ce chantier</h4>
               {typesChantier.length===0?
-                <p style={{color:"#888",padding:12,background:"#FFF3CD",borderRadius:8}}>Aucun type de BTC renseigne. Modifiez la fiche chantier d'abord.</p>:
+                <p style={{color:"var(--btp-text2)",padding:12,background:"#FFF3CD",borderRadius:8}}>Aucun type de BTC renseigne. Modifiez la fiche chantier d'abord.</p>:
                 <div style={{maxWidth:440}}>
-                  <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Type de BTC du chantier</label>
-                  <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"white",fontSize:14,marginBottom:12}}>
+                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Type de BTC du chantier</label>
+                  <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"var(--btp-card)",fontSize:14,marginBottom:12}}>
                     <option value="">-- Choisir le type --</option>
                     {typesChantier.map(function(p){
                       var l = lignes.find(function(x){return x.prod.id===p.id;});
@@ -821,9 +1353,9 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                       return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste a livrer: {reste.toLocaleString()}</option>;
                     })}
                   </select>
-                  <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Quantite a commander</label>
-                  <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14,marginBottom:12}} />
-                  <textarea placeholder="Notes pour la Direction (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14,resize:"vertical",minHeight:50,marginBottom:12}} />
+                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Quantite a commander</label>
+                  <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:12}} />
+                  <textarea placeholder="Notes pour la Direction (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,resize:"vertical",minHeight:50,marginBottom:12}} />
                   <button onClick={passerCommande} style={{width:"100%",padding:"11px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande a la Direction ↗</button>
                 </div>
               }
@@ -832,30 +1364,30 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
 
           {tabFiche==="reception"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:12,color:"#1A5276"}}>Confirmer la reception des BTC sur le chantier</h4>
+              <h4 style={{marginBottom:12,color:"var(--btp-blue)"}}>Confirmer la reception des BTC sur le chantier</h4>
               {cmdCh.filter(function(c){return c.status==="Livree"||(c.quantiteLivree||0)>0;}).length===0?
-                <p style={{color:"#888"}}>Aucune livraison a confirmer pour l'instant.</p>:
+                <p style={{color:"var(--btp-text2)"}}>Aucune livraison a confirmer pour l'instant.</p>:
                 cmdCh.filter(function(c){return (c.quantiteLivree||0)>0;}).map(function(c){
                   var livree = c.quantiteLivree||0;
                   var confirme = c.quantiteConfirmeeChef||0;
                   var aConfirmer = Math.max(0, livree - confirme);
                   return(
-                    <div key={c.id} style={{background:"white",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #EEE",borderLeft:"4px solid #27AE60"}}>
+                    <div key={c.id} style={{background:"var(--btp-card)",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #EEE",borderLeft:"4px solid #27AE60"}}>
                       <div style={{fontWeight:700,fontSize:14}}>{getProduit(c.type).nom}</div>
-                      <div style={{fontSize:12,color:"#666",marginTop:4}}>Commande: {(c.quantite||0).toLocaleString()} u | Livre par stock: <strong>{livree.toLocaleString()}</strong> u | Deja confirme: {confirme.toLocaleString()} u</div>
+                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:4}}>Commande: {(c.quantite||0).toLocaleString()} u | Livre par stock: <strong>{livree.toLocaleString()}</strong> u | Deja confirme: {confirme.toLocaleString()} u</div>
                       {aConfirmer > 0 ? (
                         <div style={{marginTop:10,padding:"10px 14px",background:"#EAFAF1",borderRadius:8}}>
                           <div style={{fontSize:13,color:"#1E8449",fontWeight:600,marginBottom:8}}>A confirmer: {aConfirmer.toLocaleString()} u</div>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
                             <label style={{fontSize:12,color:"#C0392B",fontWeight:700}}>⚠️ BTC non conformes :</label>
                             <input type="number" min="0" placeholder="0" value={qteNonConformeInput[c.id]||""} onChange={e=>{var v={...qteNonConformeInput};v[c.id]=e.target.value;setQteNonConformeInput(v);}} style={{width:80,padding:"4px 8px",border:"2px solid #C0392B",borderRadius:6,fontSize:13,textAlign:"center"}} />
-                            <span style={{fontSize:11,color:"#888"}}>(laisser vide si aucun)</span>
+                            <span style={{fontSize:11,color:"var(--btp-text2)"}}>(laisser vide si aucun)</span>
                           </div>
                           {(parseInt(qteNonConformeInput[c.id])||0)>0&&<div style={{fontSize:11,color:"#C0392B",marginBottom:6,background:"#FDEBD0",padding:"4px 8px",borderRadius:6}}>⚠️ {parseInt(qteNonConformeInput[c.id])} BTC non conformes signalés pour ristourne.</div>}
                           <button onClick={()=>validerReception(c.id,aConfirmer,qteNonConformeInput[c.id]||0)} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>✅ Confirmer la réception</button>
                         </div>
                       ):(
-                        <div style={{marginTop:8,fontSize:12,color:"#27AE60",fontWeight:600}}>✅ Reception confirmee</div>
+                        <div style={{marginTop:8,fontSize:12,color:"var(--btp-green)",fontWeight:600}}>✅ Reception confirmee</div>
                       )}
                     </div>
                   );
@@ -901,7 +1433,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
 
   return (
     <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.55)",zIndex:1000,overflowY:"auto",padding:16}}>
-      <div style={{background:"white",borderRadius:16,maxWidth:780,margin:"0 auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+      <div style={{background:"var(--btp-card)",borderRadius:16,maxWidth:780,margin:"0 auto",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
         <div style={{background:"linear-gradient(90deg,#8B1A10,#C0392B)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
             <div>
@@ -939,8 +1471,8 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
         <div style={{padding:20}}>
           {tabFiche==="suivi"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:12,color:"#8B1A10"}}>Etat des livraisons par type</h4>
-              {lignesFinancieres.length===0?<p style={{color:"#888"}}>Aucun besoin enregistre.</p>:(
+              <h4 style={{marginBottom:12,color:"var(--btp-orange)"}}>Etat des livraisons par type</h4>
+              {lignesFinancieres.length===0?<p style={{color:"var(--btp-text2)"}}>Aucun besoin enregistre.</p>:(
                 <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
                     <thead><tr style={{background:"#8B1A10",color:"white"}}>
@@ -957,7 +1489,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                         <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
                           <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div></td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
-                          <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{l.cmdTotal.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{l.cmdTotal.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>
                             <div>{l.livre.toLocaleString()}</div>
                             <div style={{background:"#EEE",borderRadius:3,height:4,marginTop:3,minWidth:50}}>
@@ -972,7 +1504,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                     <tfoot><tr style={{background:"#F5E6D3",fontWeight:700}}>
                       <td style={{padding:"8px 10px"}}>TOTAL</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{totalBesoin.toLocaleString()}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#2980B9"}}>{totalCmde.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{totalCmde.toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{totalLivre.toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}></td>
                       <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{totalReste.toLocaleString()}</td>
@@ -985,8 +1517,8 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
 
             {tabFiche==="finance"&&(
               <div className="fade-in">
-                <h4 style={{marginBottom:6,color:"#8B1A10"}}>Facturation par commande</h4>
-                <p style={{fontSize:12,color:"#888",marginBottom:16}}>Chaque ligne correspond a une commande validee et confirmee par le chef de chantier. Base de facturation Terre et Eau.</p>
+                <h4 style={{marginBottom:6,color:"var(--btp-orange)"}}>Facturation par commande</h4>
+                <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:16}}>Chaque ligne correspond a une commande validee et confirmee par le chef de chantier. Base de facturation Terre et Eau.</p>
 
                 {(function(){
                   var lignesFact = [];
@@ -1000,7 +1532,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                   });
 
                   if (lignesFact.length === 0) {
-                    return <div style={{padding:20,textAlign:"center",color:"#888",background:"#FEF9F0",borderRadius:10,marginBottom:16}}>Aucune reception confirmee par le chef de chantier pour l'instant.<br/><span style={{fontSize:12}}>Le montant apparaitra ici apres confirmation de reception par le chef.</span></div>;
+                    return <div style={{padding:20,textAlign:"center",color:"var(--btp-text2)",background:"#FEF9F0",borderRadius:10,marginBottom:16}}>Aucune reception confirmee par le chef de chantier pour l'instant.<br/><span style={{fontSize:12}}>Le montant apparaitra ici apres confirmation de reception par le chef.</span></div>;
                   }
 
                   var totalGeneral = lignesFact.reduce(function(a,l){return a+l.montant;},0);
@@ -1026,18 +1558,18 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                             {lignesFact.map(function(l,i){
                               return (
                                 <tr key={l.cmd.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
-                                  <td style={{padding:"8px 10px",color:"#666"}}>{l.dateStr}</td>
+                                  <td style={{padding:"8px 10px",color:"var(--btp-text2)"}}>{l.dateStr}</td>
                                   <td style={{padding:"8px 10px"}}>
                                     <div style={{fontWeight:600}}>{l.prod.nom}</div>
                                     <div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div>
                                   </td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-text2)"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#666"}}>{l.prod.prix.toFixed(2)} EUR</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#8B1A10"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-text2)"}}>{l.prod.prix.toFixed(2)} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"var(--btp-orange)"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(l.cmd.qteNonConforme||0).toLocaleString()} u</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>-{((l.cmd.qteNonConforme||0)*l.prod.prix).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#27AE60",fontWeight:700}}>{(l.montant-((l.cmd.qteNonConforme||0)*l.prod.prix)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-green)",fontWeight:700}}>{(l.montant-((l.cmd.qteNonConforme||0)*l.prod.prix)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                                 </tr>
                               );
                             })}
@@ -1053,10 +1585,10 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                         </table>
                       </div>
                       <div style={{background:"#FEF9F0",border:"1px solid #EEE",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-                        <div style={{fontSize:12,color:"#888"}}>
+                        <div style={{fontSize:12,color:"var(--btp-text2)"}}>
                           <strong style={{color:"#2C1810"}}>{lignesFact.length}</strong> commande(s) confirmee(s) | Client: <strong>{chantier.client}</strong>
                         </div>
-                        <div style={{fontSize:14,fontWeight:700,color:"#8B1A10"}}>
+                        <div style={{fontSize:14,fontWeight:700,color:"var(--btp-orange)"}}>
                           MONTANT TOTAL CHANTIER (estimation): {totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
                         </div>
                       </div>
@@ -1068,8 +1600,8 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
 
             {tabFiche==="commandes"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:12,color:"#8B1A10"}}>Historique des commandes ({cmdCh.length})</h4>
-              {cmdCh.length===0?<p style={{color:"#888"}}>Aucune commande.</p>:
+              <h4 style={{marginBottom:12,color:"var(--btp-orange)"}}>Historique des commandes ({cmdCh.length})</h4>
+              {cmdCh.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune commande.</p>:
                 cmdCh.map(function(c,i){
                   var livree=c.quantiteLivree||0; var tot=c.quantite||0; var reste=Math.max(0,tot-livree);
                   var confirme=c.quantiteConfirmeeChef||0;
@@ -1080,8 +1612,8 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                         <div style={{fontWeight:700}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
                       </div>
-                      <div style={{fontSize:12,color:"#666"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong></div>
-                      {c.notes&&<div style={{fontSize:11,color:"#888",marginTop:3}}>Note: {c.notes}</div>}
+                      <div style={{fontSize:12,color:"var(--btp-text2)"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong></div>
+                      {c.notes&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>Note: {c.notes}</div>}
                     </div>
                   );
                 })
@@ -1090,7 +1622,6 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
           )}
         </div>
       </div>
-    </div>
   );
 }
 
@@ -1225,11 +1756,27 @@ function DashboardComptable({ user, userData }) {
   }
 
   return (
-    React.createElement("div", { style: { minHeight: "100vh", background: "#FDF6E3" } },
-      React.createElement("div", { style: { background: "linear-gradient(90deg,#2C6E49,#52b788)", color: "white", padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" } },
-        React.createElement("div", null, React.createElement("strong", null, "BTC Manager"), React.createElement("span", { style: { fontSize: 12, opacity: 0.8, marginLeft: 8 } }, "| Comptable - ", userData.nom || user.email)),
-        React.createElement("button", { onClick: () => auth.signOut(), style: { background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "white", padding: "5px 14px", borderRadius: 7, cursor: "pointer", fontSize: 13 } }, "Déconnexion")
+    React.createElement("div", { className: "btp-app" },
+      React.createElement("div", { className: "btp-header" },
+        React.createElement("div", { className: "btp-header-logo" },
+          React.createElement("div", { className: "btp-header-logo-icon" }, "💼"),
+          React.createElement("div", null,
+            React.createElement("div", { className: "btp-header-title" }, "BTC Manager"),
+            React.createElement("div", { className: "btp-header-sub" }, "Comptable")
+          )
+        ),
+        React.createElement("div", { className: "btp-header-right" },
+          React.createElement("div", { className: "btp-user-chip" }, "👤 ", React.createElement("strong", null, userData.nom || user.email)),
+          React.createElement("button", { className: "btn btn-sm btn-danger", onClick: () => auth.signOut() }, "⏻ Déco.")
+        )
       ),
+      React.createElement("div", { className: "btp-nav" },
+        [["facturation","📋 Facturation"],["ristournes","🎁 Non-conf. & Ristournes"],["pertes","📉 Pertes"]].map(([k,l]) =>
+          React.createElement("button", { key: k, className: `btp-nav-btn ${tab===k?'active':''}`, onClick: () => setTab(k) }, l)
+        )
+      ),
+      React.createElement("div", { className: "btp-content" },
+      
       React.createElement("div", { style: { padding: "8px" } },
       React.createElement("h2", { style: { color: "#2C6E49" } }, "💶 Comptabilité"),
       msg && React.createElement("div", { style: { background: "#2C6E49", color: "#fff", padding: "8px 12px", borderRadius: "6px", marginBottom: "8px" } }, msg),
@@ -1525,14 +2072,14 @@ function DashboardChef({ user, userData }) {
   }
 
   return (
-    <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
+    <div className="btp-app">
 
       {deleteTarget && (
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{background:"white",borderRadius:16,padding:28,maxWidth:380,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
+          <div style={{background:"var(--btp-card)",borderRadius:16,padding:28,maxWidth:380,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
             <div style={{fontSize:36,textAlign:"center",marginBottom:12}}>🔒</div>
             <h3 style={{color:"#C0392B",textAlign:"center",marginBottom:8}}>Confirmer la suppression</h3>
-            <p style={{fontSize:13,color:"#555",textAlign:"center",marginBottom:16}}>Vous allez supprimer le chantier <strong>"{deleteTarget.nom}"</strong>. Entrez votre mot de passe pour confirmer.</p>
+            <p style={{fontSize:13,color:"var(--btp-text2)",textAlign:"center",marginBottom:16}}>Vous allez supprimer le chantier <strong>"{deleteTarget.nom}"</strong>. Entrez votre mot de passe pour confirmer.</p>
             <input type="password" placeholder="Votre mot de passe" value={deletePassword} onChange={e=>{setDeletePassword(e.target.value);setDeleteError("");}} style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"2px solid #C0392B",marginBottom:8,fontSize:14}} />
             {deleteError && <div style={{color:"#C0392B",fontSize:13,marginBottom:8,textAlign:"center"}}>{deleteError}</div>}
             <div style={{display:"flex",gap:10,marginTop:8}}>
@@ -1543,21 +2090,39 @@ function DashboardChef({ user, userData }) {
         </div>
       )}
       {ficheOuverte && <FicheChantierChef chantier={ficheOuverte} commandes={commandes} user={user} userData={userData} onClose={()=>setFicheOuverte(null)} />}
-      <div style={{background:"linear-gradient(90deg,#1A5276,#2980B9)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-        <div><span style={{fontSize:20}}>👷</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Chef de chantier - {userData.nom||user.email}</span></div>
-        <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
+      <div st
+      <div className="btp-header">
+        <div className="btp-header-logo">
+          <div className="btp-header-logo-icon">👷</div>
+          <div>
+            <div className="btp-header-title">BTC Manager</div>
+            <div className="btp-header-sub">Chef de chantier</div>
+          </div>
+        </div>
+        <div className="btp-header-right">
+          <div className="btp-user-chip">👤 <strong>{userData.nom||user.email}</strong></div>
+          <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>⏻ Déco.</button>
+        </div>
       </div>
-      <div style={{padding:"12px 16px",display:"flex",flexWrap:"wrap"}}>
-        <button style={ts("chantiers")} onClick={()=>setTabChef("chantiers")}>Mes chantiers ({chantiers.length})</button>
-        <button style={ts("nouveau")} onClick={ouvrirNouveauChantier}>+ Nouveau chantier</button>
-        
+      <div className="btp-nav">
+        {[
+          {key:"chantiers",icon:"🏗️",label:"Mes Chantiers"},
+          {key:"commande",icon:"📋",label:"Nouvelle Commande"},
+          {key:"reception",icon:"📦",label:"Réception"},
+        ].map(({key,icon,label})=>(
+          <button key={key} className={`btp-nav-btn ${tabChef===key?'active':''}`}
+            onClick={()=>setTabChef(key)}>
+            {icon} {label}
+          </button>
+        ))}
       </div>
-      <div style={{padding:"0 16px 24px"}}>
+      <div className="btp-content">
+      
 
         {tabChef==="chantiers"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#1A5276"}}>Mes chantiers</h3>
-            {chantiers.length===0?<p style={{color:"#888"}}>Aucun chantier. Cliquez sur "+ Nouveau chantier".</p>:
+            <h3 style={{marginBottom:14,color:"var(--btp-blue)"}}>Mes chantiers</h3>
+            {chantiers.length===0?<p style={{color:"var(--btp-text2)"}}>Aucun chantier. Cliquez sur "+ Nouveau chantier".</p>:
               chantiers.map(function(ch) {
                 var cmdCh = commandes.filter(function(c){return c.chantierId===ch.id;});
                 var recu = cmdCh.reduce(function(a,c){return a+(c.quantiteLivree||0);},0);
@@ -1566,22 +2131,22 @@ function DashboardChef({ user, userData }) {
                 var reste = Math.max(0, besoinTotal - recu);
                 var pct = besoinTotal>0?Math.min(100,Math.round(recu/besoinTotal*100)):0;
                 return (
-                  <div key={ch.id} style={{background:"white",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#2980B9")}}>
+                  <div key={ch.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+(reste===0?"#27AE60":"#2980B9")}}>
                     <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,alignItems:"flex-start"}}>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:700,fontSize:15}}>{ch.nom}</div>
-                        <div style={{fontSize:13,color:"#555",marginTop:2}}>Client: {ch.client}</div>
-                        {ch.adresse&&<div style={{fontSize:12,color:"#888"}}>{ch.adresse}</div>}
+                        <div style={{fontSize:13,color:"var(--btp-text2)",marginTop:2}}>Client: {ch.client}</div>
+                        {ch.adresse&&<div style={{fontSize:12,color:"var(--btp-text2)"}}>{ch.adresse}</div>}
                         <div style={{display:"flex",gap:12,marginTop:8,fontSize:12,flexWrap:"wrap"}}>
                           <span>Besoin: <strong>{besoinTotal.toLocaleString()}</strong> u</span>
-                          <span style={{color:"#2980B9"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong> u</span>
-                          <span style={{color:"#27AE60"}}>Recu: <strong>{recu.toLocaleString()}</strong> u</span>
+                          <span style={{color:"var(--btp-blue)"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong> u</span>
+                          <span style={{color:"var(--btp-green)"}}>Recu: <strong>{recu.toLocaleString()}</strong> u</span>
                           <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong> u</span>
                         </div>
                         <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:6}}>
                           <div style={{height:6,borderRadius:4,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
                         </div>
-                        <div style={{fontSize:11,color:"#888",marginTop:2}}>{pct}% livre</div>
+                        <div style={{fontSize:11,color:"var(--btp-text2)",marginTop:2}}>{pct}% livre</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
                         <button onClick={()=>setFicheOuverte(ch)} style={{background:"#2980B9",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>📋 Fiche</button>
@@ -1598,22 +2163,22 @@ function DashboardChef({ user, userData }) {
 
         {tabChef==="nouveau"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#1A5276"}}>{editChantier ? "Modifier le chantier" : "Creer un nouveau chantier"}</h3>
-            <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:560}}>
+            <h3 style={{marginBottom:14,color:"var(--btp-blue)"}}>{editChantier ? "Modifier le chantier" : "Creer un nouveau chantier"}</h3>
+            <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:560}}>
               <div style={{marginBottom:12}}>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Nom du chantier</label>
-                <input placeholder="Ex: Construction villa Mamoudzou" value={nomChantier} onChange={e=>setNomChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+                <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nom du chantier</label>
+                <input placeholder="Ex: Construction villa Mamoudzou" value={nomChantier} onChange={e=>setNomChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14}} />
               </div>
               <div style={{marginBottom:12}}>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Nom du client</label>
-                <input placeholder="Nom du client" value={clientChantier} onChange={e=>setClientChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+                <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nom du client</label>
+                <input placeholder="Nom du client" value={clientChantier} onChange={e=>setClientChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14}} />
               </div>
               <div style={{marginBottom:16}}>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Adresse</label>
-                <input placeholder="Adresse (optionnel)" value={adresseChantier} onChange={e=>setAdresseChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+                <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Adresse</label>
+                <input placeholder="Adresse (optionnel)" value={adresseChantier} onChange={e=>setAdresseChantier(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14}} />
               </div>
               <div style={{marginBottom:16}}>
-                <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:8}}>Besoins en BTC pour l'ensemble du chantier</label>
+                <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:8}}>Besoins en BTC pour l'ensemble du chantier</label>
                 <div style={{maxHeight:340,overflowY:"auto",border:"1px solid #EEE",borderRadius:8,padding:10}}>
                   {CATALOGUE.map(function(prod){
                     return(
@@ -1624,7 +2189,7 @@ function DashboardChef({ user, userData }) {
                         </div>
                         <input type="number" min="0" placeholder="0" value={besoins[prod.id]||""}
                           onChange={e=>setBesoins(Object.assign({},besoins,{[prod.id]:e.target.value}))}
-                          style={{width:90,padding:"6px 8px",borderRadius:6,border:"1px solid #ddd",fontSize:13,textAlign:"right"}} />
+                          style={{width:90,padding:"6px 8px",borderRadius:6,border:"1px solid var(--btp-border)",fontSize:13,textAlign:"right"}} />
                       </div>
                     );
                   })}
@@ -1632,7 +2197,7 @@ function DashboardChef({ user, userData }) {
               </div>
               {msgChantier&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgChantier.includes("succes")||msgChantier.includes("jour")?"#EAFAF1":"#FFECEC",color:msgChantier.includes("succes")||msgChantier.includes("jour")?"#1E8449":"#C0392B"}}>{msgChantier}</div>}
               <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>setTabChef("chantiers")} style={{flex:1,padding:"10px",background:"#EEE",color:"#333",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer"}}>Annuler</button>
+                <button onClick={()=>setTabChef("chantiers")} style={{flex:1,padding:"10px",background:"#EEE",color:"var(--btp-text)",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer"}}>Annuler</button>
                 <button onClick={sauvegarderChantier} style={{flex:2,padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>
                   {editChantier ? "Enregistrer les modifications" : "Creer le chantier"}
                 </button>
@@ -1643,13 +2208,13 @@ function DashboardChef({ user, userData }) {
 
         {tabChef==="commande"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"#1A5276"}}>Passer une commande</h3>
+            <h3 style={{marginBottom:14,color:"var(--btp-blue)"}}>Passer une commande</h3>
             {chantiers.length===0?
-              <p style={{color:"#888",padding:16,background:"#EBF5FB",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:
-              <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:480}}>
+              <p style={{color:"var(--btp-text2)",padding:16,background:"#EBF5FB",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:
+              <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:480}}>
                 <div style={{marginBottom:12}}>
-                  <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Chantier</label>
-                  <select value={cmdChantierId} onChange={e=>setCmdChantierId(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",background:"white",fontSize:14}}>
+                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Chantier</label>
+                  <select value={cmdChantierId} onChange={e=>setCmdChantierId(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",background:"var(--btp-card)",fontSize:14}}>
                     <option value="">-- Choisir un chantier --</option>
                     {chantiers.map(ch=><option key={ch.id} value={ch.id}>{ch.nom} - {ch.client}</option>)}
                   </select>
@@ -1660,8 +2225,8 @@ function DashboardChef({ user, userData }) {
                 {cmdChantierId && typesChantier.length > 0 && (
                   <div>
                     <div style={{marginBottom:12}}>
-                      <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Type de BTC <span style={{fontSize:11,color:"#888",fontWeight:400}}>(uniquement les types renseignes dans ce chantier)</span></label>
-                      <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"white",fontSize:14}}>
+                      <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Type de BTC <span style={{fontSize:11,color:"var(--btp-text2)",fontWeight:400}}>(uniquement les types renseignes dans ce chantier)</span></label>
+                      <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"var(--btp-card)",fontSize:14}}>
                         <option value="">-- Choisir le type --</option>
                         {typesChantier.map(function(p){
                           var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
@@ -1674,10 +2239,10 @@ function DashboardChef({ user, userData }) {
                       </select>
                     </div>
                     <div style={{marginBottom:12}}>
-                      <label style={{fontSize:13,fontWeight:600,color:"#1A5276",display:"block",marginBottom:4}}>Quantite a commander</label>
-                      <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14}} />
+                      <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Quantite a commander</label>
+                      <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14}} />
                     </div>
-                    <textarea placeholder="Notes (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
+                    <textarea placeholder="Notes (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
                     {msgCmd&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgCmd.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msgCmd.includes("envoyee")?"#1A5276":"#C0392B"}}>{msgCmd}</div>}
                     <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
                   </div>
@@ -1739,23 +2304,33 @@ function DashboardStock({ user, userData }) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
-      <div style={{background:"linear-gradient(90deg,#145A32,#1E8449)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-        <div><span style={{fontSize:20}}>📦</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Stock - {userData.nom||user.email}</span></div>
-        <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
+    <div className="btp-app">
+      <div className="btp-header">
+        <div className="btp-header-logo">
+          <div className="btp-header-logo-icon">📦</div>
+          <div>
+            <div className="btp-header-title">BTC Manager</div>
+            <div className="btp-header-sub">Responsable Stock</div>
+          </div>
+        </div>
+        <div className="btp-header-right">
+          <div className="btp-user-chip">👤 <strong>{userData.nom||user.email}</strong></div>
+          <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>⏻ Déco.</button>
+        </div>
       </div>
-      <div style={{padding:20}}>
+      <div className="btp-content">
+        
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:28}}>
           {CATALOGUE.map(prod=>{
             var s=stocks[prod.id]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
             var couleur=couleurUrgence(total);
             return(
-              <div key={prod.id} style={{background:"white",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
+              <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
 <div style={{fontSize:11,color:"#999",marginBottom:4}}>{prod.dim}</div>
 <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
-<span style={{color:"#27AE60"}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
+<span style={{color:"var(--btp-green)"}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
 <span style={{color:"#E67E22"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></span>
 </div>
 {calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {calcSechageActif(productions,prod.id).toLocaleString()} u pas encore matures</div>}
@@ -1765,24 +2340,24 @@ function DashboardStock({ user, userData }) {
           })}
         </div>
         <h3 style={{marginBottom:10,color:"#145A32"}}>Commandes a preparer ({commandes.length})</h3>
-        {commandes.length===0?<p style={{color:"#888"}}>Aucune commande validee en attente.</p>:
+        {commandes.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune commande validee en attente.</p>:
           commandes.map(cmd=>{
             var livree = cmd.quantiteLivree || 0;
             var total = cmd.quantite || 0;
             var resteCmd = Math.max(0, total - livree);
             var pct = total>0?Math.min(100,Math.round(livree/total*100)):0;
             return(
-              <div key={cmd.id} style={{background:"white",borderRadius:12,padding:18,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
+              <div key={cmd.id} style={{background:"var(--btp-card)",borderRadius:12,padding:18,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
                 <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12,alignItems:"flex-start"}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom}</div>
-                    <div style={{fontSize:12,color:"#888",marginTop:2}}>{getProduit(cmd.type).dim}</div>
-                    <div style={{fontSize:13,color:"#444",marginTop:4}}>Chantier: <strong>{cmd.chantierNom||cmd.client||"-"}</strong></div>
-                    <div style={{fontSize:12,color:"#666",marginTop:2}}>Valide par: {cmd.validePar||"Direction"}</div>
+                    <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>{getProduit(cmd.type).dim}</div>
+                    <div style={{fontSize:13,color:"var(--btp-text)",marginTop:4}}>Chantier: <strong>{cmd.chantierNom||cmd.client||"-"}</strong></div>
+                    <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Valide par: {cmd.validePar||"Direction"}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:13,color:"#666"}}>Commande totale: <strong>{total.toLocaleString()} u</strong></div>
-                    <div style={{fontSize:13,color:"#27AE60"}}>Deja livre: <strong>{livree.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:13,color:"var(--btp-text2)"}}>Commande totale: <strong>{total.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:13,color:"var(--btp-green)"}}>Deja livre: <strong>{livree.toLocaleString()} u</strong></div>
                     <div style={{fontSize:14,fontWeight:700,color:"#C0392B",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong>
 {(function(){
 var sActif=calcSechageActif(productions,cmd.type);
@@ -1799,7 +2374,7 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
                 <div style={{background:"#EEE",borderRadius:4,height:8,marginBottom:8}}>
                   <div style={{height:8,borderRadius:4,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
                 </div>
-                <div style={{fontSize:11,color:"#888",marginBottom:12}}>{pct}% livre ({livree.toLocaleString()} / {total.toLocaleString()})</div>
+                <div style={{fontSize:11,color:"var(--btp-text2)",marginBottom:12}}>{pct}% livre ({livree.toLocaleString()} / {total.toLocaleString()})</div>
                 {resteCmd > 0 && (
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                     <div style={{flex:1}}>
@@ -1909,26 +2484,134 @@ function DashboardProduction({ user, userData }) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"#FDF6E3"}}>
+    <div className="btp-app">
+      <div className="btp-header">
+        <div className="btp-header-logo">
+          <div className="btp-header-logo-icon">⚙️</div>
+          <div>
+            <div className="btp-header-title">BTC Manager</div>
+            <div className="btp-header-sub">Responsable Production</div>
+          </div>
+        </div>
+        <div className="btp-header-right">
+          <div className="btp-user-chip">👤 <strong>{userData.nom||user.email}</strong></div>
+          <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>⏻ Déco.</button>
+        </div>
+      </div>
+      <div className="btp-nav">
+        {[
+          {key:"production",icon:"⚙️",label:"Production"},
+          {key:"pertes",icon:"📉",label:"Pertes"},
+        ].map(({key,icon,label})=>(
+          <button key={key} className={`btp-nav-btn ${tabProd===key?'active':''}`}
+            onClick={()=>setTabProd(key)}>
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+      <div className="btp-content">
+        {
+  const [stocks, setStocks] = useState({});
+  const [productions, setProductions] = useState([]);
+  const [saisieType, setSaisieType] = useState(CATALOGUE[0].id);
+  const [saisieQte, setSaisieQte] = useState("");
+  const [saisiePhase, setSaisiePhase] = useState("sec");
+  const [msg, setMsg] = useState("");
+  const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
+  const [pertes, setPertes] = React.useState([]);
+  const [commandes, setCommandes] = React.useState([]);
+  const [saisiePerteType, setSaisiePerteType] = React.useState("");
+  const [saisiePerteQte, setSaisiePerteQte] = React.useState("");
+  const [saisiePerteRaison, setSaisiePerteRaison] = React.useState("production");
+  const [msgPerte, setMsgPerte] = React.useState("");
+  const [tabProd, setTabProd] = React.useState("production");
+
+  useEffect(() => {
+    var u1 = db.collection("stocks").onSnapshot(snap => {
+      var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
+    });
+    var u2 = db.collection("productions").onSnapshot(snap => {
+      setProductions(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
+    });
+    var u3 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => {
+      setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    var u4 = db.collection("commandes").onSnapshot(snap => {
+      setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+    return () => { u1(); u2(); u3(); u4(); };
+  }, []);
+
+  var typesParUrgence = CATALOGUE.map(function(prod) {
+    var s = stocks[prod.id]||{};
+    var sec = s.sec||0; var sechage = s.sechage||0; var total = sec+sechage;
+    return { prod:prod, sec:sec, sechage:sechage, total:total };
+  }).sort(function(a,b) { return a.total - b.total; });
+
+  var prodAujourdHui = productions.filter(function(p) { return p.date === dateAujourdHui; });
+
+  var enregistrer = async function() {
+    if (!saisieType||!saisieQte) { setMsg("Choisissez un type et entrez la quantite"); return; }
+    var qte = parseInt(saisieQte);
+    if (isNaN(qte)||qte<=0) { setMsg("Quantite invalide"); return; }
+    try {
+      await db.collection("productions").add({
+        type:saisieType, quantite:qte, phase:saisiePhase,
+        date:dateAujourdHui, responsable:userData.nom||user.email,
+        responsableUid:user.uid, statut:"Valide",
+        timestamp:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      var s = stocks[saisieType]||{};
+      var upd = {};
+      if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
+      await db.collection("stocks").doc(saisieType).set(upd, { merge:true });
+      setMsg("Production enregistree ! Stock mis a jour.");
+      setSaisieQte("");
+    } catch(e) { setMsg("Erreur: "+e.message); }
+  };
+
+  var enregistrerPerte = async function() {
+    if (!saisiePerteType||!saisiePerteQte) { setMsgPerte("Choisissez un type et une quantite"); return; }
+    try {
+      var qte = parseInt(saisiePerteQte);
+      await db.collection("pertes").add({
+        type: saisiePerteType, quantite: qte, raison: saisiePerteRaison,
+        responsable: userData.nom||user.email, responsableUid: user.uid,
+        source: "production",
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      try { await db.collection("evenements").add({ numBC: "PERTE", chantier: saisiePerteType, action: "Perte enregistrée", acteur: userData.nom||user.email, role: "resp_production", details: "Type: "+saisiePerteType+" | Qté: "+saisiePerteQte+" BTC | Raison: "+saisiePerteRaison, statut: "Perte enregistrée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
+      // Déduire du stock
+      var stockDoc = await db.collection("stocks").doc(saisiePerteType).get();
+      var sd = stockDoc.exists ? stockDoc.data() : {};
+      var newSec = Math.max(0,(sd.sec||0)-qte);
+      await db.collection("stocks").doc(saisiePerteType).set({sec:newSec,sechage:sd.sechage||0},{merge:true});
+      setMsgPerte("Perte enregistrée !");
+      setSaisiePerteQte(""); setSaisiePerteType(""); setSaisiePerteRaison("production");
+    } catch(e) { setMsgPerte("Erreur: "+e.message); }
+  };
+
+  return (
+    <div className="btp-app">
       <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div><span style={{fontSize:20}}>🏭</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Production - {userData.nom||user.email}</span></div>
         <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
       </div>
       <div style={{padding:20}}>
         <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
-        <p style={{fontSize:12,color:"#888",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
+        <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
           {typesParUrgence.map(function(item, idx) {
             var couleur = couleurUrgence(item.total);
             var pct = Math.min(100, Math.round(item.total/STOCK_CIBLE*100));
             var manque = Math.max(0, STOCK_CIBLE-item.total);
             return (
-              <div key={item.prod.id} style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
+              <div key={item.prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
                 <div style={{position:"absolute",top:10,right:10,background:couleur,color:"white",borderRadius:16,padding:"2px 8px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:2,paddingRight:40}}>{item.prod.nom}</div>
                 <div style={{fontSize:11,color:"#999",marginBottom:6}}>{item.prod.dim}</div>
-                <div style={{fontSize:12,color:"#666"}}>Sec: <strong>{item.sec.toLocaleString()}</strong></div>
-                <div style={{fontSize:12,color:"#666"}}>Sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sec: <strong>{item.sec.toLocaleString()}</strong></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
                 <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
                   <div style={{height:6,borderRadius:4,background:couleur,width:pct+"%"}}></div>
                 </div>
@@ -1936,30 +2619,30 @@ function DashboardProduction({ user, userData }) {
                   <span style={{fontSize:12,fontWeight:700,color:couleur}}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</span>
                 </div>
-                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"#888",marginTop:3}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()}</strong></div>}
+                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()}</strong></div>}
 {(function(){var sa=calcSechageActif(productions,item.prod.id);if(sa>0)return<div style={{fontSize:10,color:"#B7770D",marginTop:2}}>⏳ {sa.toLocaleString()} u en sechage actif</div>;return null;})()}
               </div>
             );
           })}
         </div>
         <h3 style={{marginBottom:14,color:"#4A235A"}}>Enregistrer une production</h3>
-        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
-          <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
+        <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
+          <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
             {typesParUrgence.map(function(item) {
               return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - {item.prod.dim}</option>;
             })}
           </select>
-          <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:10,background:"white",fontSize:14}}>
+          <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
             <option value="sec">Stock sec (seche)</option>
             <option value="sechage">En sechage (frais)</option>
           </select>
-          <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #ddd",marginBottom:12,fontSize:14}} />
+          <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14}} />
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
           <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
         </div>
         <h3 style={{marginTop:24,marginBottom:14,color:"#C0392B"}}>📉 Enregistrer une perte</h3>
-        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:16}}>
-          <p style={{fontSize:12,color:"#888",marginBottom:12}}>Enregistrez ici les pertes de production (BTC cassés, mal formés, inutilisables). Elles seront déduites du stock.</p>
+        <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:16}}>
+          <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Enregistrez ici les pertes de production (BTC cassés, mal formés, inutilisables). Elles seront déduites du stock.</p>
           <select value={saisiePerteType} onChange={e=>setSaisiePerteType(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
             <option value="">-- Type de BTC perdu --</option>
             {typesParUrgence.map(function(item){ return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom}</option>; })}
@@ -1975,7 +2658,7 @@ function DashboardProduction({ user, userData }) {
         {pertes.length>0&&(
           <div style={{marginBottom:24}}>
             <h4 style={{marginBottom:8,color:"#C0392B"}}>Historique des pertes ({pertes.length})</h4>
-            <div style={{background:"white",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
+            <div style={{background:"var(--btp-card)",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"7px 10px",textAlign:"left"}}>Date</th><th style={{padding:"7px 10px",textAlign:"left"}}>Type</th><th style={{padding:"7px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"7px 10px",textAlign:"left"}}>Raison</th><th style={{padding:"7px 10px",textAlign:"left"}}>Par</th></tr></thead>
                 <tbody>
@@ -1983,11 +2666,11 @@ function DashboardProduction({ user, userData }) {
                   function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR");}catch(e){return"-";}}
                   var raisonLabel=p.raison==="retour_nc"?"Retour NC chantier":"Perte production";
                   return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
-                    <td style={{padding:"6px 10px",color:"#666",fontSize:11}}>{fmtD(p.timestamp)}</td>
+                    <td style={{padding:"6px 10px",color:"var(--btp-text2)",fontSize:11}}>{fmtD(p.timestamp)}</td>
                     <td style={{padding:"6px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
                     <td style={{padding:"6px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
                     <td style={{padding:"6px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
-                    <td style={{padding:"6px 10px",fontSize:11,color:"#888"}}>{p.responsable}</td>
+                    <td style={{padding:"6px 10px",fontSize:11,color:"var(--btp-text2)"}}>{p.responsable}</td>
                   </tr>);
                 })}
                 </tbody>
@@ -2000,24 +2683,24 @@ var seches=productions.filter(function(p){return p.phase==="sechage";}).map(func
 if(seches.length>0) return(
 <div style={{marginBottom:24}}>
 <h3 style={{marginBottom:8,color:"#4A235A"}}>Lots en cours de sechage ({seches.length})</h3>
-<p style={{fontSize:11,color:"#888",marginBottom:10}}>Ces BTC ne peuvent pas etre livres avant la fin de leur sechage de {DUREE_SECHAGE} jours.</p>
+<p style={{fontSize:11,color:"var(--btp-text2)",marginBottom:10}}>Ces BTC ne peuvent pas etre livres avant la fin de leur sechage de {DUREE_SECHAGE} jours.</p>
 {seches.map(function(p){
 var pct=Math.round((DUREE_SECHAGE-p.jr)/DUREE_SECHAGE*100);
 return(
-<div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderLeft:"3px solid #E67E22"}}>
+<div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderLeft:"3px solid #E67E22"}}>
 <div style={{flex:1,minWidth:140}}>
 <div style={{fontWeight:600,fontSize:13}}>{getProduit(p.type).nom}</div>
 <div style={{fontSize:11,color:"#999"}}>{p.date}</div>
 </div>
 <div style={{textAlign:"right"}}>
 <div style={{fontWeight:700,fontSize:14,color:"#E67E22"}}>{p.jr} j restants</div>
-<div style={{fontSize:11,color:"#888"}}>{(p.quantite||0).toLocaleString()} u</div>
+<div style={{fontSize:11,color:"var(--btp-text2)"}}>{(p.quantite||0).toLocaleString()} u</div>
 </div>
 <div style={{width:100}}>
 <div style={{background:"#EEE",borderRadius:4,height:6}}>
 <div style={{height:6,borderRadius:4,background:"#E67E22",width:pct+"%"}}></div>
 </div>
-<div style={{fontSize:10,color:"#888",marginTop:2}}>{pct}% seche</div>
+<div style={{fontSize:10,color:"var(--btp-text2)",marginTop:2}}>{pct}% seche</div>
 </div>
 </div>
 );
@@ -2027,21 +2710,21 @@ return(
 return null;
 })()}
 <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
-        {prodAujourdHui.length===0?<p style={{color:"#888"}}>Aucune production enregistree aujourd'hui.</p>:
+        {prodAujourdHui.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune production enregistree aujourd'hui.</p>:
           prodAujourdHui.map(p=>{
 var jrR=p.phase==="sechage"&&p.timestamp?joursRestants(p.timestamp):0;
 return(
-            <div key={p.id} style={{background:"white",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
+            <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
               <div>
-                <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"#888"}}>({p.phase==="sec"?"Sec":"Sechage"})</span></div>
-                <div style={{fontSize:12,color:"#666"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
+                <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"var(--btp-text2)"}}>({p.phase==="sec"?"Sec":"Sechage"})</span></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
                 {p.phase==="sechage"&&jrR>0&&<div style={{fontSize:11,color:"#B7770D",marginTop:2}}>⏳ Mature dans {jrR} jour{jrR>1?"s":""}</div>}
-                {p.phase==="sechage"&&jrR===0&&<div style={{fontSize:11,color:"#27AE60",marginTop:2}}>✅ Mature (seche)</div>}
+                {p.phase==="sechage"&&jrR===0&&<div style={{fontSize:11,color:"var(--btp-green)",marginTop:2}}>✅ Mature (seche)</div>}
               </div>
               {p.phase==="sechage"?(
 <div style={{textAlign:"right"}}>
 <span style={{background:"#FFF3CD",color:"#B7770D",borderRadius:10,padding:"2px 10px",fontSize:11,fontWeight:700}}>⏳ Sechage en cours</span>
-<div style={{fontSize:10,color:"#888",marginTop:2}}>Mature dans ~28 jours</div>
+<div style={{fontSize:10,color:"var(--btp-text2)",marginTop:2}}>Mature dans ~28 jours</div>
 </div>
 ):(
 <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>✅ Sec</span>
@@ -2080,19 +2763,20 @@ function App() {
   }, []);
 
   if (loading) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#8B1A10,#C0392B)"}}>
-      <div style={{color:"white",textAlign:"center"}}>
-        <div style={{fontSize:52,marginBottom:12}}>🧱</div>
-        <div style={{fontSize:18,fontWeight:700}}>BTC Manager</div>
-        <div style={{fontSize:13,opacity:.8,marginTop:4}}>Terre et Eau - Mamoudzou</div>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,var(--btp-dark),var(--btp-navy))"}}>
+      <div style={{textAlign:"center",color:"white"}}>
+        <div style={{width:64,height:64,background:"linear-gradient(135deg,var(--btp-orange),var(--btp-gold))",borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 16px",boxShadow:"0 8px 24px rgba(232,96,28,.4)"}}>🧱</div>
+        <div style={{fontSize:20,fontWeight:900,marginBottom:4}}>BTC Manager</div>
+        <div style={{fontSize:12,color:"var(--btp-text2)",letterSpacing:2,textTransform:"uppercase",marginBottom:20}}>Terre et Eau · Mamoudzou</div>
+        <div style={{width:40,height:40,border:"3px solid rgba(255,255,255,.2)",borderTopColor:"var(--btp-orange)",borderRadius:"50%",animation:"spin .7s linear infinite",margin:"0 auto"}}></div>
       </div>
     </div>
   );
 
-  if (!user) return <Login />;
+    if (!user) return <Login />;
   if (!userData) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{textAlign:"center",color:"#888"}}><div style={{fontSize:40}}>⏳</div><p>Chargement...</p></div>
+      <div style={{textAlign:"center",color:"var(--btp-text2)"}}><div style={{fontSize:40}}>⏳</div><p>Chargement...</p></div>
     </div>
   );
 
@@ -2104,12 +2788,12 @@ function App() {
   if (role==="comptable") return <DashboardComptable user={user} userData={userData} />;
 
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#FDF6E3"}}>
-      <div style={{textAlign:"center",padding:40,background:"white",borderRadius:16,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,var(--btp-dark),var(--btp-navy))"}}>
+      <div style={{textAlign:"center",padding:40,background:"var(--btp-card)",borderRadius:16,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
         <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
         <h3 style={{color:"#C0392B",marginBottom:8}}>Role non reconnu</h3>
-        <p style={{color:"#888",marginBottom:4}}>Role detecte: "{role}"</p>
-        <p style={{color:"#888",fontSize:13}}>Contactez l'administrateur.</p>
+        <p style={{color:"var(--btp-text2)",marginBottom:4}}>Role detecte: "{role}"</p>
+        <p style={{color:"var(--btp-text2)",fontSize:13}}>Contactez l'administrateur.</p>
         <button onClick={()=>auth.signOut()} style={{marginTop:16,padding:"8px 20px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>Deconnexion</button>
       </div>
     </div>
