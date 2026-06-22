@@ -1622,7 +1622,6 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
           )}
         </div>
       </div>
-    </div>
   );
 }
 
@@ -2511,94 +2510,10 @@ function DashboardProduction({ user, userData }) {
         ))}
       </div>
       <div className="btp-content">
-        {
-  const [stocks, setStocks] = useState({});
-  const [productions, setProductions] = useState([]);
-  const [saisieType, setSaisieType] = useState(CATALOGUE[0].id);
-  const [saisieQte, setSaisieQte] = useState("");
-  const [saisiePhase, setSaisiePhase] = useState("sec");
-  const [msg, setMsg] = useState("");
-  const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
-  const [pertes, setPertes] = React.useState([]);
-  const [commandes, setCommandes] = React.useState([]);
-  const [saisiePerteType, setSaisiePerteType] = React.useState("");
-  const [saisiePerteQte, setSaisiePerteQte] = React.useState("");
-  const [saisiePerteRaison, setSaisiePerteRaison] = React.useState("production");
-  const [msgPerte, setMsgPerte] = React.useState("");
-  const [tabProd, setTabProd] = React.useState("production");
-
-  useEffect(() => {
-    var u1 = db.collection("stocks").onSnapshot(snap => {
-      var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
-    });
-    var u2 = db.collection("productions").onSnapshot(snap => {
-      setProductions(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
-    });
-    var u3 = db.collection("pertes").orderBy("timestamp","desc").onSnapshot(snap => {
-      setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
-    });
-    var u4 = db.collection("commandes").onSnapshot(snap => {
-      setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
-    });
-    return () => { u1(); u2(); u3(); u4(); };
-  }, []);
-
-  var typesParUrgence = CATALOGUE.map(function(prod) {
-    var s = stocks[prod.id]||{};
-    var sec = s.sec||0; var sechage = s.sechage||0; var total = sec+sechage;
-    return { prod:prod, sec:sec, sechage:sechage, total:total };
-  }).sort(function(a,b) { return a.total - b.total; });
-
-  var prodAujourdHui = productions.filter(function(p) { return p.date === dateAujourdHui; });
-
-  var enregistrer = async function() {
-    if (!saisieType||!saisieQte) { setMsg("Choisissez un type et entrez la quantite"); return; }
-    var qte = parseInt(saisieQte);
-    if (isNaN(qte)||qte<=0) { setMsg("Quantite invalide"); return; }
-    try {
-      await db.collection("productions").add({
-        type:saisieType, quantite:qte, phase:saisiePhase,
-        date:dateAujourdHui, responsable:userData.nom||user.email,
-        responsableUid:user.uid, statut:"Valide",
-        timestamp:firebase.firestore.FieldValue.serverTimestamp()
-      });
-      var s = stocks[saisieType]||{};
-      var upd = {};
-      if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
-      await db.collection("stocks").doc(saisieType).set(upd, { merge:true });
-      setMsg("Production enregistree ! Stock mis a jour.");
-      setSaisieQte("");
-    } catch(e) { setMsg("Erreur: "+e.message); }
-  };
-
-  var enregistrerPerte = async function() {
-    if (!saisiePerteType||!saisiePerteQte) { setMsgPerte("Choisissez un type et une quantite"); return; }
-    try {
-      var qte = parseInt(saisiePerteQte);
-      await db.collection("pertes").add({
-        type: saisiePerteType, quantite: qte, raison: saisiePerteRaison,
-        responsable: userData.nom||user.email, responsableUid: user.uid,
-        source: "production",
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      try { await db.collection("evenements").add({ numBC: "PERTE", chantier: saisiePerteType, action: "Perte enregistrée", acteur: userData.nom||user.email, role: "resp_production", details: "Type: "+saisiePerteType+" | Qté: "+saisiePerteQte+" BTC | Raison: "+saisiePerteRaison, statut: "Perte enregistrée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
-      // Déduire du stock
-      var stockDoc = await db.collection("stocks").doc(saisiePerteType).get();
-      var sd = stockDoc.exists ? stockDoc.data() : {};
-      var newSec = Math.max(0,(sd.sec||0)-qte);
-      await db.collection("stocks").doc(saisiePerteType).set({sec:newSec,sechage:sd.sechage||0},{merge:true});
-      setMsgPerte("Perte enregistrée !");
-      setSaisiePerteQte(""); setSaisiePerteType(""); setSaisiePerteRaison("production");
-    } catch(e) { setMsgPerte("Erreur: "+e.message); }
-  };
-
-  return (
-    <div className="btp-app">
-      <div style={{background:"linear-gradient(90deg,#4A235A,#6C3483)",color:"white",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
-        <div><span style={{fontSize:20}}>🏭</span> <strong>BTC Manager</strong> <span style={{fontSize:12,opacity:.8}}>| Resp. Production - {userData.nom||user.email}</span></div>
-        <button onClick={()=>auth.signOut()} style={{background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Deconnexion</button>
-      </div>
-      <div style={{padding:20}}>
+        
+        { tabProd === 'production' ? (
+          <div>
+<div style={{padding:20}}>
         <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
         <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
@@ -2626,8 +2541,7 @@ function DashboardProduction({ user, userData }) {
             );
           })}
         </div>
-        <h3 style={{marginBottom:14,color:"#4A235A"}}>Enregistrer une production</h3>
-        <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
+<div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
           <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
             {typesParUrgence.map(function(item) {
               return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - {item.prod.dim}</option>;
@@ -2641,43 +2555,7 @@ function DashboardProduction({ user, userData }) {
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
           <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
         </div>
-        <h3 style={{marginTop:24,marginBottom:14,color:"#C0392B"}}>📉 Enregistrer une perte</h3>
-        <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:16}}>
-          <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Enregistrez ici les pertes de production (BTC cassés, mal formés, inutilisables). Elles seront déduites du stock.</p>
-          <select value={saisiePerteType} onChange={e=>setSaisiePerteType(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
-            <option value="">-- Type de BTC perdu --</option>
-            {typesParUrgence.map(function(item){ return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom}</option>; })}
-          </select>
-          <input type="number" placeholder="Quantité perdue" value={saisiePerteQte} onChange={e=>setSaisiePerteQte(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14,boxSizing:"border-box"}} />
-          <select value={saisiePerteRaison} onChange={e=>setSaisiePerteRaison(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
-            <option value="production">Perte production (cassé/mal formé)</option>
-            <option value="retour_nc">Retour BTC non conforme chantier</option>
-          </select>
-          {msgPerte&&<div style={{padding:"8px 12px",background:msgPerte.indexOf("Erreur")>-1?"#FDEBD0":"#EAFAF1",borderRadius:8,marginBottom:8,fontSize:13,color:msgPerte.indexOf("Erreur")>-1?"#C0392B":"#1E8449"}}>{msgPerte}</div>}
-          <button onClick={enregistrerPerte} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>📉 Enregistrer la perte</button>
-        </div>
-        {pertes.length>0&&(
-          <div style={{marginBottom:24}}>
-            <h4 style={{marginBottom:8,color:"#C0392B"}}>Historique des pertes ({pertes.length})</h4>
-            <div style={{background:"var(--btp-card)",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"7px 10px",textAlign:"left"}}>Date</th><th style={{padding:"7px 10px",textAlign:"left"}}>Type</th><th style={{padding:"7px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"7px 10px",textAlign:"left"}}>Raison</th><th style={{padding:"7px 10px",textAlign:"left"}}>Par</th></tr></thead>
-                <tbody>
-                {pertes.map(function(p,pi){
-                  function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR");}catch(e){return"-";}}
-                  var raisonLabel=p.raison==="retour_nc"?"Retour NC chantier":"Perte production";
-                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
-                    <td style={{padding:"6px 10px",color:"var(--btp-text2)",fontSize:11}}>{fmtD(p.timestamp)}</td>
-                    <td style={{padding:"6px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
-                    <td style={{padding:"6px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
-                    <td style={{padding:"6px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
-                    <td style={{padding:"6px 10px",fontSize:11,color:"var(--btp-text2)"}}>{p.responsable}</td>
-                  </tr>);
-                })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+
         )}
         {(function(){
 var seches=productions.filter(function(p){return p.phase==="sechage";}).map(function(p){return Object.assign({},p,{jr:joursRestants(p.timestamp)});}).filter(function(p){return p.jr>0;}).sort(function(a,b){return a.jr-b.jr;});
@@ -2731,15 +2609,50 @@ return(
 <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>✅ Sec</span>
 )}
             </div>
-          )
-        })
-        }
+          </div>
+        ) : (
+          <div>
+<div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:16}}>
+          <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Enregistrez ici les pertes de production (BTC cassés, mal formés, inutilisables). Elles seront déduites du stock.</p>
+          <select value={saisiePerteType} onChange={e=>setSaisiePerteType(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
+            <option value="">-- Type de BTC perdu --</option>
+            {typesParUrgence.map(function(item){ return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom}</option>; })}
+          </select>
+          <input type="number" placeholder="Quantité perdue" value={saisiePerteQte} onChange={e=>setSaisiePerteQte(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14,boxSizing:"border-box"}} />
+          <select value={saisiePerteRaison} onChange={e=>setSaisiePerteRaison(e.target.value)} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid #DDD",marginBottom:8,fontSize:14}}>
+            <option value="production">Perte production (cassé/mal formé)</option>
+            <option value="retour_nc">Retour BTC non conforme chantier</option>
+          </select>
+          {msgPerte&&<div style={{padding:"8px 12px",background:msgPerte.indexOf("Erreur")>-1?"#FDEBD0":"#EAFAF1",borderRadius:8,marginBottom:8,fontSize:13,color:msgPerte.indexOf("Erreur")>-1?"#C0392B":"#1E8449"}}>{msgPerte}</div>}
+          <button onClick={enregistrerPerte} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>📉 Enregistrer la perte</button>
+        </div>
+<div style={{marginBottom:24}}>
+            <h4 style={{marginBottom:8,color:"#C0392B"}}>Historique des pertes ({pertes.length})</h4>
+            <div style={{background:"var(--btp-card)",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"7px 10px",textAlign:"left"}}>Date</th><th style={{padding:"7px 10px",textAlign:"left"}}>Type</th><th style={{padding:"7px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"7px 10px",textAlign:"left"}}>Raison</th><th style={{padding:"7px 10px",textAlign:"left"}}>Par</th></tr></thead>
+                <tbody>
+                {pertes.map(function(p,pi){
+                  function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR");}catch(e){return"-";}}
+                  var raisonLabel=p.raison==="retour_nc"?"Retour NC chantier":"Perte production";
+                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
+                    <td style={{padding:"6px 10px",color:"var(--btp-text2)",fontSize:11}}>{fmtD(p.timestamp)}</td>
+                    <td style={{padding:"6px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
+                    <td style={{padding:"6px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
+                    <td style={{padding:"6px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
+                    <td style={{padding:"6px 10px",fontSize:11,color:"var(--btp-text2)"}}>{p.responsable}</td>
+                  </tr>);
+                })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          </div>
+        )}
+      
       </div>
     </div>
-
-      </div>
-    </div>  );
-}
+  );
 }
 
 
