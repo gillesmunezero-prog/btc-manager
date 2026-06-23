@@ -1622,6 +1622,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
           )}
         </div>
       </div>
+    </div>
   );
 }
 
@@ -2510,10 +2511,9 @@ function DashboardProduction({ user, userData }) {
         ))}
       </div>
       <div className="btp-content">
-        
         { tabProd === 'production' ? (
           <div>
-<div style={{padding:20}}>
+div style={{padding:20}}>
         <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
         <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
@@ -2556,7 +2556,6 @@ function DashboardProduction({ user, userData }) {
           <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
         </div>
 
-        )}
         {(function(){
 var seches=productions.filter(function(p){return p.phase==="sechage";}).map(function(p){return Object.assign({},p,{jr:joursRestants(p.timestamp)});}).filter(function(p){return p.jr>0;}).sort(function(a,b){return a.jr-b.jr;});
 if(seches.length>0) return(
@@ -2589,11 +2588,14 @@ return(
 return null;
 })()}
 <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
-        {prodAujourdHui.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune production enregistree aujourd'hui.</p>:
-          prodAujourdHui.map(p=>{
+        {prodAujourdHui.length===0?(
+          <p style={{color:"var(--btp-text2)"}}>Aucune production enregistree aujourd'hui.</p>
+        ):(
+          <div>
+          {prodAujourdHui.map(p=>{
 var jrR=p.phase==="sechage"&&p.timestamp?joursRestants(p.timestamp):0;
 return(
-            <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
+<div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
               <div>
                 <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"var(--btp-text2)"}}>({p.phase==="sec"?"Sec":"Sechage"})</span></div>
                 <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
@@ -2608,7 +2610,12 @@ return(
 ):(
 <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>✅ Sec</span>
 )}
-            </div>
+</div>
+);
+})}
+          </div>
+        )}
+          </div>
           </div>
         ) : (
           <div>
@@ -2649,15 +2656,10 @@ return(
           </div>
           </div>
         )}
-      
       </div>
     </div>
   );
 }
-
-
-
-
 function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
