@@ -2485,6 +2485,7 @@ function DashboardProduction({ user, userData }) {
   };
 
   return (
+
     <div className="btp-app">
       <div className="btp-header">
         <div className="btp-header-logo">
@@ -2511,9 +2512,9 @@ function DashboardProduction({ user, userData }) {
         ))}
       </div>
       <div className="btp-content">
-        { tabProd === 'production' ? (
+        { tabProd === 'production' && (
           <div>
-div style={{padding:20}}>
+<div style={{padding:20}}>
         <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
         <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
@@ -2617,7 +2618,8 @@ return(
         )}
           </div>
           </div>
-        ) : (
+        )}
+        { tabProd !== 'production' && (
           <div>
 <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:16}}>
           <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Enregistrez ici les pertes de production (BTC cassés, mal formés, inutilisables). Elles seront déduites du stock.</p>
@@ -2655,6 +2657,7 @@ return(
             </div>
           </div>
           </div>
+
         )}
       </div>
     </div>
