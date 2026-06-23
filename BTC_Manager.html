@@ -607,6 +607,9 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     });
     const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
   
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); };
+  }, []);
+
   async function toggleModeDemo() {
     var newMode = !modeDemo;
     setModeDemo(newMode);
@@ -630,9 +633,6 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     } catch(e) { setResetMsg("❌ Erreur: " + e.message); }
     setTimeout(()=>setShowResetModal(false),2000);
   }
-
-  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); };
-  }, []);
 
   const validerCmd = async (id) => {
     await db.collection("commandes").doc(id).update({ status:"Validee", validePar: userData.nom||user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp() });
