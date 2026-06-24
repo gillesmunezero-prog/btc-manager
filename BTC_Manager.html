@@ -21,7 +21,7 @@
   --btp-gold:#F0A500;
   --btp-green:#1DB954;
   --btp-red:#E74C3C;
-  --btp-blue:#2980B9;
+  --btp-blue:#5DADE2;
   --btp-purple:#8E44AD;
   --btp-text:#ECF0F1;
   --btp-text2:#BDC3C7;
@@ -186,7 +186,7 @@ input,select,textarea,button{font-family:inherit;}
 }
 .btn-primary:hover{box-shadow:0 6px 20px rgba(232,96,28,.5);transform:translateY(-1px);}
 .btn-success{
-  background:linear-gradient(135deg,#1a7a3a,var(--btp-green));
+  background:linear-gradient(135deg,#147a38,#159445);
   color:white;box-shadow:0 4px 12px rgba(29,185,84,.3);
 }
 .btn-success:hover{box-shadow:0 6px 20px rgba(29,185,84,.45);transform:translateY(-1px);}
@@ -1779,7 +1779,7 @@ function DashboardComptable({ user, userData }) {
       React.createElement("div", { className: "btp-content" },
       
       React.createElement("div", { style: { padding: "8px" } },
-      React.createElement("h2", { style: { color: "#2C6E49" } }, "💶 Comptabilité"),
+      React.createElement("h2", { style: { color: "#2ECC71" } }, "💶 Comptabilité"),
       msg && React.createElement("div", { style: { background: "#2C6E49", color: "#fff", padding: "8px 12px", borderRadius: "6px", marginBottom: "8px" } }, msg),
       React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" } },
         [["facturation","📋 Facturation"],["ristournes","🎁 Non-conf. & Ristournes"],["pertes","📉 Pertes"]].map(([k,l]) =>
@@ -1846,11 +1846,11 @@ function DashboardComptable({ user, userData }) {
           const prixUnit = cmd.prixUnit || 0;
           const montantNC = qteNC * prixUnit;
           const ristourneActive = cmd.ristourneValidee !== undefined && cmd.ristourneValidee !== null;
-          return React.createElement("div", { key: cmd.id, style: { background: "#fff", border: "1px solid #ddd", borderRadius: "8px", padding: "12px", marginBottom: "10px" } },
+          return React.createElement("div", { key: cmd.id, style: { background: "#fff", color: "#1B2838", border: "1px solid #ddd", borderRadius: "8px", padding: "12px", marginBottom: "10px" } },
             React.createElement("div", { style: { display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" } },
               React.createElement("div", null,
                 React.createElement("strong", null, cmd.numBC || cmd.id), " — ", cmd.chantierNom || ch.nom || "-",
-                React.createElement("span", { style: { marginLeft: "8px", fontSize: "12px", color: "#888" } }, cmd.typNom || cmd.type),
+                React.createElement("span", { style: { marginLeft: "8px", fontSize: "12px", color: "#555" } }, cmd.typNom || cmd.type),
                 React.createElement("br", null),
                 React.createElement("span", { style: { fontSize: "12px", color: "#555" } }, "Client : ", cmd.client || ch.client || "-")
               ),
