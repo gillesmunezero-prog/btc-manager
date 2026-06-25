@@ -585,6 +585,9 @@ function DashboardDirection({ user, userData }) {
   const [dirSaisiePhase, setDirSaisiePhase] = React.useState("sec");
   const [dirSaisieMsg, setDirSaisieMsg] = React.useState("");
   const [dirViderMsg, setDirViderMsg] = React.useState("");
+  const [matieres, setMatieres] = React.useState({});
+  const [matInv, setMatInv] = React.useState(null);
+  const [matInvMsg, setMatInvMsg] = React.useState("");
   const [editProd, setEditProd] = React.useState(null);
   const [editType, setEditType] = React.useState("");
   const [editDate, setEditDate] = React.useState("");
@@ -620,6 +623,9 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     var u1 = db.collection("stocks").onSnapshot(snap => {
       var s = {}; snap.docs.forEach(d => { s[d.id] = d.data(); }); setStocks(s);
     });
+    var uMat = db.collection("matieres").onSnapshot(snap => {
+      var m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setMatieres(m);
+    });
     var u2 = db.collection("productions").orderBy("date","desc").onSnapshot(snap => {
       setProductions(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
@@ -634,7 +640,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     });
     const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
   
-  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); };
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); uMat(); };
   }, []);
 
   async function toggleModeDemo() {
@@ -891,6 +897,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       <div className="btp-nav">
         {[
           {key:"stock",icon:"📦",label:"Stock"},
+          {key:"matieres",icon:"🧱",label:"Matières 1ères"},
           {key:"production",icon:"⚙️",label:"Production"},
           {key:"commandes",icon:"📋",label:"Commandes"},
           {key:"finances",icon:"💰",label:"Finances"},
@@ -1364,6 +1371,101 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
         {tab==="comptabilite"&&(
           React.createElement(DashboardComptable, { user: user, userData: userData })
         )}
+        {tab==="matieres"&&(
+<div className="fade-in">
+<h3 style={{marginBottom:6,color:"var(--btp-orange)"}}>🧱 Stock matières premières</h3>
+<p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:6}}>Surveillez le stock de matières premières et faites l'inventaire <strong>2 fois par semaine</strong> pour éviter toute rupture et l'arrêt de la production.</p>
+{(function(){
+  var MATIERES=[{id:"ciment",nom:"Ciment",unite:"sacs"},{id:"mortier",nom:"Mortier de pose BTC",unite:"sacs"},{id:"sable",nom:"Sable",unite:"m³"},{id:"terre",nom:"Terre",unite:"m³"}];
+  function joursDepuis(d){ if(!d) return null; var p=d.split("/"); if(p.length!==3) return null; var dt=new Date(+p[2],+p[1]-1,+p[0]); return Math.floor((Date.now()-dt.getTime())/86400000); }
+  var dates=MATIERES.map(function(m){return matieres[m.id]&&matieres[m.id].dateInventaire;}).filter(Boolean);
+  var dernier=null; dates.forEach(function(ds){var jd=joursDepuis(ds); if(jd!==null&&(dernier===null||jd<dernier))dernier=jd;});
+  var retard=(dernier===null)||(dernier>3);
+  return(
+<div>
+<div style={{background:retard?"#FDEBEA":"#EAF7EE",border:"1px solid "+(retard?"#E74C3C":"#1DB954"),borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13}}>
+{retard?("⚠️ Inventaire à refaire — "+(dernier===null?"aucun inventaire enregistré":("dernier inventaire il y a "+dernier+" j"))+". Pensez à compter 2 fois/semaine."):("✅ Dernier inventaire il y a "+dernier+" j. Prochain conseillé sous "+Math.max(0,3-dernier)+" j.")}
+</div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12,marginBottom:16}}>
+{MATIERES.map(function(m){
+var d=matieres[m.id]||{};
+var qte=(typeof d.quantite==="number")?d.quantite:null;
+var seuil=(typeof d.seuil==="number")?d.seuil:null;
+var rupture=(qte!==null&&seuil!==null&&qte<=seuil);
+var bas=(qte!==null&&seuil!==null&&qte<=seuil*1.5&&qte>seuil);
+var coul=qte===null?"#95A5A6":rupture?"#E74C3C":bas?"#F0A500":"#1DB954";
+return(
+<div key={m.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+coul}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+<div style={{fontWeight:700,fontSize:14}}>{m.nom}</div>
+<span className="badge" style={{background:coul,color:"#fff"}}>{qte===null?"À saisir":rupture?"🔴 Rupture":bas?"⚠️ Bas":"✅ OK"}</span>
+</div>
+<div style={{fontSize:26,fontWeight:800,color:coul,lineHeight:1.1}}>{qte===null?"—":qte.toLocaleString()} <span style={{fontSize:13,fontWeight:600,color:"var(--btp-text2)"}}>{m.unite}</span></div>
+<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:6}}>Seuil d'alerte : {seuil===null?"—":seuil.toLocaleString()+" "+m.unite}</div>
+<div style={{fontSize:11,color:"var(--btp-text2)"}}>Dernier inventaire : {d.dateInventaire||"—"}{d.responsable?(" · "+d.responsable):""}</div>
+{rupture&&<div style={{marginTop:6,fontSize:12,fontWeight:700,color:"#E74C3C"}}>⛔ Stock critique — risque d'arrêt de production</div>}
+</div>
+);
+})}
+</div>
+<div style={{textAlign:"right"}}>
+<button className="btn btn-gold" onClick={function(){
+  var init={};
+  MATIERES.forEach(function(m){var d=matieres[m.id]||{}; init[m.id]={quantite:(typeof d.quantite==="number"?String(d.quantite):""),seuil:(typeof d.seuil==="number"?String(d.seuil):"")};});
+  setMatInv(init); setMatInvMsg("");
+}}>📋 Faire l'inventaire</button>
+</div>
+</div>
+);
+})()}
+{matInv&&(
+<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={function(e){if(e.target===e.currentTarget)setMatInv(null);}}>
+<div style={{background:"var(--btp-card)",borderRadius:14,padding:22,width:"92%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
+<h3 style={{marginTop:0,color:"var(--btp-orange)"}}>Inventaire matières premières</h3>
+<p style={{fontSize:12,color:"var(--btp-text2)"}}>Saisissez la quantité réelle comptée et, si besoin, le seuil d'alerte de chaque matière.</p>
+{[{id:"ciment",nom:"Ciment",unite:"sacs"},{id:"mortier",nom:"Mortier de pose BTC",unite:"sacs"},{id:"sable",nom:"Sable",unite:"m³"},{id:"terre",nom:"Terre",unite:"m³"}].map(function(m){
+return(
+<div key={m.id} style={{marginBottom:12,paddingBottom:10,borderBottom:"1px solid #EEE"}}>
+<div style={{fontWeight:700,fontSize:13,marginBottom:6}}>{m.nom} <span style={{fontWeight:500,color:"var(--btp-text2)"}}>({m.unite})</span></div>
+<div style={{display:"flex",gap:8}}>
+<div style={{flex:1}}>
+<label style={{fontSize:11,color:"var(--btp-text2)"}}>Quantité comptée</label>
+<input type="number" value={matInv[m.id]?matInv[m.id].quantite:""} onChange={function(e){var v=e.target.value;setMatInv(function(prev){var n=Object.assign({},prev);n[m.id]=Object.assign({},n[m.id],{quantite:v});return n;});}} style={{width:"100%",padding:"8px",borderRadius:8,border:"1px solid #CCC"}} placeholder="0"/>
+</div>
+<div style={{flex:1}}>
+<label style={{fontSize:11,color:"var(--btp-text2)"}}>Seuil d'alerte</label>
+<input type="number" value={matInv[m.id]?matInv[m.id].seuil:""} onChange={function(e){var v=e.target.value;setMatInv(function(prev){var n=Object.assign({},prev);n[m.id]=Object.assign({},n[m.id],{seuil:v});return n;});}} style={{width:"100%",padding:"8px",borderRadius:8,border:"1px solid #CCC"}} placeholder="0"/>
+</div>
+</div>
+</div>
+);
+})}
+{matInvMsg&&<div style={{fontSize:12,color:matInvMsg.indexOf("✅")>=0?"#1DB954":"#E74C3C",marginBottom:8}}>{matInvMsg}</div>}
+<div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
+<button className="btn btn-sm" onClick={function(){setMatInv(null);}}>Annuler</button>
+<button className="btn btn-sm btn-gold" onClick={async function(){
+  setMatInvMsg("Enregistrement...");
+  try{
+    var today=new Date().toLocaleDateString("fr-FR");
+    var resp=(userData&&(userData.nom||userData.email))||(user&&user.email)||"Direction";
+    var defs=[{id:"ciment",nom:"Ciment",unite:"sacs"},{id:"mortier",nom:"Mortier de pose BTC",unite:"sacs"},{id:"sable",nom:"Sable",unite:"m³"},{id:"terre",nom:"Terre",unite:"m³"}];
+    for(var i=0;i<defs.length;i++){
+      var m=defs[i]; var v=matInv[m.id]||{};
+      var data={nom:m.nom,unite:m.unite,dateInventaire:today,responsable:resp,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+      if(v.quantite!=="" && v.quantite!=null) data.quantite=Number(v.quantite);
+      if(v.seuil!=="" && v.seuil!=null) data.seuil=Number(v.seuil);
+      await db.collection("matieres").doc(m.id).set(data,{merge:true});
+    }
+    setMatInvMsg("✅ Inventaire enregistré !");
+    setTimeout(function(){setMatInv(null);},900);
+  }catch(err){ setMatInvMsg("Erreur : "+err.message); }
+}}>💾 Enregistrer l'inventaire</button>
+</div>
+</div>
+</div>
+)}
+</div>
+)}
       </div>
     </div>
   );
