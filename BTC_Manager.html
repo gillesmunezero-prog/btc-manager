@@ -16,7 +16,7 @@
   --btp-dark:#0D1B2A;
   --btp-navy:#1B2838;
   --btp-steel:#243447;
-  --btp-orange:#E8601C;
+  --btp-orange:#FF8C42;
   --btp-orange2:#FF7A3D;
   --btp-gold:#F0A500;
   --btp-green:#1DB954;
@@ -889,7 +889,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 return(
                   <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
                     <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{prod.nom}</div>
-                    <div style={{fontSize:11,color:"#999",marginBottom:6}}>{prod.dim}</div>
+                    <div style={{fontSize:11,color:"#BDC3C7",marginBottom:6}}>{prod.dim}</div>
                     <div style={{fontSize:12,color:"var(--btp-text2)"}}>Stock: {total.toLocaleString()} u</div>
                     <div style={{fontSize:13,color:"var(--btp-text2)"}}>Prix unit.: {prod.prix.toFixed(2)} EUR</div>
                     <div style={{fontSize:15,fontWeight:700,color:"var(--btp-orange)",marginTop:6}}>{valeur.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</div>
@@ -911,7 +911,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
               {FOURNITURES.map(f=>(
                 <div key={f.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
                   <div style={{fontWeight:700,fontSize:13,marginBottom:2}}>{f.nom}</div>
-                  <div style={{fontSize:11,color:"#999",marginBottom:4}}>{f.cond}</div>
+                  <div style={{fontSize:11,color:"#BDC3C7",marginBottom:4}}>{f.cond}</div>
                   <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:6}}>{f.usage}</div>
                   <div style={{fontSize:15,fontWeight:700,color:"var(--btp-orange)"}}>{f.prix.toFixed(2)} EUR</div>
                 </div>
@@ -928,7 +928,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12,marginBottom:24}}>
               {CATALOGUE.map(prod=>(
                 <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #C0392B"}}>
-                  <div style={{fontWeight:700,fontSize:14,color:"#2C1810",marginBottom:4}}>{prod.nom}</div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#ECF0F1",marginBottom:4}}>{prod.nom}</div>
                   <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Dim: {prod.dim}</div>
                   <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:8}}>{prod.usage}</div>
                   <div style={{fontSize:14,fontWeight:700,color:"var(--btp-orange)"}}>{prod.prix.toFixed(2)} EUR/u</div>
@@ -939,7 +939,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
               {FOURNITURES.map(f=>(
                 <div key={f.id} style={{background:"var(--btp-card)",borderRadius:12,padding:16,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
-                  <div style={{fontWeight:700,fontSize:14,color:"#2C1810",marginBottom:4}}>{f.nom}</div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#ECF0F1",marginBottom:4}}>{f.nom}</div>
                   <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>{f.cond}</div>
                   <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:8}}>{f.usage}</div>
                   <div style={{fontSize:14,fontWeight:700,color:"var(--btp-orange)"}}>{f.prix.toFixed(2)} EUR</div>
@@ -998,7 +998,7 @@ return(
 <div key={prod.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 8px",borderBottom:"1px solid #F5F5F5",flexWrap:"wrap"}}>
 <div style={{flex:1,minWidth:140}}>
 <div style={{fontWeight:700,fontSize:13}}>{prod.nom}</div>
-<div style={{fontSize:11,color:"#999"}}>{prod.dim}</div>
+<div style={{fontSize:11,color:"#BDC3C7"}}>{prod.dim}</div>
 <div style={{fontSize:11,color:couleur,fontWeight:600,marginTop:2}}>Actuel: {((s.sec||0)+(s.sechage||0)).toLocaleString()} u</div>
 </div>
 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -1295,7 +1295,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                       return(
                         <tr key={l.prod.id} style={{background:i%2===0?"white":"#EBF5FB",borderBottom:"1px solid var(--btp-border)"}}>
                           <td style={{padding:"8px 10px",fontWeight:600}}>{l.prod.nom}</td>
-                          <td style={{padding:"8px 10px",fontSize:11,color:"#999"}}>{l.prod.dim}</td>
+                          <td style={{padding:"8px 10px",fontSize:11,color:"#BDC3C7"}}>{l.prod.dim}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{l.cmdTotal.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>
@@ -1487,7 +1487,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                       var pct=l.besoin>0?Math.min(100,Math.round(l.livre/l.besoin*100)):0;
                       return(
                         <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
-                          <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div></td>
+                          <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#BDC3C7"}}>{l.prod.dim}</div></td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{l.cmdTotal.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>
@@ -1561,7 +1561,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                                   <td style={{padding:"8px 10px",color:"var(--btp-text2)"}}>{l.dateStr}</td>
                                   <td style={{padding:"8px 10px"}}>
                                     <div style={{fontWeight:600}}>{l.prod.nom}</div>
-                                    <div style={{fontSize:11,color:"#999"}}>{l.prod.dim}</div>
+                                    <div style={{fontSize:11,color:"#BDC3C7"}}>{l.prod.dim}</div>
                                   </td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-text2)"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
@@ -1584,9 +1584,9 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                           </tfoot>
                         </table>
                       </div>
-                      <div style={{background:"#FEF9F0",border:"1px solid #EEE",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                      <div style={{background:"#1E2D3D",border:"1px solid #2C3E50",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
                         <div style={{fontSize:12,color:"var(--btp-text2)"}}>
-                          <strong style={{color:"#2C1810"}}>{lignesFact.length}</strong> commande(s) confirmee(s) | Client: <strong>{chantier.client}</strong>
+                          <strong style={{color:"#ECF0F1"}}>{lignesFact.length}</strong> commande(s) confirmee(s) | Client: <strong>{chantier.client}</strong>
                         </div>
                         <div style={{fontSize:14,fontWeight:700,color:"var(--btp-orange)"}}>
                           MONTANT TOTAL CHANTIER (estimation): {totalMontantBesoin.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR
@@ -2187,7 +2187,7 @@ function DashboardChef({ user, userData }) {
                       <div key={prod.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 4px",borderBottom:"1px solid #F5F5F5"}}>
                         <div style={{flex:1}}>
                           <div style={{fontSize:13,fontWeight:600}}>{prod.nom}</div>
-                          <div style={{fontSize:11,color:"#999"}}>{prod.dim}</div>
+                          <div style={{fontSize:11,color:"#BDC3C7"}}>{prod.dim}</div>
                         </div>
                         <input type="number" min="0" placeholder="0" value={besoins[prod.id]||""}
                           onChange={e=>setBesoins(Object.assign({},besoins,{[prod.id]:e.target.value}))}
@@ -2330,7 +2330,7 @@ function DashboardStock({ user, userData }) {
             return(
               <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
-<div style={{fontSize:11,color:"#999",marginBottom:4}}>{prod.dim}</div>
+<div style={{fontSize:11,color:"#BDC3C7",marginBottom:4}}>{prod.dim}</div>
 <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
 <span style={{color:"var(--btp-green)"}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
 <span style={{color:"#E67E22"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></span>
@@ -2527,7 +2527,7 @@ function DashboardProduction({ user, userData }) {
               <div key={item.prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
                 <div style={{position:"absolute",top:10,right:10,background:couleur,color:"white",borderRadius:16,padding:"2px 8px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:2,paddingRight:40}}>{item.prod.nom}</div>
-                <div style={{fontSize:11,color:"#999",marginBottom:6}}>{item.prod.dim}</div>
+                <div style={{fontSize:11,color:"#BDC3C7",marginBottom:6}}>{item.prod.dim}</div>
                 <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sec: <strong>{item.sec.toLocaleString()}</strong></div>
                 <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
                 <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
@@ -2570,7 +2570,7 @@ return(
 <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderLeft:"3px solid #E67E22"}}>
 <div style={{flex:1,minWidth:140}}>
 <div style={{fontWeight:600,fontSize:13}}>{getProduit(p.type).nom}</div>
-<div style={{fontSize:11,color:"#999"}}>{p.date}</div>
+<div style={{fontSize:11,color:"#BDC3C7"}}>{p.date}</div>
 </div>
 <div style={{textAlign:"right"}}>
 <div style={{fontWeight:700,fontSize:14,color:"#E67E22"}}>{p.jr} j restants</div>
