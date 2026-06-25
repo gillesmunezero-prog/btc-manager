@@ -2633,6 +2633,12 @@ function DashboardProduction({ user, userData }) {
   const [msg, setMsg] = useState("");
   const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
   const [saisieDate, setSaisieDate] = React.useState(function(){ var d = new Date(); var m = String(d.getMonth()+1).padStart(2,"0"); var j = String(d.getDate()).padStart(2,"0"); return d.getFullYear()+"-"+m+"-"+j; });
+  const [pEdit, setPEdit] = React.useState(null);
+  const [pEditType, setPEditType] = React.useState("");
+  const [pEditDate, setPEditDate] = React.useState("");
+  const [pEditQte, setPEditQte] = React.useState("");
+  const [pEditPhase, setPEditPhase] = React.useState("sec");
+  const [pEditMsg, setPEditMsg] = React.useState("");
   const [pertes, setPertes] = React.useState([]);
   const [commandes, setCommandes] = React.useState([]);
   const [saisiePerteType, setSaisiePerteType] = React.useState("");
@@ -2686,6 +2692,57 @@ function DashboardProduction({ user, userData }) {
       setSaisieQte("");
     } catch(e) { setMsg("Erreur: "+e.message); }
   };
+
+  function pFrToInput(frDate){
+    if (frDate && typeof frDate === "string" && frDate.indexOf("/") !== -1){
+      var pp = frDate.split("/");
+      if (pp.length === 3){ return pp[2] + "-" + pp[1].padStart(2,"0") + "-" + pp[0].padStart(2,"0"); }
+    }
+    var d = new Date(); var m = String(d.getMonth()+1).padStart(2,"0"); var j = String(d.getDate()).padStart(2,"0");
+    return d.getFullYear()+"-"+m+"-"+j;
+  }
+  function pOuvrirEdit(p){
+    setPEdit(p); setPEditType(p.type||CATALOGUE[0].id); setPEditDate(pFrToInput(p.date));
+    setPEditQte(String(p.quantite||"")); setPEditPhase(p.phase||"sec"); setPEditMsg("");
+  }
+  async function pAjusterStock(type, phase, delta){
+    if (!type || !delta) return;
+    var st = stocks[type] || {};
+    var upd = {};
+    if (phase === "sec") { upd.sec = Math.max(0,(st.sec||0)+delta); } else { upd.sechage = Math.max(0,(st.sechage||0)+delta); }
+    await db.collection("stocks").doc(type).set(upd, { merge:true });
+  }
+  async function pSauvegarderEdit(){
+    if (!pEdit) return;
+    if (!pEditType || !pEditQte) { setPEditMsg("Choisissez un produit et une quantite"); return; }
+    var qte = parseInt(pEditQte);
+    if (isNaN(qte) || qte <= 0) { setPEditMsg("Quantite invalide"); return; }
+    var dateFr = pEdit.date;
+    if (pEditDate) { var parts = pEditDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
+    setPEditMsg("Enregistrement...");
+    try {
+      await pAjusterStock(pEdit.type, pEdit.phase, -(pEdit.quantite||0));
+      await pAjusterStock(pEditType, pEditPhase, qte);
+      await db.collection("productions").doc(pEdit.id).update({ type: pEditType, quantite: qte, phase: pEditPhase, date: dateFr });
+      setPEditMsg("✅ Production modifiee.");
+      setTimeout(function(){ setPEdit(null); setPEditMsg(""); }, 900);
+    } catch (e) { setPEditMsg("❌ Erreur: " + e.message); }
+  }
+  async function pSupprimer(p){
+    var okc = window.confirm("Supprimer definitivement cette production (" + getProduit(p.type).nom + ", " + (p.quantite||0) + " u, " + (p.date||"") + ") ?");
+    if (!okc) return;
+    var mdp = window.prompt("Pour confirmer, saisissez votre mot de passe :");
+    if (!mdp) { return; }
+    try {
+      var cred = firebase.auth.EmailAuthProvider.credential(user.email, mdp);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+    } catch (e) { window.alert("Mot de passe incorrect. Suppression annulee."); return; }
+    try {
+      await pAjusterStock(p.type, p.phase, -(p.quantite||0));
+      await db.collection("productions").doc(p.id).delete();
+      if (pEdit && pEdit.id === p.id) { setPEdit(null); }
+    } catch (e) { window.alert("Erreur: " + e.message); }
+  }
 
   var enregistrerPerte = async function() {
     if (!saisiePerteType||!saisiePerteQte) { setMsgPerte("Choisissez un type et une quantite"); return; }
@@ -2814,7 +2871,32 @@ return(
 );
 return null;
 })()}
-<h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
+{pEdit && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={()=>setPEdit(null)}>
+          <div style={{background:"var(--btp-card)",borderRadius:12,padding:22,width:"90%",maxWidth:420,boxShadow:"0 8px 30px rgba(0,0,0,0.3)"}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{margin:"0 0 16px",color:"var(--btp-orange)"}}>✏️ Modifier la production</h3>
+            <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Reference (produit)</label>
+            <select value={pEditType} onChange={e=>setPEditType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14}}>
+              {CATALOGUE.map(pp=>(<option key={pp.id} value={pp.id}>{pp.nom} - {pp.dim}</option>))}
+            </select>
+            <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de production</label>
+            <input type="date" value={pEditDate} onChange={e=>setPEditDate(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14}} />
+            <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Quantite</label>
+            <input type="number" value={pEditQte} onChange={e=>setPEditQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14}} />
+            <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Phase</label>
+            <select value={pEditPhase} onChange={e=>setPEditPhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:14,background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14}}>
+              <option value="sec">Stock sec (seche)</option>
+              <option value="sechage">En sechage (frais)</option>
+            </select>
+            {pEditMsg && <div style={{marginBottom:12,fontSize:13,color:"var(--btp-text)"}}>{pEditMsg}</div>}
+            <div style={{display:"flex",gap:12}}>
+              <button onClick={pSauvegarderEdit} style={{flex:1,padding:"10px",background:"#27AE60",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:"bold"}}>Enregistrer</button>
+              <button onClick={()=>setPEdit(null)} style={{flex:1,padding:"10px",background:"#7f8c8d",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:"bold"}}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+        <h3 style={{marginBottom:10,color:"#4A235A"}}>Productions du jour ({prodAujourdHui.length})</h3>
         {prodAujourdHui.length===0?(
           <p style={{color:"var(--btp-text2)"}}>Aucune production enregistree aujourd'hui.</p>
         ):(
@@ -2837,6 +2919,10 @@ return(
 ):(
 <span style={{background:"#EAFAF1",color:"#1E8449",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:700}}>✅ Sec</span>
 )}
+<div style={{display:"flex",gap:6,marginTop:8,justifyContent:"flex-end"}}>
+  <button onClick={()=>pOuvrirEdit(p)} title="Modifier" style={{padding:"4px 9px",background:"#2980b9",color:"#fff",border:"none",borderRadius:5,cursor:"pointer",fontSize:12}}>✏️ Modifier</button>
+  <button onClick={()=>pSupprimer(p)} title="Supprimer" style={{padding:"4px 9px",background:"#8B1A10",color:"#fff",border:"none",borderRadius:5,cursor:"pointer",fontSize:12}}>🗑️</button>
+</div>
 </div>
 );
 })}
