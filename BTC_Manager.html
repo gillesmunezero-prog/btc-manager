@@ -2851,7 +2851,7 @@ var pct=Math.round((DUREE_SECHAGE-p.jr)/DUREE_SECHAGE*100);
 return(
 <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 14px",marginBottom:6,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderLeft:"3px solid #E67E22"}}>
 <div style={{flex:1,minWidth:140}}>
-<div style={{fontWeight:600,fontSize:13}}>{getProduit(p.type).nom}</div>
+<div style={{fontWeight:600,fontSize:13}}>{getProduit(p.type).nom} <span style={{fontWeight:600,fontSize:11,color:"#E67E22"}}>({getProduit(p.type).dim})</span></div>
 <div style={{fontSize:11,color:"#BDC3C7"}}>{p.date}</div>
 </div>
 <div style={{textAlign:"right"}}>
