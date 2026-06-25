@@ -2523,6 +2523,7 @@ function DashboardProduction({ user, userData }) {
   const [saisiePhase, setSaisiePhase] = useState("sec");
   const [msg, setMsg] = useState("");
   const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
+  const [saisieDate, setSaisieDate] = React.useState(function(){ var d = new Date(); var m = String(d.getMonth()+1).padStart(2,"0"); var j = String(d.getDate()).padStart(2,"0"); return d.getFullYear()+"-"+m+"-"+j; });
   const [pertes, setPertes] = React.useState([]);
   const [commandes, setCommandes] = React.useState([]);
   const [saisiePerteType, setSaisiePerteType] = React.useState("");
@@ -2560,9 +2561,11 @@ function DashboardProduction({ user, userData }) {
     var qte = parseInt(saisieQte);
     if (isNaN(qte)||qte<=0) { setMsg("Quantite invalide"); return; }
     try {
+      var dateFr = dateAujourdHui;
+      if (saisieDate) { var parts = saisieDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
       await db.collection("productions").add({
         type:saisieType, quantite:qte, phase:saisiePhase,
-        date:dateAujourdHui, responsable:userData.nom||user.email,
+        date:dateFr, responsable:userData.nom||user.email,
         responsableUid:user.uid, statut:"Valide",
         timestamp:firebase.firestore.FieldValue.serverTimestamp()
       });
@@ -2664,6 +2667,8 @@ function DashboardProduction({ user, userData }) {
             <option value="sec">Stock sec (seche)</option>
             <option value="sechage">En sechage (frais)</option>
           </select>
+          <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de production</label>
+          <input type="date" value={saisieDate} onChange={e=>setSaisieDate(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}} />
           <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14}} />
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
           <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
