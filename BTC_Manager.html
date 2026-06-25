@@ -479,17 +479,33 @@ function libelleUrgence(total) {
   if (total < STOCK_CIBLE) return "A PRODUIRE";
   return "OK";
 }
-function joursRestants(dateTs) {
-if (!dateTs) return 0;
-var d = dateTs.toDate ? dateTs.toDate() : new Date(dateTs);
-return Math.max(0, DUREE_SECHAGE - Math.floor((Date.now()-d.getTime())/MS_PAR_JOUR));
+function dateProductionMs(p) {
+if (p && typeof p === "object" && !p.toDate) {
+  if (p.date && typeof p.date === "string" && p.date.indexOf("/") !== -1) {
+    var parts = p.date.split("/");
+    if (parts.length === 3) {
+      var jj = parseInt(parts[0],10), mm = parseInt(parts[1],10), aaaa = parseInt(parts[2],10);
+      var dt = new Date(aaaa, mm-1, jj);
+      if (!isNaN(dt.getTime())) return dt.getTime();
+    }
+  }
+  if (p.timestamp) { return p.timestamp.toDate ? p.timestamp.toDate().getTime() : new Date(p.timestamp).getTime(); }
+  return 0;
+}
+if (!p) return 0;
+return p.toDate ? p.toDate().getTime() : new Date(p).getTime();
+}
+function joursRestants(arg) {
+var ms = dateProductionMs(arg);
+if (!ms) return 0;
+return Math.max(0, DUREE_SECHAGE - Math.floor((Date.now()-ms)/MS_PAR_JOUR));
 }
 function calcSechageActif(prods, typeId) {
 var now28 = Date.now() - DUREE_SECHAGE*MS_PAR_JOUR;
 var actif = 0;
 prods.forEach(function(p) {
 if (p.type!==typeId||p.phase!=='sechage') return;
-var d = p.timestamp&&p.timestamp.toDate ? p.timestamp.toDate().getTime() : 0;
+var d = dateProductionMs(p);
 if (d && d>now28) actif += (p.quantite||0);
 });
 return actif;
@@ -2675,7 +2691,7 @@ function DashboardProduction({ user, userData }) {
         </div>
 
         {(function(){
-var seches=productions.filter(function(p){return p.phase==="sechage";}).map(function(p){return Object.assign({},p,{jr:joursRestants(p.timestamp)});}).filter(function(p){return p.jr>0;}).sort(function(a,b){return a.jr-b.jr;});
+var seches=productions.filter(function(p){return p.phase==="sechage";}).map(function(p){return Object.assign({},p,{jr:joursRestants(p)});}).filter(function(p){return p.jr>0;}).sort(function(a,b){return a.jr-b.jr;});
 if(seches.length>0) return(
 <div style={{marginBottom:24}}>
 <h3 style={{marginBottom:8,color:"#4A235A"}}>Lots en cours de sechage ({seches.length})</h3>
@@ -2711,7 +2727,7 @@ return null;
         ):(
           <div>
           {prodAujourdHui.map(p=>{
-var jrR=p.phase==="sechage"&&p.timestamp?joursRestants(p.timestamp):0;
+var jrR=p.phase==="sechage"?joursRestants(p):0;
 return(
 <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
               <div>
