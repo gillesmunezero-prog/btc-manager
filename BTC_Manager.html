@@ -937,7 +937,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 return(
                   <div key={prod.id} className={"kpi-card " + cardClass}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                      <div style={{fontSize:11,fontWeight:700,color:'var(--btp-text2)',textTransform:'uppercase',letterSpacing:'.5px',flex:1,lineHeight:1.3}}>{prod.nom}</div>
+                      <div style={{fontSize:11,fontWeight:700,color:'var(--btp-text2)',textTransform:'uppercase',letterSpacing:'.5px',flex:1,lineHeight:1.3}}>{prod.nom} <span style={{color:'var(--btp-orange)',fontWeight:600}}>({prod.dim})</span></div>
                       <span className={"badge " + (level==="ok"?"badge-green":level==="warn"?"badge-gold":"badge-red")}>
                         {level==='ok'?'✅ OK':level==='warn'?'⚠️ Bas':'🔴 Critique'}
                       </span>
@@ -1020,7 +1020,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                   <tbody>{productions.map((p,i)=>(
                     <tr key={p.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                       <td style={{padding:"7px 10px"}}>{p.date}</td>
-                      <td style={{padding:"7px 10px",fontWeight:600}}>{getProduit(p.type).nom}</td>
+                      <td style={{padding:"7px 10px",fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontWeight:600,color:"#E67E22"}}>({getProduit(p.type).dim})</span></td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.quantite?p.quantite.toLocaleString():"-"}</td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.phase==="sec"?"Stock sec":"En sechage"}</td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.responsable||"-"}</td>
