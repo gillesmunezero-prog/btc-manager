@@ -564,6 +564,11 @@ function DashboardDirection({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
   const [commandes, setCommandes] = useState([]);
+  const [dirSaisieType, setDirSaisieType] = React.useState(CATALOGUE[0].id);
+  const [dirSaisieQte, setDirSaisieQte] = React.useState("");
+  const [dirSaisiePhase, setDirSaisiePhase] = React.useState("sec");
+  const [dirSaisieMsg, setDirSaisieMsg] = React.useState("");
+  const [dirViderMsg, setDirViderMsg] = React.useState("");
   const [utilisateurs, setUtilisateurs] = useState([]);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -632,6 +637,57 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       setResetMsg("✅ Données démo supprimées !");
     } catch(e) { setResetMsg("❌ Erreur: " + e.message); }
     setTimeout(()=>setShowResetModal(false),2000);
+  }
+
+  async function enregistrerProductionDirection() {
+    if (!dirSaisieType || !dirSaisieQte) { setDirSaisieMsg("Choisissez un type et entrez la quantite"); return; }
+    var qte = parseInt(dirSaisieQte);
+    if (isNaN(qte) || qte <= 0) { setDirSaisieMsg("Quantite invalide"); return; }
+    try {
+      await db.collection("productions").add({
+        type: dirSaisieType, quantite: qte, phase: dirSaisiePhase,
+        date: new Date().toLocaleDateString("fr-FR"),
+        responsable: (userData.nom || user.email) + " (Admin)",
+        responsableUid: user.uid, statut: "Valide",
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      var st = stocks[dirSaisieType] || {};
+      var upd = {};
+      if (dirSaisiePhase === "sec") { upd.sec = (st.sec || 0) + qte; } else { upd.sechage = (st.sechage || 0) + qte; }
+      await db.collection("stocks").doc(dirSaisieType).set(upd, { merge: true });
+      setDirSaisieMsg("✅ Production enregistree ! Stock mis a jour.");
+      setDirSaisieQte("");
+    } catch (e) { setDirSaisieMsg("❌ Erreur: " + e.message); }
+  }
+
+  async function viderHistoriqueReel() {
+    var okc = window.confirm("⚠️ Cette action supprime DEFINITIVEMENT TOUTES les productions et TOUTES les commandes. Continuer ?");
+    if (!okc) return;
+    var mdp = window.prompt("Pour confirmer, saisissez votre mot de passe administrateur :");
+    if (!mdp) { setDirViderMsg("Annule."); return; }
+    setDirViderMsg("Verification du mot de passe...");
+    try {
+      var cred = firebase.auth.EmailAuthProvider.credential(user.email, mdp);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+    } catch (e) {
+      setDirViderMsg("❌ Mot de passe incorrect. Suppression annulee.");
+      return;
+    }
+    setDirViderMsg("Suppression en cours...");
+    try {
+      for (var col of ["productions", "commandes"]) {
+        var snap = await db.collection(col).get();
+        while (snap.docs.length > 0) {
+          var batch = db.batch();
+          var slice = snap.docs.slice(0, 400);
+          slice.forEach(function(d) { batch.delete(d.ref); });
+          await batch.commit();
+          if (snap.docs.length <= 400) break;
+          snap = await db.collection(col).get();
+        }
+      }
+      setDirViderMsg("✅ Historique productions + commandes vide.");
+    } catch (e) { setDirViderMsg("❌ Erreur: " + e.message); }
   }
 
   const validerCmd = async (id) => {
@@ -815,7 +871,37 @@ const [showPwdUid, setShowPwdUid] = useState(null);
         )}
         {tab==="production"&&(
           <div className="fade-in">
-            <h3 style={{marginBottom:14,color:"var(--btp-orange)"}}>Productions recentes</h3>
+            <div style={{background:"var(--btp-card)",border:"1px solid var(--btp-steel)",borderRadius:12,padding:16,marginBottom:18}}>
+              <h3 style={{margin:"0 0 12px",color:"var(--btp-green)"}}>➕ Enregistrer une production du jour</h3>
+              <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"flex-end"}}>
+                <div style={{flex:"2 1 220px"}}>
+                  <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Produit</label>
+                  <select value={dirSaisieType} onChange={e=>setDirSaisieType(e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid var(--btp-steel)",background:"var(--btp-card2)",color:"var(--btp-text)"}}>
+                    {CATALOGUE.map(p=>(<option key={p.id} value={p.id}>{p.nom} ({p.dim})</option>))}
+                  </select>
+                </div>
+                <div style={{flex:"1 1 110px"}}>
+                  <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Quantite</label>
+                  <input type="number" value={dirSaisieQte} onChange={e=>setDirSaisieQte(e.target.value)} placeholder="0" style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid var(--btp-steel)",background:"var(--btp-card2)",color:"var(--btp-text)"}} />
+                </div>
+                <div style={{flex:"1 1 130px"}}>
+                  <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Phase</label>
+                  <select value={dirSaisiePhase} onChange={e=>setDirSaisiePhase(e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid var(--btp-steel)",background:"var(--btp-card2)",color:"var(--btp-text)"}}>
+                    <option value="sec">Stock sec</option>
+                    <option value="sechage">En sechage</option>
+                  </select>
+                </div>
+                <button onClick={enregistrerProductionDirection} style={{padding:"9px 18px",background:"var(--btp-green)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:"bold"}}>Enregistrer</button>
+              </div>
+              {dirSaisieMsg && <p style={{marginTop:10,marginBottom:0,fontSize:13,color:"var(--btp-text)"}}>{dirSaisieMsg}</p>}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:14}}>
+              <h3 style={{margin:0,color:"var(--btp-orange)"}}>Productions recentes</h3>
+              <div style={{textAlign:"right"}}>
+                <button onClick={viderHistoriqueReel} style={{padding:"7px 14px",background:"#8B1A10",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:"bold"}}>🧹 Vider l'historique (prod + commandes)</button>
+                {dirViderMsg && <div style={{marginTop:6,fontSize:12,color:"var(--btp-text)"}}>{dirViderMsg}</div>}
+              </div>
+            </div>
             {productions.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune production enregistree.</p>:(
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500}}>
@@ -1679,6 +1765,27 @@ function DashboardComptable({ user, userData }) {
     setTab("facture");
   };
 
+  const supprimerFactureSecurisee = async (cmd) => {
+    var label = cmd.numBC || cmd.id;
+    var okc = window.confirm("⚠️ Supprimer DEFINITIVEMENT la facture / commande " + label + " ? Cette action est irreversible.");
+    if (!okc) return;
+    var mdp = window.prompt("Pour confirmer la suppression, saisissez votre mot de passe :");
+    if (!mdp) { setMsg("Suppression annulee."); return; }
+    setMsg("Verification du mot de passe...");
+    try {
+      var cred = firebase.auth.EmailAuthProvider.credential(user.email, mdp);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+    } catch (e) {
+      setMsg("❌ Mot de passe incorrect. Suppression annulee.");
+      return;
+    }
+    try {
+      await db.collection("commandes").doc(cmd.id).delete();
+      if (factureCourante && factureCourante.id === cmd.id) { setFactureCourante(null); setTab("facturation"); }
+      setMsg("✅ Facture " + label + " supprimee.");
+    } catch (e) { setMsg("❌ Erreur lors de la suppression: " + e.message); }
+  };
+
   const totalPertesProduction = pertes.filter(p => p.raison === "production").reduce((a, p) => a + (p.quantite || 0), 0);
   const totalPertesRetour = pertes.filter(p => p.raison === "retour_nc").reduce((a, p) => a + (p.quantite || 0), 0);
 
@@ -1827,7 +1934,11 @@ function DashboardComptable({ user, userData }) {
                     React.createElement("button", {
                       onClick: () => genererFacture(cmd.id),
                       style: { padding: "4px 10px", background: "#2C6E49", color: "#fff", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "12px" }
-                    }, "🧾 Facture")
+                    }, "🧾 Facture"),
+                    React.createElement("button", {
+                      onClick: () => supprimerFactureSecurisee(cmd),
+                      style: { marginLeft: "6px", padding: "4px 10px", background: "#8B1A10", color: "#fff", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "12px" }
+                    }, "🗑️ Supprimer")
                   )
                 );
               })
