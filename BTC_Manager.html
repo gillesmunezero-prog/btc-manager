@@ -971,7 +971,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                           <span>Besoin total: <strong>{besoinTotal.toLocaleString()}</strong></span>
                           <span style={{color:"var(--btp-blue)"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong></span>
                           <span style={{color:"var(--btp-green)"}}>Recu: <strong>{recu.toLocaleString()}</strong></span>
-                          <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong></span>
+                          <span style={{color:"#EC7063",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong></span>
                         </div>
                         <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:8}}>
                           <div style={{height:8,borderRadius:4,background:pct===100?"#27AE60":"#C0392B",width:pct+"%"}}></div>
@@ -1330,7 +1330,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                         <div style={{fontWeight:600,fontSize:13}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
                       </div>
-                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:3}}>Livre: {livree.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong> | Confirme par chef: {confirme.toLocaleString()}</div>
+                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:3}}>Livre: {livree.toLocaleString()} | Reste: <strong style={{color:reste===0?"#2ECC71":"#EC7063"}}>{reste.toLocaleString()}</strong> | Confirme par chef: {confirme.toLocaleString()}</div>
                     </div>
                   );
                 })
@@ -1379,11 +1379,11 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                         <div style={{marginTop:10,padding:"10px 14px",background:"#EAFAF1",borderRadius:8}}>
                           <div style={{fontSize:13,color:"#1E8449",fontWeight:600,marginBottom:8}}>A confirmer: {aConfirmer.toLocaleString()} u</div>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
-                            <label style={{fontSize:12,color:"#C0392B",fontWeight:700}}>⚠️ BTC non conformes :</label>
+                            <label style={{fontSize:12,color:"#EC7063",fontWeight:700}}>⚠️ BTC non conformes :</label>
                             <input type="number" min="0" placeholder="0" value={qteNonConformeInput[c.id]||""} onChange={e=>{var v={...qteNonConformeInput};v[c.id]=e.target.value;setQteNonConformeInput(v);}} style={{width:80,padding:"4px 8px",border:"2px solid #C0392B",borderRadius:6,fontSize:13,textAlign:"center"}} />
                             <span style={{fontSize:11,color:"var(--btp-text2)"}}>(laisser vide si aucun)</span>
                           </div>
-                          {(parseInt(qteNonConformeInput[c.id])||0)>0&&<div style={{fontSize:11,color:"#C0392B",marginBottom:6,background:"#FDEBD0",padding:"4px 8px",borderRadius:6}}>⚠️ {parseInt(qteNonConformeInput[c.id])} BTC non conformes signalés pour ristourne.</div>}
+                          {(parseInt(qteNonConformeInput[c.id])||0)>0&&<div style={{fontSize:11,color:"#EC7063",marginBottom:6,background:"#FDEBD0",padding:"4px 8px",borderRadius:6}}>⚠️ {parseInt(qteNonConformeInput[c.id])} BTC non conformes signalés pour ristourne.</div>}
                           <button onClick={()=>validerReception(c.id,aConfirmer,qteNonConformeInput[c.id]||0)} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>✅ Confirmer la réception</button>
                         </div>
                       ):(
@@ -1612,7 +1612,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                         <div style={{fontWeight:700}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
                       </div>
-                      <div style={{fontSize:12,color:"var(--btp-text2)"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#27AE60":"#C0392B"}}>{reste.toLocaleString()}</strong></div>
+                      <div style={{fontSize:12,color:"var(--btp-text2)"}}>Livre: {livree.toLocaleString()} | Confirme chef: {confirme.toLocaleString()} | Reste: <strong style={{color:reste===0?"#2ECC71":"#EC7063"}}>{reste.toLocaleString()}</strong></div>
                       {c.notes&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>Note: {c.notes}</div>}
                     </div>
                   );
@@ -2080,10 +2080,10 @@ function DashboardChef({ user, userData }) {
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"var(--btp-card)",borderRadius:16,padding:28,maxWidth:380,width:"100%",boxShadow:"0 8px 40px rgba(0,0,0,0.3)"}}>
             <div style={{fontSize:36,textAlign:"center",marginBottom:12}}>🔒</div>
-            <h3 style={{color:"#C0392B",textAlign:"center",marginBottom:8}}>Confirmer la suppression</h3>
+            <h3 style={{color:"#EC7063",textAlign:"center",marginBottom:8}}>Confirmer la suppression</h3>
             <p style={{fontSize:13,color:"var(--btp-text2)",textAlign:"center",marginBottom:16}}>Vous allez supprimer le chantier <strong>"{deleteTarget.nom}"</strong>. Entrez votre mot de passe pour confirmer.</p>
             <input type="password" placeholder="Votre mot de passe" value={deletePassword} onChange={e=>{setDeletePassword(e.target.value);setDeleteError("");}} style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"2px solid #C0392B",marginBottom:8,fontSize:14}} />
-            {deleteError && <div style={{color:"#C0392B",fontSize:13,marginBottom:8,textAlign:"center"}}>{deleteError}</div>}
+            {deleteError && <div style={{color:"#EC7063",fontSize:13,marginBottom:8,textAlign:"center"}}>{deleteError}</div>}
             <div style={{display:"flex",gap:10,marginTop:8}}>
               <button onClick={()=>setDeleteTarget(null)} style={{flex:1,padding:"9px",background:"#EEE",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600}}>Annuler</button>
               <button onClick={confirmerSuppression} style={{flex:1,padding:"9px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>Supprimer</button>
@@ -2143,7 +2143,7 @@ function DashboardChef({ user, userData }) {
                           <span>Besoin: <strong>{besoinTotal.toLocaleString()}</strong> u</span>
                           <span style={{color:"var(--btp-blue)"}}>Commande: <strong>{cmdTotal.toLocaleString()}</strong> u</span>
                           <span style={{color:"var(--btp-green)"}}>Recu: <strong>{recu.toLocaleString()}</strong> u</span>
-                          <span style={{color:"#C0392B",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong> u</span>
+                          <span style={{color:"#EC7063",fontWeight:700}}>Reste: <strong>{reste.toLocaleString()}</strong> u</span>
                         </div>
                         <div style={{marginTop:8,background:"#EEE",borderRadius:4,height:6}}>
                           <div style={{height:6,borderRadius:4,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
@@ -2360,7 +2360,7 @@ function DashboardStock({ user, userData }) {
                   <div style={{textAlign:"right"}}>
                     <div style={{fontSize:13,color:"var(--btp-text2)"}}>Commande totale: <strong>{total.toLocaleString()} u</strong></div>
                     <div style={{fontSize:13,color:"var(--btp-green)"}}>Deja livre: <strong>{livree.toLocaleString()} u</strong></div>
-                    <div style={{fontSize:14,fontWeight:700,color:"#C0392B",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong>
+                    <div style={{fontSize:14,fontWeight:700,color:"#EC7063",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong>
 {(function(){
 var sActif=calcSechageActif(productions,cmd.type);
 var sStock=stocks[cmd.type]||{};
@@ -2637,7 +2637,7 @@ return(
           <button onClick={enregistrerPerte} style={{width:"100%",padding:"10px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>📉 Enregistrer la perte</button>
         </div>
 <div style={{marginBottom:24}}>
-            <h4 style={{marginBottom:8,color:"#C0392B"}}>Historique des pertes ({pertes.length})</h4>
+            <h4 style={{marginBottom:8,color:"#EC7063"}}>Historique des pertes ({pertes.length})</h4>
             <div style={{background:"var(--btp-card)",borderRadius:10,overflow:"hidden",boxShadow:"0 2px 6px rgba(0,0,0,0.07)"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{background:"#FDEBD0"}}><th style={{padding:"7px 10px",textAlign:"left"}}>Date</th><th style={{padding:"7px 10px",textAlign:"left"}}>Type</th><th style={{padding:"7px 10px",textAlign:"right"}}>Qté</th><th style={{padding:"7px 10px",textAlign:"left"}}>Raison</th><th style={{padding:"7px 10px",textAlign:"left"}}>Par</th></tr></thead>
@@ -2714,7 +2714,7 @@ function App() {
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,var(--btp-dark),var(--btp-navy))"}}>
       <div style={{textAlign:"center",padding:40,background:"var(--btp-card)",borderRadius:16,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
         <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
-        <h3 style={{color:"#C0392B",marginBottom:8}}>Role non reconnu</h3>
+        <h3 style={{color:"#EC7063",marginBottom:8}}>Role non reconnu</h3>
         <p style={{color:"var(--btp-text2)",marginBottom:4}}>Role detecte: "{role}"</p>
         <p style={{color:"var(--btp-text2)",fontSize:13}}>Contactez l'administrateur.</p>
         <button onClick={()=>auth.signOut()} style={{marginTop:16,padding:"8px 20px",background:"#C0392B",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700}}>Deconnexion</button>
