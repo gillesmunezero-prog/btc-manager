@@ -827,7 +827,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                     <th style={{padding:"8px 10px"}}>Responsable</th>
                   </tr></thead>
                   <tbody>{productions.map((p,i)=>(
-                    <tr key={p.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                    <tr key={p.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                       <td style={{padding:"7px 10px"}}>{p.date}</td>
                       <td style={{padding:"7px 10px",fontWeight:600}}>{getProduit(p.type).nom}</td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.quantite?p.quantite.toLocaleString():"-"}</td>
@@ -863,14 +863,14 @@ const [showPwdUid, setShowPwdUid] = useState(null);
             }
             <h3 style={{marginBottom:10,marginTop:20,color:"var(--btp-blue)"}}>Validees ({cmdValidees.length})</h3>
             {cmdValidees.map(cmd=>(
-              <div key={cmd.id} style={{background:"#EBF5FB",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #2980B9"}}>
+              <div key={cmd.id} style={{background:"var(--btp-card2)",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #2980B9"}}>
                 <div style={{fontWeight:600}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
                 <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Client: {cmd.client||"-"} | Valide par: {cmd.validePar||"-"}</div>
               </div>
             ))}
             <h3 style={{marginBottom:10,marginTop:20,color:"var(--btp-green)"}}>Livrees ({cmdLivrees.length})</h3>
             {cmdLivrees.map(cmd=>(
-              <div key={cmd.id} style={{background:"#EAFAF1",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #27AE60"}}>
+              <div key={cmd.id} style={{background:"var(--btp-card2)",borderRadius:10,padding:12,marginBottom:8,borderLeft:"4px solid #27AE60"}}>
                 <div style={{fontWeight:600}}>{getProduit(cmd.type).nom} - {cmd.quantite?cmd.quantite.toLocaleString():"-"} u</div>
                 <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Client: {cmd.client||"-"}</div>
               </div>
@@ -1142,7 +1142,7 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
                     const actionIcons = {"Commande créée":"📝","Commande validée par Direction":"✅","Commande refusée":"❌","Livraison effectuée":"🚚","Réception confirmée par chef":"📦","Ristourne validée":"🎁","Perte enregistrée":"📉"};
                     const icon = actionIcons[ev.action] || "⚡";
                     return (
-                      <tr key={ev.id} style={{background:idx%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                      <tr key={ev.id} style={{background:idx%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                         <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>
                           <div style={{fontWeight:600,color:"var(--btp-text)"}}>{dateStr}</div>
                           <div style={{fontSize:11,color:"var(--btp-text2)"}}>{timeStr}</div>
@@ -1293,7 +1293,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                     <tbody>{lignes.map(function(l,i){
                       var pct=l.besoin>0?Math.min(100,Math.round(l.recu/l.besoin*100)):0;
                       return(
-                        <tr key={l.prod.id} style={{background:i%2===0?"white":"#EBF5FB",borderBottom:"1px solid var(--btp-border)"}}>
+                        <tr key={l.prod.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid var(--btp-border)"}}>
                           <td style={{padding:"8px 10px",fontWeight:600}}>{l.prod.nom}</td>
                           <td style={{padding:"8px 10px",fontSize:11,color:"#BDC3C7"}}>{l.prod.dim}</td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
@@ -1304,16 +1304,16 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                               <div style={{height:4,borderRadius:3,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
                             </div>
                           </td>
-                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#27AE60":"#C0392B"}}>{l.reste.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#2ECC71":"#EC7063"}}>{l.reste.toLocaleString()}</td>
                         </tr>
                       );
                     })}</tbody>
-                    <tfoot><tr style={{background:"#D6EAF8",fontWeight:700}}>
+                    <tfoot><tr style={{background:"var(--btp-steel)",fontWeight:700}}>
                       <td colSpan={2} style={{padding:"8px 10px"}}>TOTAL</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.besoin;},0).toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{lignes.reduce(function(a,l){return a+l.cmdTotal;},0).toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{lignes.reduce(function(a,l){return a+l.recu;},0).toLocaleString()}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{lignes.reduce(function(a,l){return a+l.reste;},0).toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#EC7063"}}>{lignes.reduce(function(a,l){return a+l.reste;},0).toLocaleString()}</td>
                     </tr></tfoot>
                   </table>
                 </div>
@@ -1325,7 +1325,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                   var confirme=c.quantiteConfirmeeChef||0;
                   var couleur=c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22";
                   return(
-                    <div key={c.id} style={{borderRadius:10,padding:"10px 14px",marginBottom:8,background:i%2===0?"#F8FBFF":"white",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
+                    <div key={c.id} style={{borderRadius:10,padding:"10px 14px",marginBottom:8,background:i%2===0?"var(--btp-card2)":"var(--btp-card)",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
                       <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4}}>
                         <div style={{fontWeight:600,fontSize:13}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
@@ -1486,7 +1486,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                     <tbody>{lignesFinancieres.map(function(l,i){
                       var pct=l.besoin>0?Math.min(100,Math.round(l.livre/l.besoin*100)):0;
                       return(
-                        <tr key={l.prod.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                        <tr key={l.prod.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                           <td style={{padding:"8px 10px"}}><div style={{fontWeight:600}}>{l.prod.nom}</div><div style={{fontSize:11,color:"#BDC3C7"}}>{l.prod.dim}</div></td>
                           <td style={{padding:"8px 10px",textAlign:"right"}}>{l.besoin.toLocaleString()}</td>
                           <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{l.cmdTotal.toLocaleString()}</td>
@@ -1496,18 +1496,18 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                               <div style={{height:4,borderRadius:3,background:pct===100?"#27AE60":"#C0392B",width:pct+"%"}}></div>
                             </div>
                           </td>
-                          <td style={{padding:"8px 10px",textAlign:"right",color:l.confirme>=l.livre?"#27AE60":"#E67E22"}}>{l.confirme.toLocaleString()}</td>
-                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#27AE60":"#C0392B"}}>{l.reste.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",color:l.confirme>=l.livre?"#2ECC71":"#F39C12"}}>{l.confirme.toLocaleString()}</td>
+                          <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:l.reste===0?"#2ECC71":"#EC7063"}}>{l.reste.toLocaleString()}</td>
                         </tr>
                       );
                     })}</tbody>
-                    <tfoot><tr style={{background:"#F5E6D3",fontWeight:700}}>
+                    <tfoot><tr style={{background:"var(--btp-steel)",fontWeight:700}}>
                       <td style={{padding:"8px 10px"}}>TOTAL</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{totalBesoin.toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-blue)"}}>{totalCmde.toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}>{totalLivre.toLocaleString()}</td>
                       <td style={{padding:"8px 10px",textAlign:"right"}}></td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B"}}>{totalReste.toLocaleString()}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#EC7063"}}>{totalReste.toLocaleString()}</td>
                     </tr></tfoot>
                   </table>
                 </div>
@@ -1557,18 +1557,18 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                           <tbody>
                             {lignesFact.map(function(l,i){
                               return (
-                                <tr key={l.cmd.id} style={{background:i%2===0?"white":"#FEF9F0",borderBottom:"1px solid #EEE"}}>
+                                <tr key={l.cmd.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                                   <td style={{padding:"8px 10px",color:"var(--btp-text2)"}}>{l.dateStr}</td>
                                   <td style={{padding:"8px 10px"}}>
                                     <div style={{fontWeight:600}}>{l.prod.nom}</div>
                                     <div style={{fontSize:11,color:"#BDC3C7"}}>{l.prod.dim}</div>
                                   </td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-text2)"}}>{(l.cmd.quantite||0).toLocaleString()}</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#1E8449"}}>{l.confirme.toLocaleString()}</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"#2ECC71"}}>{l.confirme.toLocaleString()}</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-text2)"}}>{l.prod.prix.toFixed(2)} EUR</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:"var(--btp-orange)"}}>{l.montant.toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{(l.cmd.qteNonConforme||0).toLocaleString()} u</td>
-                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#E67E22",fontWeight:700}}>-{((l.cmd.qteNonConforme||0)*l.prod.prix).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#EC7063",fontWeight:700}}>{(l.cmd.qteNonConforme||0).toLocaleString()} u</td>
+                                  <td style={{padding:"8px 10px",textAlign:"right",color:"#F39C12",fontWeight:700}}>-{((l.cmd.qteNonConforme||0)*l.prod.prix).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                                   <td style={{padding:"8px 10px",textAlign:"right",color:"var(--btp-green)",fontWeight:700}}>{(l.montant-((l.cmd.qteNonConforme||0)*l.prod.prix)).toLocaleString("fr-FR",{minimumFractionDigits:2})} EUR</td>
                                 </tr>
                               );
@@ -1607,7 +1607,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                   var confirme=c.quantiteConfirmeeChef||0;
                   var couleur=c.status==="Livree"?"#27AE60":c.status==="Validee"?"#2980B9":c.status==="Refusee"?"#E74C3C":"#E67E22";
                   return(
-                    <div key={c.id} style={{borderRadius:10,padding:"12px 14px",marginBottom:8,background:i%2===0?"#FEF9F0":"white",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
+                    <div key={c.id} style={{borderRadius:10,padding:"12px 14px",marginBottom:8,background:i%2===0?"var(--btp-card2)":"var(--btp-card)",border:"1px solid #EEE",borderLeft:"4px solid "+couleur}}>
                       <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:4,marginBottom:4}}>
                         <div style={{fontWeight:700}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
@@ -2212,7 +2212,7 @@ function DashboardChef({ user, userData }) {
           <div className="fade-in">
             <h3 style={{marginBottom:14,color:"var(--btp-blue)"}}>Passer une commande</h3>
             {chantiers.length===0?
-              <p style={{color:"var(--btp-text2)",padding:16,background:"#EBF5FB",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:
+              <p style={{color:"var(--btp-text2)",padding:16,background:"var(--btp-card2)",borderRadius:8}}>Vous devez d'abord creer un chantier.</p>:
               <div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:480}}>
                 <div style={{marginBottom:12}}>
                   <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Chantier</label>
@@ -2645,10 +2645,10 @@ return(
                 {pertes.map(function(p,pi){
                   function fmtD(ts){if(!ts)return"-";try{var d=ts.toDate?ts.toDate():new Date(ts);return d.toLocaleDateString("fr-FR");}catch(e){return"-";}}
                   var raisonLabel=p.raison==="retour_nc"?"Retour NC chantier":"Perte production";
-                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"white":"#FFFBF5"}}>
+                  return(<tr key={p.id} style={{borderBottom:"1px solid #F5E6D0",background:pi%2===0?"var(--btp-card)":"var(--btp-card2)"}}>
                     <td style={{padding:"6px 10px",color:"var(--btp-text2)",fontSize:11}}>{fmtD(p.timestamp)}</td>
                     <td style={{padding:"6px 10px",fontWeight:600}}>{CATALOGUE.find(function(c){return c.id===p.type;})?CATALOGUE.find(function(c){return c.id===p.type;}).nom:p.type}</td>
-                    <td style={{padding:"6px 10px",textAlign:"right",color:"#C0392B",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
+                    <td style={{padding:"6px 10px",textAlign:"right",color:"#EC7063",fontWeight:700}}>{p.quantite.toLocaleString()}</td>
                     <td style={{padding:"6px 10px"}}><span style={{background:p.raison==="retour_nc"?"#FDEBD0":"#FADBD8",color:p.raison==="retour_nc"?"#E67E22":"#C0392B",padding:"2px 7px",borderRadius:6,fontSize:11}}>{raisonLabel}</span></td>
                     <td style={{padding:"6px 10px",fontSize:11,color:"var(--btp-text2)"}}>{p.responsable}</td>
                   </tr>);
