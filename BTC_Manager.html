@@ -974,10 +974,45 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                     <div style={{marginTop:8,fontSize:11,color:'var(--btp-text2)'}}>
                       💶 {prod.prix.toFixed(2)}€/u
                     </div>
+                    <div style={{marginTop:2,fontSize:12,fontWeight:700,color:'var(--btp-green)'}}>
+                      💰 Valeur: {(total*prod.prix).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})}€
+                    </div>
                   </div>
                 );
               })}
             </div>
+            {(function(){
+              var valeurTotale=0, unitesTotal=0;
+              CATALOGUE.forEach(function(prod){ var st=stocks[prod.id]||{}; var t=(st.sec||0)+(st.sechage||0); valeurTotale+=t*prod.prix; unitesTotal+=t; });
+              var fmt=function(n){return n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2});};
+              return(
+              <div style={{marginTop:18,background:'var(--btp-card)',borderRadius:14,padding:"18px 22px",boxShadow:"0 2px 10px rgba(0,0,0,0.10)",borderLeft:"5px solid var(--btp-green)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                  <span style={{fontSize:22}}>💰</span>
+                  <h3 style={{margin:0,color:"var(--btp-green)"}}>Synthèse financière du stock</h3>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14,marginBottom:14}}>
+                  <div>
+                    <div style={{fontSize:12,color:"var(--btp-text2)",textTransform:"uppercase",letterSpacing:".5px"}}>Valeur totale du stock</div>
+                    <div style={{fontSize:30,fontWeight:800,color:"var(--btp-green)",lineHeight:1.1}}>{fmt(valeurTotale)}€</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:12,color:"var(--btp-text2)",textTransform:"uppercase",letterSpacing:".5px"}}>Unités en stock</div>
+                    <div style={{fontSize:30,fontWeight:800,color:"var(--btp-orange)",lineHeight:1.1}}>{unitesTotal.toLocaleString("fr-FR")} <span style={{fontSize:14,fontWeight:600,color:"var(--btp-text2)"}}>u</span></div>
+                  </div>
+                </div>
+                <div style={{borderTop:"1px solid #EEE",paddingTop:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"var(--btp-text2)",marginBottom:8}}>Détail par référence</div>
+                  {CATALOGUE.map(function(prod){ var st=stocks[prod.id]||{}; var t=(st.sec||0)+(st.sechage||0); var v=t*prod.prix; if(t<=0) return null; return(
+                  <div key={prod.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:13,borderBottom:"1px solid #F5F5F5"}}>
+                    <span>{prod.nom} <span style={{color:"var(--btp-orange)",fontSize:11}}>({prod.dim})</span></span>
+                    <span style={{color:"var(--btp-text2)"}}>{t.toLocaleString("fr-FR")} u × {prod.prix.toFixed(2)}€ = <strong style={{color:"var(--btp-green)"}}>{fmt(v)}€</strong></span>
+                  </div>
+                  );})}
+                </div>
+              </div>
+              );
+            })()}
           </div>
         )}
         {tab==="production"&&(
