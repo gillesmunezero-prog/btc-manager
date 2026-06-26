@@ -649,6 +649,54 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     try { await db.collection("config").doc("mode").set({demo: newMode, updatedAt: new Date()}); } catch(e) {}
   }
 
+  function exportCSV(rows, colonnes, nomFichier){
+    try{
+      var sep=";";
+      var esc=function(val){ if(val===null||val===undefined) return ""; var sVal=String(val); if(sVal.indexOf(String.fromCharCode(34))>=0||sVal.indexOf(sep)>=0||sVal.indexOf("\n")>=0){ sVal=String.fromCharCode(34)+sVal.split(String.fromCharCode(34)).join(String.fromCharCode(34)+String.fromCharCode(34))+String.fromCharCode(34); } return sVal; };
+      var entete=colonnes.map(function(c){return esc(c.titre);}).join(sep);
+      var lignes=rows.map(function(r){ return colonnes.map(function(c){ var v=(typeof c.valeur==="function")?c.valeur(r):r[c.cle]; return esc(v); }).join(sep); });
+      var contenu=[entete].concat(lignes).join("\r\n");
+      var blob=new Blob(["\uFEFF"+contenu],{type:"text/csv;charset=utf-8;"});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement("a");
+      var d=new Date(); var ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+      a.href=url; a.download=nomFichier+"_"+ds+".csv";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    }catch(e){ alert("Erreur export : "+e.message); }
+  }
+  function exportProductions(){ exportCSV(productions, [
+    {titre:"Date",cle:"date"},
+    {titre:"Produit",valeur:function(p){return getProduit(p.type).nom;}},
+    {titre:"Dimensions",valeur:function(p){return getProduit(p.type).dim;}},
+    {titre:"Quantite",cle:"quantite"},
+    {titre:"Phase",cle:"phase"},
+    {titre:"Responsable",cle:"responsable"}
+  ], "productions"); }
+  function exportCommandes(){ exportCSV(commandes, [
+    {titre:"Produit",valeur:function(c){return getProduit(c.type).nom;}},
+    {titre:"Quantite",cle:"quantite"},
+    {titre:"Statut",cle:"statut"},
+    {titre:"Chantier",cle:"chantier"},
+    {titre:"Demandeur",cle:"demandeur"}
+  ], "commandes"); }
+  function exportStocks(){ var rows=CATALOGUE.map(function(prod){ var st=stocks[prod.id]||{}; var sec=st.sec||0; var sech=st.sechage||0; return {nom:prod.nom,dim:prod.dim,sec:sec,sechage:sech,total:sec+sech,prix:prod.prix,valeur:(sec+sech)*prod.prix}; }); exportCSV(rows, [
+    {titre:"Produit",cle:"nom"},
+    {titre:"Dimensions",cle:"dim"},
+    {titre:"Stock sec",cle:"sec"},
+    {titre:"En sechage",cle:"sechage"},
+    {titre:"Total unites",cle:"total"},
+    {titre:"Prix unitaire",valeur:function(r){return r.prix.toFixed(2);}},
+    {titre:"Valeur stock",valeur:function(r){return r.valeur.toFixed(2);}}
+  ], "stocks"); }
+  function exportMatieres(){ var ids=["ciment","mortier","sable","terre"]; var rows=ids.map(function(id){ var m=matieres[id]||{}; return {nom:m.nom||id,quantite:(m.quantite!=null?m.quantite:""),unite:m.unite||"",seuil:(m.seuil!=null?m.seuil:""),dateInventaire:m.dateInventaire||"",responsable:m.responsable||""}; }); exportCSV(rows, [
+    {titre:"Matiere",cle:"nom"},
+    {titre:"Quantite",cle:"quantite"},
+    {titre:"Unite",cle:"unite"},
+    {titre:"Seuil alerte",cle:"seuil"},
+    {titre:"Dernier inventaire",cle:"dateInventaire"},
+    {titre:"Responsable",cle:"responsable"}
+  ], "matieres_premieres"); }
   async function executerResetDemo() {
     setResetMsg("Réinitialisation en cours...");
     try {
@@ -1352,6 +1400,20 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
         )}
                 {tab==="historique"&&(
           <div>
+            <div style={{background:"var(--btp-card)",borderRadius:14,padding:"16px 20px",boxShadow:"0 2px 10px rgba(0,0,0,0.10)",borderLeft:"5px solid var(--btp-gold)",marginBottom:18}}>
+<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+<span style={{fontSize:22}}>💾</span>
+<h3 style={{margin:0,color:"var(--btp-gold)"}}>Sauvegarde / Export des données</h3>
+</div>
+<p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Téléchargez une copie de vos données au format CSV (ouvrable dans Excel). Pensez à exporter régulièrement, par exemple chaque semaine, pour garder une sauvegarde en cas de problème.</p>
+<div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+<button className="btn btn-sm btn-gold" onClick={exportProductions}>⚙️ Productions</button>
+<button className="btn btn-sm btn-gold" onClick={exportCommandes}>📋 Commandes</button>
+<button className="btn btn-sm btn-gold" onClick={exportStocks}>📦 Stocks</button>
+<button className="btn btn-sm btn-gold" onClick={exportMatieres}>🧱 Matières 1ères</button>
+<button className="btn btn-sm" onClick={function(){exportProductions();exportCommandes();exportStocks();exportMatieres();}}>⬇️ Tout exporter</button>
+</div>
+</div>
             <h3 style={{color:"var(--btp-orange)",marginBottom:4}}>📋 Journal de traçabilité — Toutes les actions</h3>
             <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Chaque action sur un bon de commande est enregistrée ici en temps réel.</p>
             <div style={{overflowX:"auto"}}>
