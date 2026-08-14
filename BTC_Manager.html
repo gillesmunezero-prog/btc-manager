@@ -955,6 +955,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
           {key:"inventaire",icon:"📊",label:"Inventaire"},
           {key:"historique",icon:"🕐",label:"Historique"},
           {key:"comptabilite",icon:"💼",label:"Comptabilité"},
+          {key:"qse",icon:"✅",label:"QSE"},
         ].map(({key,icon,label}) => (
           <button key={key} 
             className={"btp-nav-btn " + (tab===key?"active":"")}
@@ -2014,6 +2015,10 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
               }
             </div>
           )}
+
+          {tab==="qse" && (
+            <ModuleQSE user={user} userData={userData} />
+          )}
         </div>
       </div>
     </div>
@@ -2877,12 +2882,15 @@ function DashboardProduction({ user, userData }) {
     try {
       var dateFr = dateAujourdHui;
       if (saisieDate) { var parts = saisieDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
-      await db.collection("productions").add({
+      const refProductionQSE = await db.collection("productions").add({
         type:saisieType, quantite:qte, phase:saisiePhase,
         date:dateFr, responsable:userData.nom||user.email,
         responsableUid:user.uid, statut:"Valide",
         timestamp:firebase.firestore.FieldValue.serverTimestamp()
       });
+      qseCreerLotEtControlePourProduction(refProductionQSE.id, {
+        type: saisieType, quantite: qte, phase: saisiePhase, date: dateFr
+      }, user, userData).catch(function(e){ console.error("Erreur creation lot QSE", e); });
       var s = stocks[saisieType]||{};
       var upd = {};
       if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
@@ -3170,10 +3178,1166 @@ return(
           </div>
 
         )}
+
+        <QseControlesAFaire user={user} userData={userData} />
       </div>
     </div>
   );
 }
+
+/* ===================== MODULE QSE (ISO 9001 / ISO 14001) ===================== */
+
+function qseFormatNombre(n) {
+  const arrondi = Math.round(n * 100) / 100;
+  return String(arrondi).replace(".", ",");
+}
+
+function qseMoisDeDateFr(dateFr) {
+  if (!dateFr || typeof dateFr !== "string") return null;
+  const parts = dateFr.split("/");
+  if (parts.length !== 3) return null;
+  return parts[2] + "-" + parts[1].padStart(2, "0");
+}
+
+function qseDebutMois(mois) {
+  const p = mois.split("-").map(Number);
+  return new Date(p[0], p[1] - 1, 1, 0, 0, 0, 0);
+}
+
+function qseDebutMoisSuivant(mois) {
+  const p = mois.split("-").map(Number);
+  return new Date(p[0], p[1], 1, 0, 0, 0, 0);
+}
+
+async function qseProductionDuMois(mois) {
+  const debut = qseDebutMois(mois);
+  const fin = qseDebutMoisSuivant(mois);
+  let total = 0;
+  const idsComptes = {};
+  const snap = await db.collection("productions")
+    .where("timestamp", ">=", debut)
+    .where("timestamp", "<", fin)
+    .get();
+  snap.forEach((doc) => {
+    const p = doc.data();
+    total += Number(p.quantite) || 0;
+    idsComptes[doc.id] = true;
+  });
+  const fallbackSnap = await db.collection("productions").limit(500).get();
+  fallbackSnap.forEach((doc) => {
+    if (idsComptes[doc.id]) return;
+    const p = doc.data();
+    if (p.timestamp) return;
+    if (qseMoisDeDateFr(p.date) === mois) {
+      total += Number(p.quantite) || 0;
+      idsComptes[doc.id] = true;
+    }
+  });
+  return total;
+}
+
+async function qseValeursEnvMois(mois) {
+  const snap = await db.collection("qse_env").doc(mois).get();
+  if (!snap.exists) return {};
+  const d = snap.data();
+  return {
+    terresValorisees: d.terresValorisees,
+    electricite: d.electricite,
+    eau: d.eau,
+    ciment: d.ciment
+  };
+}
+
+function QseIndicateursEnvironnement(props) {
+  const [mois, setMois] = React.useState(() => {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  });
+  const [valeurs, setValeurs] = React.useState({});
+  const [productionMois, setProductionMois] = React.useState(null);
+  const [chargement, setChargement] = React.useState(true);
+  const [saisie, setSaisie] = React.useState({ terresValorisees: "", electricite: "", eau: "", ciment: "" });
+  const [msg, setMsg] = React.useState("");
+
+  const charger = async (m) => {
+    setChargement(true);
+    const v = await qseValeursEnvMois(m);
+    const p = await qseProductionDuMois(m);
+    setValeurs(v);
+    setProductionMois(p);
+    setSaisie({
+      terresValorisees: v.terresValorisees !== undefined ? String(v.terresValorisees) : "",
+      electricite: v.electricite !== undefined ? String(v.electricite) : "",
+      eau: v.eau !== undefined ? String(v.eau) : "",
+      ciment: v.ciment !== undefined ? String(v.ciment) : ""
+    });
+    setChargement(false);
+  };
+
+  React.useEffect(() => { charger(mois); }, [mois]);
+
+  const enregistrer = async () => {
+    await db.collection("qse_env").doc(mois).set({
+      terresValorisees: Number(saisie.terresValorisees) || 0,
+      electricite: Number(saisie.electricite) || 0,
+      eau: Number(saisie.eau) || 0,
+      ciment: Number(saisie.ciment) || 0,
+      dateModification: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    setMsg("Valeurs environnementales enregistrées.");
+    charger(mois);
+  };
+
+  const lignes = [
+    { cle: "terresValorisees", label: "Terres valorisées", unite: "m³", modeRatio: false },
+    { cle: "electricite", label: "Électricité", unite: "kWh", modeRatio: true },
+    { cle: "eau", label: "Eau", unite: "m³", modeRatio: true },
+    { cle: "ciment", label: "Ciment", unite: "kg", modeRatio: true }
+  ];
+
+  const texteIndicateur = (l) => {
+    const v = valeurs[l.cle];
+    if (v === undefined) return "Non renseigné";
+    if (!l.modeRatio) {
+      return qseFormatNombre(v) + " " + l.unite + " valorisés dans le mois";
+    }
+    if (!productionMois) return "Production du mois inconnue";
+    const ratio = (v / productionMois) * 1000;
+    return qseFormatNombre(ratio) + " " + l.unite + " / 1 000 BTC";
+  };
+
+  return (
+    <div className="qse-environnement">
+      <h3>Indicateurs environnementaux</h3>
+      {msg && <div className="qse-msg">{msg}</div>}
+      {chargement && <div>Chargement...</div>}
+      {!chargement && (
+        <React.Fragment>
+          <ul>
+            {lignes.map((l) => (
+              <li key={l.cle}>{l.label} : {texteIndicateur(l)}</li>
+            ))}
+          </ul>
+          <div className="qse-form-env">
+            <label>Terres valorisées (m³) <input type="number" value={saisie.terresValorisees} onChange={(e) => setSaisie(Object.assign({}, saisie, { terresValorisees: e.target.value }))} /></label>
+            <label>Électricité (kWh) <input type="number" value={saisie.electricite} onChange={(e) => setSaisie(Object.assign({}, saisie, { electricite: e.target.value }))} /></label>
+            <label>Eau (m³) <input type="number" value={saisie.eau} onChange={(e) => setSaisie(Object.assign({}, saisie, { eau: e.target.value }))} /></label>
+            <label>Ciment (kg) <input type="number" value={saisie.ciment} onChange={(e) => setSaisie(Object.assign({}, saisie, { ciment: e.target.value }))} /></label>
+            <button className="btn" onClick={enregistrer}>Enregistrer les valeurs du mois</button>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+
+async function qseAjouterAspect(data, user, userData) {
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("qse_aspects").add({
+    activite: data.activite || "",
+    aspect: data.aspect || "",
+    impact: data.impact || "",
+    importance: data.importance || "Modérée",
+    maitrise: data.maitrise || "",
+    actif: true,
+    dateCreation: now,
+    creePar: auteur,
+    dateModification: now,
+    modifiePar: auteur
+  });
+}
+
+async function qseModifierAspect(id, champs, user, userData) {
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("qse_aspects").doc(id).update(Object.assign({}, champs, {
+    dateModification: firebase.firestore.FieldValue.serverTimestamp(),
+    modifiePar: auteur
+  }));
+}
+
+async function qseDesactiverAspect(id, user, userData) {
+  await qseModifierAspect(id, { actif: false }, user, userData);
+}
+
+async function qsePreremplirAspectsBase(user, userData) {
+  const exemples = [
+    { activite: "Réception / stockage terre", aspect: "Poussières", impact: "Qualité de l'air", importance: "Modérée", maitrise: "Arrosage des zones poussiéreuses" },
+    { activite: "Préparation matière", aspect: "Électricité", impact: "Consommation énergétique", importance: "Modérée", maitrise: "Suivi mensuel de la consommation" },
+    { activite: "Production BTC", aspect: "Eau", impact: "Consommation de ressource", importance: "Modérée", maitrise: "Suivi mensuel de la consommation" },
+    { activite: "Production BTC", aspect: "Ciment", impact: "Empreinte environnementale", importance: "Modérée", maitrise: "Suivi mensuel de la consommation" },
+    { activite: "Maintenance", aspect: "Huiles", impact: "Pollution du sol", importance: "Forte", maitrise: "Stockage des huiles sur rétention" },
+    { activite: "Valorisation des terres excavées", aspect: "Réemploi de matière", impact: "Réduction de déchets / valorisation de ressource", importance: "Faible", maitrise: "Suivi des volumes valorisés" }
+  ];
+  for (const ex of exemples) {
+    await qseAjouterAspect(ex, user, userData);
+  }
+}
+
+function QseAspectsEnvironnementaux(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [aspects, setAspects] = React.useState([]);
+  const [charge, setCharge] = React.useState(true);
+  const [activite, setActivite] = React.useState("");
+  const [aspect, setAspect] = React.useState("");
+  const [impactSaisi, setImpactSaisi] = React.useState("");
+  const [importance, setImportance] = React.useState("Modérée");
+  const [maitrise, setMaitrise] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_aspects")
+      .where("actif", "==", true)
+      .onSnapshot((snap) => {
+        const liste = [];
+        snap.forEach((doc) => liste.push(Object.assign({ id: doc.id }, doc.data())));
+        setAspects(liste);
+        setCharge(false);
+      });
+    return () => unsub();
+  }, []);
+
+  const ajouter = async () => {
+    if (!activite.trim() || !aspect.trim() || !impactSaisi.trim()) {
+      setMsg("Merci de renseigner au moins l'activité, l'aspect et l'impact.");
+      return;
+    }
+    await qseAjouterAspect({ activite, aspect, impact: impactSaisi, importance, maitrise }, user, userData);
+    setActivite(""); setAspect(""); setImpactSaisi(""); setImportance("Modérée"); setMaitrise("");
+    setMsg("Aspect environnemental ajouté.");
+  };
+
+  const preremplir = async () => {
+    await qsePreremplirAspectsBase(user, userData);
+  };
+
+  return (
+    <div className="qse-aspects">
+      <h3>Aspects environnementaux</h3>
+      {msg && <div className="qse-msg">{msg}</div>}
+      {!charge && aspects.length === 0 && (
+        <button className="btn" onClick={preremplir}>Ajouter les aspects de base Terre & Eau</button>
+      )}
+      <div className="qse-form-aspect">
+        <input placeholder="Activité (ex: Production BTC)" value={activite} onChange={(e) => setActivite(e.target.value)} />
+        <input placeholder="Aspect (ex: consommation d'eau)" value={aspect} onChange={(e) => setAspect(e.target.value)} />
+        <input placeholder="Impact (ex: consommation de ressource)" value={impactSaisi} onChange={(e) => setImpactSaisi(e.target.value)} />
+        <select value={importance} onChange={(e) => setImportance(e.target.value)}>
+          <option value="Faible">Faible</option>
+          <option value="Modérée">Modérée</option>
+          <option value="Forte">Forte</option>
+        </select>
+        <input placeholder="Maîtrise / action" value={maitrise} onChange={(e) => setMaitrise(e.target.value)} />
+        <button className="btn" onClick={ajouter}>+ Ajouter un aspect</button>
+      </div>
+      <table className="qse-table">
+        <thead>
+          <tr>
+            <th>Activité</th>
+            <th>Aspect</th>
+            <th>Impact</th>
+            <th>Importance</th>
+            <th>Maîtrise / action</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {aspects.map((a) => (
+            <tr key={a.id}>
+              <td>{a.activite}</td>
+              <td>{a.aspect}</td>
+              <td>{a.impact}</td>
+              <td>{a.importance}</td>
+              <td>{a.maitrise}</td>
+              <td><button className="btn btn-sm" onClick={() => qseDesactiverAspect(a.id, user, userData)}>Désactiver</button></td>
+            </tr>
+          ))}
+          {aspects.length === 0 && (
+            <tr><td colSpan="6">Aucun aspect environnemental enregistré.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+async function qseAjouterRisque(data, user, userData) {
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  const probabilite = Number(data.probabilite) || 1;
+  const impact = Number(data.impact) || 1;
+  const criticite = probabilite * impact;
+  await db.collection("qse_risques").add({
+    type: data.type || "Risque",
+    categorie: data.categorie || "Qualité",
+    description: data.description || "",
+    probabilite: probabilite,
+    impact: impact,
+    criticite: criticite,
+    maitriseExistante: data.maitriseExistante || "",
+    action: data.action || "",
+    responsable: data.responsable || "",
+    echeance: data.echeance || "",
+    statut: data.statut || "Ouvert",
+    dateCreation: now,
+    creePar: auteur,
+    dateModification: now,
+    modifiePar: auteur
+  });
+}
+
+async function qseModifierRisque(id, champs, user, userData) {
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  const maj = Object.assign({}, champs, {
+    dateModification: firebase.firestore.FieldValue.serverTimestamp(),
+    modifiePar: auteur
+  });
+  await db.collection("qse_risques").doc(id).update(maj);
+}
+
+function qseNiveauCriticite(score) {
+  if (score >= 13) return { label: "Critique", classe: "qse-crit-critique" };
+  if (score >= 9) return { label: "Important", classe: "qse-crit-important" };
+  if (score >= 5) return { label: "Modéré", classe: "qse-crit-modere" };
+  return { label: "Faible", classe: "qse-crit-faible" };
+}
+
+function QseRisquesOpportunites(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [liste, setListe] = React.useState([]);
+  const [type, setType] = React.useState("Risque");
+  const [categorie, setCategorie] = React.useState("Qualité");
+  const [description, setDescription] = React.useState("");
+  const [probabilite, setProbabilite] = React.useState(1);
+  const [impactNiv, setImpactNiv] = React.useState(1);
+  const [maitriseExistante, setMaitriseExistante] = React.useState("");
+  const [action, setAction] = React.useState("");
+  const [responsable, setResponsable] = React.useState("");
+  const [echeance, setEcheance] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_risques")
+      .orderBy("criticite", "desc")
+      .onSnapshot((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        setListe(arr);
+      });
+    return () => unsub();
+  }, []);
+
+  const ajouter = async () => {
+    if (!description.trim()) {
+      setMsg("Merci de renseigner une description.");
+      return;
+    }
+    await qseAjouterRisque({ type, categorie, description, probabilite, impact: impactNiv, maitriseExistante, action, responsable, echeance, statut: "Ouvert" }, user, userData);
+    setDescription(""); setMaitriseExistante(""); setAction(""); setResponsable(""); setEcheance("");
+    setProbabilite(1); setImpactNiv(1);
+    setMsg(type === "Opportunité" ? "Opportunité ajoutée." : "Risque ajouté.");
+  };
+
+  const changerProbabiliteImpact = (r, champ, valeur) => {
+    const nv = Number(valeur) || 1;
+    const probabilite2 = champ === "probabilite" ? nv : r.probabilite;
+    const impact2 = champ === "impact" ? nv : r.impact;
+    qseModifierRisque(r.id, { probabilite: probabilite2, impact: impact2, criticite: probabilite2 * impact2 }, user, userData);
+  };
+
+  const changerStatut = (r, valeur) => {
+    qseModifierRisque(r.id, { statut: valeur }, user, userData);
+  };
+
+  const changerChamp = (r, champ, valeur) => {
+    qseModifierRisque(r.id, { [champ]: valeur }, user, userData);
+  };
+
+  return (
+    <div className="qse-risques">
+      <h3>Risques & opportunités</h3>
+      {msg && <div className="qse-msg">{msg}</div>}
+      <div className="qse-form-risque">
+        <select value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="Risque">Risque</option>
+          <option value="Opportunité">Opportunité</option>
+        </select>
+        <select value={categorie} onChange={(e) => setCategorie(e.target.value)}>
+          <option value="Qualité">Qualité</option>
+          <option value="Environnement">Environnement</option>
+          <option value="Production">Production</option>
+          <option value="Client">Client</option>
+          <option value="Fournisseur">Fournisseur</option>
+        </select>
+        <input placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <select value={probabilite} onChange={(e) => setProbabilite(Number(e.target.value))}>
+          <option value={1}>Probabilité 1</option>
+          <option value={2}>Probabilité 2</option>
+          <option value={3}>Probabilité 3</option>
+          <option value={4}>Probabilité 4</option>
+        </select>
+        <select value={impactNiv} onChange={(e) => setImpactNiv(Number(e.target.value))}>
+          <option value={1}>Impact 1</option>
+          <option value={2}>Impact 2</option>
+          <option value={3}>Impact 3</option>
+          <option value={4}>Impact 4</option>
+        </select>
+        <input placeholder="Maîtrise existante" value={maitriseExistante} onChange={(e) => setMaitriseExistante(e.target.value)} />
+        <input placeholder="Action" value={action} onChange={(e) => setAction(e.target.value)} />
+        <input placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
+        <input type="date" value={echeance} onChange={(e) => setEcheance(e.target.value)} />
+        <button className="btn" onClick={ajouter}>+ Ajouter</button>
+      </div>
+      <table className="qse-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Catégorie</th>
+            <th>Description</th>
+            <th>Probabilité</th>
+            <th>Impact</th>
+            <th>Criticité</th>
+            <th>Maîtrise</th>
+            <th>Action</th>
+            <th>Responsable</th>
+            <th>Échéance</th>
+            <th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {liste.map((r) => {
+            const niveau = qseNiveauCriticite(r.criticite);
+            const critiqueSansAction = r.criticite >= 13 && !r.action && r.statut !== "Clos";
+            return (
+              <tr key={r.id} className={critiqueSansAction ? "qse-ligne-alerte" : ""}>
+                <td>{r.type}</td>
+                <td>{r.categorie}</td>
+                <td>{r.description}</td>
+                <td>
+                  <select value={r.probabilite} onChange={(e) => changerProbabiliteImpact(r, "probabilite", e.target.value)}>
+                    <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
+                  </select>
+                </td>
+                <td>
+                  <select value={r.impact} onChange={(e) => changerProbabiliteImpact(r, "impact", e.target.value)}>
+                    <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
+                  </select>
+                </td>
+                <td className={niveau.classe}>{r.criticite} - {niveau.label}</td>
+                <td><input defaultValue={r.maitriseExistante} onBlur={(e) => { if (e.target.value !== r.maitriseExistante) changerChamp(r, "maitriseExistante", e.target.value); }} /></td>
+                <td><input defaultValue={r.action} onBlur={(e) => { if (e.target.value !== r.action) changerChamp(r, "action", e.target.value); }} /></td>
+                <td><input defaultValue={r.responsable} onBlur={(e) => { if (e.target.value !== r.responsable) changerChamp(r, "responsable", e.target.value); }} /></td>
+                <td><input type="date" defaultValue={r.echeance} onBlur={(e) => { if (e.target.value !== r.echeance) changerChamp(r, "echeance", e.target.value); }} /></td>
+                <td>
+                  <select value={r.statut} onChange={(e) => changerStatut(r, e.target.value)}>
+                    <option value="Ouvert">Ouvert</option>
+                    <option value="En cours">En cours</option>
+                    <option value="Maîtrisé">Maîtrisé</option>
+                    <option value="Clos">Clos</option>
+                  </select>
+                </td>
+              </tr>
+            );
+          })}
+          {liste.length === 0 && (
+            <tr><td colSpan="11">Aucun risque ou opportunité enregistré.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+async function qseAjouterObjectif(data, user, userData) {
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("qse_objectifs").add({
+    domaine: data.domaine || "Qualité",
+    indicateur: data.indicateur || "",
+    objectif: data.objectif || "",
+    realise: data.realise || "",
+    responsable: data.responsable || "",
+    echeance: data.echeance || "",
+    statut: data.statut || "En cours",
+    dateCreation: now,
+    creePar: auteur,
+    dateModification: now,
+    modifiePar: auteur
+  });
+}
+
+async function qseModifierObjectif(id, champs, user, userData) {
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("qse_objectifs").doc(id).update(Object.assign({}, champs, {
+    dateModification: firebase.firestore.FieldValue.serverTimestamp(),
+    modifiePar: auteur
+  }));
+}
+
+function QseObjectifs(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [objectifs, setObjectifs] = React.useState([]);
+  const [domaine, setDomaine] = React.useState("Qualité");
+  const [indicateur, setIndicateur] = React.useState("");
+  const [objectif, setObjectif] = React.useState("");
+  const [realise, setRealise] = React.useState("");
+  const [responsable, setResponsable] = React.useState("");
+  const [echeance, setEcheance] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_objectifs").onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+      setObjectifs(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  const ajouter = async () => {
+    if (!indicateur.trim() || !objectif.trim()) {
+      setMsg("Merci de renseigner au moins l'indicateur et l'objectif.");
+      return;
+    }
+    await qseAjouterObjectif({ domaine, indicateur, objectif, realise, responsable, echeance, statut: "En cours" }, user, userData);
+    setIndicateur(""); setObjectif(""); setRealise(""); setResponsable(""); setEcheance("");
+    setMsg("Objectif ajouté.");
+  };
+
+  const changerChamp = (o, champ, valeur) => {
+    qseModifierObjectif(o.id, { [champ]: valeur }, user, userData);
+  };
+
+  return (
+    <div className="qse-objectifs">
+      <h3>Objectifs QSE</h3>
+      {msg && <div className="qse-msg">{msg}</div>}
+      <div className="qse-form-objectif">
+        <select value={domaine} onChange={(e) => setDomaine(e.target.value)}>
+          <option value="Qualité">Qualité</option>
+          <option value="Environnement">Environnement</option>
+          <option value="Sécurité">Sécurité</option>
+        </select>
+        <input placeholder="Indicateur" value={indicateur} onChange={(e) => setIndicateur(e.target.value)} />
+        <input placeholder="Objectif (cible)" value={objectif} onChange={(e) => setObjectif(e.target.value)} />
+        <input placeholder="Réalisé" value={realise} onChange={(e) => setRealise(e.target.value)} />
+        <input placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
+        <input type="date" value={echeance} onChange={(e) => setEcheance(e.target.value)} />
+        <button className="btn" onClick={ajouter}>+ Ajouter</button>
+      </div>
+      <table className="qse-table">
+        <thead>
+          <tr>
+            <th>Domaine</th><th>Indicateur</th><th>Objectif</th><th>Réalisé</th><th>Responsable</th><th>Échéance</th><th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {objectifs.map((o) => (
+            <tr key={o.id}>
+              <td>{o.domaine}</td>
+              <td>{o.indicateur}</td>
+              <td>{o.objectif}</td>
+              <td><input defaultValue={o.realise} onBlur={(e) => { if (e.target.value !== o.realise) changerChamp(o, "realise", e.target.value); }} /></td>
+              <td><input defaultValue={o.responsable} onBlur={(e) => { if (e.target.value !== o.responsable) changerChamp(o, "responsable", e.target.value); }} /></td>
+              <td><input type="date" defaultValue={o.echeance} onBlur={(e) => { if (e.target.value !== o.echeance) changerChamp(o, "echeance", e.target.value); }} /></td>
+              <td>
+                <select value={o.statut} onChange={(e) => changerChamp(o, "statut", e.target.value)}>
+                  <option value="En cours">En cours</option>
+                  <option value="Atteint">Atteint</option>
+                  <option value="Non atteint">Non atteint</option>
+                </select>
+              </td>
+            </tr>
+          ))}
+          {objectifs.length === 0 && (
+            <tr><td colSpan="7">Aucun objectif QSE enregistré.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+async function qseIndicateursQualiteMois(mois) {
+  const debut = qseDebutMois(mois);
+  const fin = qseDebutMoisSuivant(mois);
+  const lotsSnap = await db.collection("qse_lots")
+    .where("dateCreation", ">=", debut)
+    .where("dateCreation", "<", fin)
+    .get();
+  const controlesSnap = await db.collection("qse_controles")
+    .where("dateCreation", ">=", debut)
+    .where("dateCreation", "<", fin)
+    .get();
+  let conformes = 0, nonConformes = 0, mesures = 0;
+  controlesSnap.forEach((doc) => {
+    const c = doc.data();
+    if (c.resultat === "Conforme") { conformes++; mesures++; }
+    else if (c.resultat === "Non conforme") { nonConformes++; mesures++; }
+  });
+  const tauxConformite = mesures > 0 ? (conformes / mesures) * 100 : null;
+  return {
+    lotsProduits: lotsSnap.size,
+    lotsControles: mesures,
+    tauxConformite: tauxConformite,
+    lotsNonConformes: nonConformes
+  };
+}
+
+async function qseProductionsSansLot() {
+  const snap = await db.collection("productions").orderBy("timestamp", "desc").limit(50).get();
+  const manquants = [];
+  for (const doc of snap.docs) {
+    const idx = await db.collection("qse_lots_index").doc(doc.id).get();
+    if (!idx.exists) {
+      manquants.push(Object.assign({ id: doc.id }, doc.data()));
+    }
+  }
+  return manquants;
+}
+
+async function qseProchainNumeroLot(mois) {
+  const compteurRef = db.collection("qse_lots_index").doc("_compteur_" + mois);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(compteurRef);
+    const dernier = (snap.exists && snap.data().dernier) || 0;
+    const suivant = dernier + 1;
+    tx.set(compteurRef, { dernier: suivant });
+    return "BTC-" + mois + "-" + String(suivant).padStart(3, "0");
+  });
+}
+
+async function qseCreerLotEtControlePourProduction(productionId, production, user, userData) {
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const indexRef = db.collection("qse_lots_index").doc(productionId);
+  const indexSnapPrealable = await indexRef.get();
+  if (indexSnapPrealable.exists) return;
+  const d = new Date();
+  const mois = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  const numeroLot = await qseProchainNumeroLot(mois);
+  await db.runTransaction(async (tx) => {
+    const indexSnap = await tx.get(indexRef);
+    if (indexSnap.exists) return;
+    const lotRef = db.collection("qse_lots").doc(numeroLot);
+    tx.set(lotRef, {
+      numeroLot: numeroLot,
+      productionId: productionId,
+      type: production.type || "",
+      quantite: production.quantite || 0,
+      phase: production.phase || "",
+      date: production.date || "",
+      dateCreation: now,
+      creePar: auteur
+    });
+    tx.set(indexRef, { numeroLot: numeroLot, dateCreation: now });
+    const controleRef = db.collection("qse_controles").doc();
+    tx.set(controleRef, {
+      numeroLot: numeroLot,
+      productionId: productionId,
+      type: production.type || "",
+      date: production.date || "",
+      resultat: "Non mesuré",
+      dateCreation: now,
+      creePar: auteur
+    });
+  });
+}
+
+async function qseReparerProductionSansLot(production, user, userData) {
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const indexRef = db.collection("qse_lots_index").doc(production.id);
+  await db.runTransaction(async (tx) => {
+    const indexSnap = await tx.get(indexRef);
+    if (indexSnap.exists) {
+      return indexSnap.data().numeroLot;
+    }
+    const d = new Date();
+    const mois = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    const compteurRef = db.collection("qse_lots_index").doc("_compteur_" + mois);
+    const compteurSnap = await tx.get(compteurRef);
+    const dernier = (compteurSnap.exists && compteurSnap.data().dernier) || 0;
+    const suivant = dernier + 1;
+    const numeroLot = "BTC-" + mois + "-" + String(suivant).padStart(3, "0");
+    tx.set(compteurRef, { dernier: suivant });
+    const lotRef = db.collection("qse_lots").doc(numeroLot);
+    tx.set(lotRef, {
+      numeroLot: numeroLot,
+      productionId: production.id,
+      type: production.type || "",
+      quantite: production.quantite || 0,
+      dateCreation: now,
+      creePar: auteur,
+      reparation: true
+    });
+    tx.set(indexRef, { numeroLot: numeroLot, dateCreation: now });
+    return numeroLot;
+  });
+}
+
+
+function QseTableauDeBord(props) {
+  const user = props.user;
+  const userData = props.userData;
+
+  const [controlesAFaire, setControlesAFaire] = React.useState(0);
+  const [ncOuvertes, setNcOuvertes] = React.useState([]);
+  const [risquesCritiques, setRisquesCritiques] = React.useState([]);
+  const [productionsSansLot, setProductionsSansLot] = React.useState([]);
+  const [qualiteMois, setQualiteMois] = React.useState(null);
+  const [envMois, setEnvMois] = React.useState(null);
+
+  React.useEffect(() => {
+    const unsub1 = db.collection("qse_controles")
+      .where("resultat", "==", "Non mesuré")
+      .onSnapshot((snap) => setControlesAFaire(snap.size));
+
+    const unsub2 = db.collection("qse_nc").onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+      setNcOuvertes(arr.filter((nc) => nc.statut !== "Cloturee"));
+    });
+
+    const unsub3 = db.collection("qse_risques")
+      .where("criticite", ">=", 13)
+      .onSnapshot((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        setRisquesCritiques(arr.filter((r) => !r.action && r.statut !== "Clos"));
+      });
+
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, []);
+
+  React.useEffect(() => {
+    const d = new Date();
+    const mois = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    (async () => {
+      const [qualite, productionMois, valeurs, manquants] = await Promise.all([
+        qseIndicateursQualiteMois(mois),
+        qseProductionDuMois(mois),
+        qseValeursEnvMois(mois),
+        qseProductionsSansLot()
+      ]);
+      setQualiteMois(qualite);
+      setEnvMois({ productionMois, valeurs });
+      setProductionsSansLot(manquants);
+    })();
+  }, []);
+
+  const actionsEnRetard = React.useMemo(() => {
+    const aujourdHui = new Date().toISOString().slice(0, 10);
+    return ncOuvertes.filter((nc) => nc.echeanceAction && nc.echeanceAction < aujourdHui);
+  }, [ncOuvertes]);
+
+  const reparer = async (p) => {
+    await qseReparerProductionSansLot(p, user, userData);
+    setProductionsSansLot((liste) => liste.filter((x) => x.id !== p.id));
+  };
+
+  const texteRatioEnv = (type, unite) => {
+    if (!envMois || envMois.valeurs[type] === undefined) return "Non renseigné";
+    if (type === "terresValorisees") {
+      return qseFormatNombre(envMois.valeurs[type]) + " " + unite;
+    }
+    if (!envMois.productionMois) return "Production du mois inconnue";
+    const ratio = (envMois.valeurs[type] / envMois.productionMois) * 1000;
+    return qseFormatNombre(ratio) + " " + unite + " / 1 000 BTC";
+  };
+
+  return (
+    <div className="qse-dashboard">
+      <h3>Tableau de bord QSE</h3>
+
+      <div className="qse-bloc-afaire">
+        <h4>À faire</h4>
+        <ul>
+          <li>Contrôles à réaliser : {controlesAFaire}</li>
+          <li>Non-conformités ouvertes : {ncOuvertes.length}</li>
+          <li>Actions en retard : {actionsEnRetard.length}</li>
+          <li>Risques critiques sans action : {risquesCritiques.length}</li>
+          <li>
+            Productions sans lot QSE : {productionsSansLot.length}
+            {productionsSansLot.length > 0 && (
+              <ul>
+                {productionsSansLot.map((p) => (
+                  <li key={p.id}>
+                    {p.type} - {p.quantite} - {p.date}
+                    <button className="btn btn-sm" onClick={() => reparer(p)}>Réparer</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        </ul>
+      </div>
+
+      <div className="qse-bloc-qualite">
+        <h4>Qualité</h4>
+        {!qualiteMois && <div>Chargement...</div>}
+        {qualiteMois && (
+          <ul>
+            <li>Lots produits : {qualiteMois.lotsProduits}</li>
+            <li>Lots contrôlés : {qualiteMois.lotsControles}</li>
+            <li>Taux de conformité : {qualiteMois.tauxConformite === null ? "Non mesuré" : qseFormatNombre(qualiteMois.tauxConformite) + " %"}</li>
+            <li>Lots non conformes : {qualiteMois.lotsNonConformes}</li>
+          </ul>
+        )}
+      </div>
+
+      <div className="qse-bloc-environnement">
+        <h4>Environnement</h4>
+        {!envMois && <div>Chargement...</div>}
+        {envMois && (
+          <ul>
+            <li>Terres valorisées : {texteRatioEnv("terresValorisees", "m³")}</li>
+            <li>Électricité : {texteRatioEnv("electricite", "kWh")}</li>
+            <li>Eau : {texteRatioEnv("eau", "m³")}</li>
+            <li>Ciment : {texteRatioEnv("ciment", "kg")}</li>
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QseControlesAFaire(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [controles, setControles] = React.useState([]);
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_controles")
+      .where("resultat", "==", "Non mesuré")
+      .onSnapshot((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        setControles(arr);
+      });
+    return () => unsub();
+  }, []);
+
+  const enregistrerResultat = async (controle, resultat) => {
+    const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+    await db.collection("qse_controles").doc(controle.id).update({
+      resultat: resultat,
+      controleur: auteur,
+      dateControle: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  };
+
+  if (controles.length === 0) return null;
+
+  return (
+    <div className="qse-controles-afaire">
+      <h4>Contrôles qualité à réaliser</h4>
+      <table className="qse-table">
+        <thead>
+          <tr><th>Lot</th><th>Type</th><th>Date</th><th>Résultat</th></tr>
+        </thead>
+        <tbody>
+          {controles.map((c) => (
+            <tr key={c.id}>
+              <td>{c.numeroLot}</td>
+              <td>{c.type}</td>
+              <td>{c.date}</td>
+              <td>
+                <button className="btn btn-sm" onClick={() => enregistrerResultat(c, "Conforme")}>Conforme</button>
+                <button className="btn btn-sm" onClick={() => enregistrerResultat(c, "Non conforme")}>Non conforme</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+async function qseAjouterNC(data, user, userData) {
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("qse_nc").add({
+    numeroLot: data.numeroLot || "",
+    description: data.description || "",
+    causeProbable: data.causeProbable || "",
+    actionCorrective: data.actionCorrective || "",
+    responsable: data.responsable || "",
+    echeanceAction: data.echeanceAction || "",
+    statut: "Ouverte",
+    efficace: null,
+    dateCreation: now,
+    creePar: auteur,
+    dateModification: now,
+    modifiePar: auteur
+  });
+}
+
+async function qseModifierNC(id, champs, user, userData) {
+  const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("qse_nc").doc(id).update(Object.assign({}, champs, {
+    dateModification: firebase.firestore.FieldValue.serverTimestamp(),
+    modifiePar: auteur
+  }));
+}
+
+async function qseStatuerEfficaciteNC(id, efficace, user, userData) {
+  if (efficace) {
+    await qseModifierNC(id, {
+      statut: "Cloturee",
+      efficace: true,
+      dateCloture: firebase.firestore.FieldValue.serverTimestamp()
+    }, user, userData);
+  } else {
+    await qseModifierNC(id, {
+      statut: "Ouverte",
+      efficace: false
+    }, user, userData);
+  }
+}
+
+function QseNonConformites(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [liste, setListe] = React.useState([]);
+  const [numeroLot, setNumeroLot] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [causeProbable, setCauseProbable] = React.useState("");
+  const [actionCorrective, setActionCorrective] = React.useState("");
+  const [responsable, setResponsable] = React.useState("");
+  const [echeanceAction, setEcheanceAction] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_nc").onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+      setListe(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  const ajouter = async () => {
+    if (!description.trim()) {
+      setMsg("Merci de renseigner une description.");
+      return;
+    }
+    await qseAjouterNC({ numeroLot, description, causeProbable, actionCorrective, responsable, echeanceAction }, user, userData);
+    setNumeroLot(""); setDescription(""); setCauseProbable(""); setActionCorrective(""); setResponsable(""); setEcheanceAction("");
+    setMsg("Non-conformité créée.");
+  };
+
+  const changerChamp = (nc, champ, valeur) => {
+    qseModifierNC(nc.id, { [champ]: valeur }, user, userData);
+  };
+
+  return (
+    <div className="qse-nc">
+      <h3>Non-conformités & actions</h3>
+      {msg && <div className="qse-msg">{msg}</div>}
+      <div className="qse-form-nc">
+        <input placeholder="N° de lot concerné" value={numeroLot} onChange={(e) => setNumeroLot(e.target.value)} />
+        <input placeholder="Description de la non-conformité" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <input placeholder="Cause probable" value={causeProbable} onChange={(e) => setCauseProbable(e.target.value)} />
+        <input placeholder="Action corrective" value={actionCorrective} onChange={(e) => setActionCorrective(e.target.value)} />
+        <input placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
+        <input type="date" value={echeanceAction} onChange={(e) => setEcheanceAction(e.target.value)} />
+        <button className="btn" onClick={ajouter}>+ Déclarer une non-conformité</button>
+      </div>
+      <table className="qse-table">
+        <thead>
+          <tr>
+            <th>Lot</th><th>Description</th><th>Cause</th><th>Action corrective</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {liste.map((nc) => (
+            <tr key={nc.id}>
+              <td>{nc.numeroLot}</td>
+              <td>{nc.description}</td>
+              <td><input defaultValue={nc.causeProbable} onBlur={(e) => { if (e.target.value !== nc.causeProbable) changerChamp(nc, "causeProbable", e.target.value); }} /></td>
+              <td><input defaultValue={nc.actionCorrective} onBlur={(e) => { if (e.target.value !== nc.actionCorrective) changerChamp(nc, "actionCorrective", e.target.value); }} /></td>
+              <td><input defaultValue={nc.responsable} onBlur={(e) => { if (e.target.value !== nc.responsable) changerChamp(nc, "responsable", e.target.value); }} /></td>
+              <td><input type="date" defaultValue={nc.echeanceAction} onBlur={(e) => { if (e.target.value !== nc.echeanceAction) changerChamp(nc, "echeanceAction", e.target.value); }} /></td>
+              <td>{nc.statut}{nc.efficace === false ? " (relancee)" : ""}</td>
+              <td>
+                {nc.statut !== "Cloturee" && (
+                  <React.Fragment>
+                    <button className="btn btn-sm" onClick={() => qseStatuerEfficaciteNC(nc.id, true, user, userData)}>Clôturer (efficace)</button>
+                    <button className="btn btn-sm" onClick={() => qseStatuerEfficaciteNC(nc.id, false, user, userData)}>Relancer (inefficace)</button>
+                  </React.Fragment>
+                )}
+              </td>
+            </tr>
+          ))}
+          {liste.length === 0 && (
+            <tr><td colSpan="8">Aucune non-conformité enregistrée.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+async function qseRecupererProductionDuLot(lot) {
+  if (!lot || !lot.productionId) return null;
+  const snap = await db.collection("productions").doc(lot.productionId).get();
+  return snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
+}
+
+function QseTracabiliteLots(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [lots, setLots] = React.useState([]);
+  const [lotSelectionne, setLotSelectionne] = React.useState(null);
+  const [productionDuLot, setProductionDuLot] = React.useState(null);
+  const [controlesDuLot, setControlesDuLot] = React.useState([]);
+  const [ncDuLot, setNcDuLot] = React.useState([]);
+  const [originesDuLot, setOriginesDuLot] = React.useState([]);
+  const [chargeDetail, setChargeDetail] = React.useState(false);
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_lots")
+      .orderBy("dateCreation", "desc")
+      .limit(100)
+      .onSnapshot((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        setLots(arr);
+      });
+    return () => unsub();
+  }, []);
+
+  const voirLot = async (lot) => {
+    setLotSelectionne(lot);
+    setChargeDetail(true);
+    const [production, controlesSnap, ncSnap, originesSnap] = await Promise.all([
+      qseRecupererProductionDuLot(lot),
+      db.collection("qse_controles").where("numeroLot", "==", lot.numeroLot).get(),
+      db.collection("qse_nc").where("numeroLot", "==", lot.numeroLot).get(),
+      db.collection("qse_origines_terre").where("numeroLot", "==", lot.numeroLot).get()
+    ]);
+    setProductionDuLot(production);
+    setControlesDuLot(controlesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+    setNcDuLot(ncSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+    setOriginesDuLot(originesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+    setChargeDetail(false);
+  };
+
+  return (
+    <div className="qse-tracabilite">
+      <h3>Traçabilité des lots</h3>
+      <table className="qse-table">
+        <thead>
+          <tr><th>N° de lot</th><th>Type</th><th>Quantité</th><th>Date</th><th></th></tr>
+        </thead>
+        <tbody>
+          {lots.map((l) => (
+            <tr key={l.id}>
+              <td>{l.numeroLot}</td>
+              <td>{l.type}</td>
+              <td>{l.quantite}</td>
+              <td>{l.date}</td>
+              <td><button className="btn btn-sm" onClick={() => voirLot(l)}>Voir</button></td>
+            </tr>
+          ))}
+          {lots.length === 0 && (
+            <tr><td colSpan="5">Aucun lot enregistré.</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      {lotSelectionne && (
+        <div className="qse-detail-lot">
+          <h4>Détail du lot {lotSelectionne.numeroLot}</h4>
+          {chargeDetail && <div>Chargement...</div>}
+          {!chargeDetail && (
+            <React.Fragment>
+              <p>Production liée : {productionDuLot ? (productionDuLot.type + " - " + productionDuLot.quantite + " - " + productionDuLot.date) : "Production introuvable"}</p>
+
+              <h5>Contrôles</h5>
+              <ul>
+                {controlesDuLot.map((c) => (
+                  <li key={c.id}>{c.type} - {c.date} - {c.resultat}</li>
+                ))}
+                {controlesDuLot.length === 0 && <li>Aucun contrôle enregistré.</li>}
+              </ul>
+
+              <h5>Non-conformités liées</h5>
+              <ul>
+                {ncDuLot.map((nc) => (
+                  <li key={nc.id}>{nc.description} - {nc.statut}</li>
+                ))}
+                {ncDuLot.length === 0 && <li>Aucune non-conformité liée.</li>}
+              </ul>
+
+              <h5>Origines des terres</h5>
+              <ul>
+                {originesDuLot.map((o) => (
+                  <li key={o.id}>{o.origine} - {o.quantite} - {o.date}</li>
+                ))}
+                {originesDuLot.length === 0 && <li>Aucune origine enregistrée pour ce lot.</li>}
+              </ul>
+            </React.Fragment>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModuleQSE(props) {
+  const user = props.user;
+  const userData = props.userData;
+  const [ongletQSE, setOngletQSE] = React.useState("tableau");
+
+  const onglets = [
+    { key: "tableau", label: "Tableau de bord" },
+    { key: "controles", label: "Contrôles qualité" },
+    { key: "tracabilite", label: "Traçabilité lots" },
+    { key: "nc", label: "Non-conformités & actions" },
+    { key: "environnement", label: "Environnement" },
+    { key: "risques", label: "Risques & opportunités" },
+    { key: "aspects", label: "Aspects environnementaux" },
+    { key: "objectifs", label: "Objectifs QSE" }
+  ];
+
+  return (
+    <div className="qse-module">
+      <div className="qse-nav">
+        {onglets.map((o) => (
+          <button
+            key={o.key}
+            className={"qse-nav-btn" + (ongletQSE === o.key ? " actif" : "")}
+            onClick={() => setOngletQSE(o.key)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div className="qse-contenu">
+        {ongletQSE === "tableau" && <QseTableauDeBord user={user} userData={userData} />}
+        {ongletQSE === "controles" && <QseControlesAFaire user={user} userData={userData} />}
+        {ongletQSE === "tracabilite" && <QseTracabiliteLots user={user} userData={userData} />}
+        {ongletQSE === "nc" && <QseNonConformites user={user} userData={userData} />}
+        {ongletQSE === "environnement" && <QseIndicateursEnvironnement user={user} userData={userData} />}
+        {ongletQSE === "risques" && <QseRisquesOpportunites user={user} userData={userData} />}
+        {ongletQSE === "aspects" && <QseAspectsEnvironnementaux user={user} userData={userData} />}
+        {ongletQSE === "objectifs" && <QseObjectifs user={user} userData={userData} />}
+      </div>
+    </div>
+  );
+}
+
+
 function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
