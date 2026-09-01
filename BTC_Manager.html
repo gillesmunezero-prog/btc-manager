@@ -521,6 +521,42 @@ input,select,textarea,button{font-family:inherit;}
   .qse-form-nc,.qse-form-env,.qse-form-aspect,.qse-form-risque,.qse-form-objectif{flex-direction:column;align-items:stretch;}
   .qse-table{display:block;overflow-x:auto;}
 }
+
+/* ============ FICHE LOT 360 (modal reutilisable partout) ============ */
+.fichelot-header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:16px;
+  margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--btp-border);}
+.fichelot-statut{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:20px;font-size:13px;font-weight:800;white-space:nowrap;}
+.fichelot-statut-sechage{background:rgba(240,165,0,.15);color:var(--btp-gold);border:1px solid rgba(240,165,0,.4);}
+.fichelot-statut-pret_controle{background:rgba(93,173,226,.15);color:#5dade2;border:1px solid rgba(93,173,226,.4);}
+.fichelot-statut-conforme{background:rgba(29,185,84,.15);color:#2ecc71;border:1px solid rgba(29,185,84,.4);}
+.fichelot-statut-non_conforme{background:rgba(240,165,0,.15);color:var(--btp-gold);border:1px solid rgba(240,165,0,.4);}
+.fichelot-statut-bloque{background:rgba(231,76,60,.15);color:#F1948A;border:1px solid rgba(231,76,60,.4);}
+.fichelot-action{background:var(--btp-card2);border-left:4px solid var(--btp-orange);border-radius:var(--btp-radius2);
+  padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--btp-text);display:flex;align-items:center;
+  justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.fichelot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:6px;}
+.fichelot-fait{background:var(--btp-card2);border-radius:var(--btp-radius2);padding:10px 12px;}
+.fichelot-fait-label{font-size:10px;color:var(--btp-text2);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:3px;}
+.fichelot-fait-valeur{font-size:14px;color:white;font-weight:700;}
+.fichelot-caveat{font-size:11px;color:var(--btp-text2);font-style:italic;margin:6px 0 0;}
+.fichelot-section{margin-top:22px;}
+.fichelot-section h4{font-size:13px;color:var(--btp-orange2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:800;}
+.fichelot-timeline{display:flex;flex-direction:column;gap:2px;}
+.fichelot-tl-item{display:flex;gap:12px;padding:8px 0 8px 16px;border-left:2px solid var(--btp-border);margin-left:8px;position:relative;}
+.fichelot-tl-item:last-child{border-left-color:transparent;}
+.fichelot-tl-item::before{content:'';position:absolute;left:-7px;top:12px;width:12px;height:12px;border-radius:50%;
+  background:var(--btp-border);border:2px solid var(--btp-card);}
+.fichelot-tl-item.tl-ok::before{background:var(--btp-green);}
+.fichelot-tl-item.tl-warn::before{background:var(--btp-gold);}
+.fichelot-tl-item.tl-bad::before{background:var(--btp-red);}
+.fichelot-tl-item.tl-pending::before{background:var(--btp-text2);}
+.fichelot-tl-titre{font-size:13px;font-weight:700;color:white;}
+.fichelot-tl-detail{font-size:12px;color:var(--btp-text2);margin-top:2px;}
+.fichelot-anomalies{background:rgba(231,76,60,.08);border:1px solid rgba(231,76,60,.3);border-radius:var(--btp-radius2);
+  padding:12px 16px;margin-bottom:16px;}
+.fichelot-anomalies h4{color:#F1948A;font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
+.fichelot-anomalies ul{list-style:none;display:flex;flex-direction:column;gap:4px;}
+.fichelot-anomalies li{font-size:12px;color:#F1948A;}
 </style>
 </head>
 <body>
@@ -599,6 +635,15 @@ function joursRestants(arg) {
 var ms = dateProductionMs(arg);
 if (!ms) return 0;
 return Math.max(0, DUREE_SECHAGE - Math.floor((Date.now()-ms)/MS_PAR_JOUR));
+}
+// Convertit un champ de date/heure Firestore heterogene (Timestamp, {seconds}, {_ms} du mock de test, ou Date) en ms epoch. 0 si inconnu.
+function qseTsMs(v) {
+  if (!v) return 0;
+  if (typeof v.toDate === "function") return v.toDate().getTime();
+  if (typeof v.seconds === "number") return v.seconds * 1000;
+  if (typeof v._ms === "number") return v._ms;
+  if (v instanceof Date) return v.getTime();
+  return 0;
 }
 function calcSechageActif(prods, typeId) {
 var now28 = Date.now() - DUREE_SECHAGE*MS_PAR_JOUR;
@@ -753,6 +798,8 @@ const [showPwdUid, setShowPwdUid] = useState(null);
   const [pertes, setPertes] = React.useState([]);
   const [controlesQSEDir, setControlesQSEDir] = React.useState(0);
   const [ncOuvertesQSEDir, setNcOuvertesQSEDir] = React.useState(0);
+  const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
+  const [lotOuvertProd, setLotOuvertProd] = React.useState(null);
 
   const [evenements, setEvenements] = React.useState([]); const [showNewChantier, setShowNewChantier] = React.useState(false); const [dirNomChantier, setDirNomChantier] = React.useState(""); const [dirClientChantier, setDirClientChantier] = React.useState(""); const [dirAdresseChantier, setDirAdresseChantier] = React.useState(""); const [dirMsgChantier, setDirMsgChantier] = React.useState(""); const creerChantierDirection = async () => { if(!dirNomChantier||!dirClientChantier){ setDirMsgChantier("Remplissez le nom et le client"); return; } try { await db.collection("chantiers").add({ nom:dirNomChantier, client:dirClientChantier, adresse:dirAdresseChantier, besoins:{}, chefUid:user.uid, chefNom:userData.nom||user.email, createdAt:firebase.firestore.FieldValue.serverTimestamp() }); setDirNomChantier(""); setDirClientChantier(""); setDirAdresseChantier(""); setDirMsgChantier("Chantier cree avec succes !"); setTimeout(()=>{setShowNewChantier(false); setDirMsgChantier("");},1200); } catch(e){ setDirMsgChantier("Erreur: "+e.message); } }; const supprimerChantierDirection = async (ch) => { if(window.confirm('Supprimer definitivement le chantier "'+ch.nom+'" ?')){ try { await db.collection("chantiers").doc(ch.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } }; const supprimerEvenement = async (ev) => { if(window.confirm("Supprimer cette action du journal de tracabilite ?")){ try { await db.collection("evenements").doc(ev.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } };
   useEffect(() => {
@@ -783,8 +830,13 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     var u8 = db.collection("qse_nc").onSnapshot(snap => {
       setNcOuvertesQSEDir(snap.docs.filter(function(d){ return d.data().statut !== "Cloturee"; }).length);
     });
+    var u9 = db.collection("qse_lots").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
+      var m = {};
+      snap.docs.forEach(function(d){ var data = d.data(); if (data.productionId) m[data.productionId] = data.numeroLot; });
+      setQseLotsParProdId(m);
+    });
 
-  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); uMat(); };
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); uMat(); };
   }, []);
 
   async function toggleModeDemo() {
@@ -1002,6 +1054,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
   return (
     <div className="btp-app">
       {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
+      {lotOuvertProd && <FicheLot numeroLot={lotOuvertProd} user={user} userData={userData} onClose={()=>setLotOuvertProd(null)} />}
       
       {/* RESET DEMO MODAL */}
       {editProd && (
@@ -1250,6 +1303,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                   <thead><tr style={{background:"#8B1A10",color:"white"}}>
                     <th style={{padding:"8px 10px",textAlign:"left"}}>Date</th>
                     <th style={{padding:"8px 10px"}}>Produit</th>
+                    <th style={{padding:"8px 10px"}}>Lot</th>
                     <th style={{padding:"8px 10px"}}>Quantite</th>
                     <th style={{padding:"8px 10px"}}>Phase</th>
                     <th style={{padding:"8px 10px"}}>Responsable</th>
@@ -1259,6 +1313,11 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                     <tr key={p.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                       <td style={{padding:"7px 10px"}}>{p.date}</td>
                       <td style={{padding:"7px 10px",fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontWeight:600,color:"#E67E22"}}>({getProduit(p.type).dim})</span></td>
+                      <td style={{padding:"7px 10px",textAlign:"center"}}>
+                        {qseLotsParProdId[p.id]
+                          ? <button className="btn btn-sm btn-ghost" onClick={()=>setLotOuvertProd(qseLotsParProdId[p.id])}>🏷️ {qseLotsParProdId[p.id]}</button>
+                          : <span style={{color:"var(--btp-text2)",fontSize:11}}>—</span>}
+                      </td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.quantite?p.quantite.toLocaleString():"-"}</td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.phase==="sec"?"Stock sec":"En sechage"}</td>
                       <td style={{padding:"7px 10px",textAlign:"center"}}>{p.responsable||"-"}</td>
@@ -3006,6 +3065,8 @@ function DashboardProduction({ user, userData }) {
   const [saisiePerteRaison, setSaisiePerteRaison] = React.useState("production");
   const [msgPerte, setMsgPerte] = React.useState("");
   const [tabProd, setTabProd] = React.useState("production");
+  const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
+  const [lotOuvert, setLotOuvert] = React.useState(null);
 
   useEffect(() => {
     var u1 = db.collection("stocks").onSnapshot(snap => {
@@ -3020,7 +3081,12 @@ function DashboardProduction({ user, userData }) {
     var u4 = db.collection("commandes").onSnapshot(snap => {
       setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
-    return () => { u1(); u2(); u3(); u4(); };
+    var u5 = db.collection("qse_lots").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
+      var m = {};
+      snap.docs.forEach(function(d){ var data = d.data(); if (data.productionId) m[data.productionId] = data.numeroLot; });
+      setQseLotsParProdId(m);
+    });
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   var typesParUrgence = CATALOGUE.map(function(prod) {
@@ -3131,6 +3197,7 @@ function DashboardProduction({ user, userData }) {
   return (
 
     <div className="btp-app">
+      {lotOuvert && <FicheLot numeroLot={lotOuvert} user={user} userData={userData} onClose={()=>setLotOuvert(null)} />}
       <div className="btp-header">
         <div className="btp-header-logo">
           <div className="btp-header-logo-icon">⚙️</div>
@@ -3273,6 +3340,7 @@ return(
                 <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
                 {p.phase==="sechage"&&jrR>0&&<div style={{fontSize:11,color:"#B7770D",marginTop:2}}>⏳ Mature dans {jrR} jour{jrR>1?"s":""}</div>}
                 {p.phase==="sechage"&&jrR===0&&<div style={{fontSize:11,color:"var(--btp-green)",marginTop:2}}>✅ Mature (seche)</div>}
+                {qseLotsParProdId[p.id] && <div style={{marginTop:4}}><button className="btn btn-sm btn-ghost" onClick={()=>setLotOuvert(qseLotsParProdId[p.id])}>🏷️ {qseLotsParProdId[p.id]}</button></div>}
               </div>
               {p.phase==="sechage"?(
 <div style={{textAlign:"right"}}>
@@ -4168,6 +4236,7 @@ function QseTableauDeBord(props) {
 function QseControlesAFaire(props) {
   const user = props.user;
   const userData = props.userData;
+  const onOuvrirLot = props.onOuvrirLot;
   const [controles, setControles] = React.useState([]);
 
   React.useEffect(() => {
@@ -4202,7 +4271,11 @@ function QseControlesAFaire(props) {
         <tbody>
           {controles.map((c) => (
             <tr key={c.id}>
-              <td>{c.numeroLot}</td>
+              <td>
+                {onOuvrirLot && c.numeroLot
+                  ? <a href="#" onClick={(e) => { e.preventDefault(); onOuvrirLot(c.numeroLot); }}>{c.numeroLot}</a>
+                  : (c.numeroLot || "—")}
+              </td>
               <td>{c.type}</td>
               <td>{c.date}</td>
               <td>
@@ -4221,6 +4294,8 @@ function QseControlesAFaire(props) {
 async function qseAjouterNC(data, user, userData) {
   const now = firebase.firestore.FieldValue.serverTimestamp();
   const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var qteConcernee = (data.quantiteConcernee !== undefined && data.quantiteConcernee !== null && data.quantiteConcernee !== "")
+    ? Number(data.quantiteConcernee) : null;
   await db.collection("qse_nc").add({
     numeroLot: data.numeroLot || "",
     description: data.description || "",
@@ -4228,6 +4303,7 @@ async function qseAjouterNC(data, user, userData) {
     actionCorrective: data.actionCorrective || "",
     responsable: data.responsable || "",
     echeanceAction: data.echeanceAction || "",
+    quantiteConcernee: (qteConcernee !== null && !isNaN(qteConcernee)) ? qteConcernee : null,
     statut: "Ouverte",
     efficace: null,
     dateCreation: now,
@@ -4263,6 +4339,9 @@ async function qseStatuerEfficaciteNC(id, efficace, user, userData) {
 function QseNonConformites(props) {
   const user = props.user;
   const userData = props.userData;
+  const onOuvrirLot = props.onOuvrirLot; // optionnel: ouvre la fiche 360 du lot
+  const prefillLot = props.prefillLot; // optionnel: numeroLot pousse depuis la fiche lot ("Declarer une NC")
+  const onPrefillConsumed = props.onPrefillConsumed;
   const [liste, setListe] = React.useState([]);
   const [lots, setLots] = React.useState([]);
   const [numeroLot, setNumeroLot] = React.useState("");
@@ -4271,6 +4350,7 @@ function QseNonConformites(props) {
   const [actionCorrective, setActionCorrective] = React.useState("");
   const [responsable, setResponsable] = React.useState("");
   const [echeanceAction, setEcheanceAction] = React.useState("");
+  const [quantiteConcernee, setQuantiteConcernee] = React.useState("");
   const [msg, setMsg] = React.useState("");
 
   React.useEffect(() => {
@@ -4291,6 +4371,14 @@ function QseNonConformites(props) {
     return () => unsub();
   }, []);
 
+  // Preremplissage venant du bouton "Declarer une NC" de la fiche lot 360.
+  React.useEffect(() => {
+    if (prefillLot) {
+      setNumeroLot(prefillLot);
+      if (onPrefillConsumed) onPrefillConsumed();
+    }
+  }, [prefillLot]);
+
   const lotParNumero = React.useMemo(() => {
     const m = {};
     lots.forEach((l) => { m[l.numeroLot] = l; });
@@ -4304,13 +4392,19 @@ function QseNonConformites(props) {
       setMsg("Merci de renseigner une description.");
       return;
     }
-    await qseAjouterNC({ numeroLot, description, causeProbable, actionCorrective, responsable, echeanceAction }, user, userData);
-    setNumeroLot(""); setDescription(""); setCauseProbable(""); setActionCorrective(""); setResponsable(""); setEcheanceAction("");
+    await qseAjouterNC({ numeroLot, description, causeProbable, actionCorrective, responsable, echeanceAction, quantiteConcernee }, user, userData);
+    setNumeroLot(""); setDescription(""); setCauseProbable(""); setActionCorrective(""); setResponsable(""); setEcheanceAction(""); setQuantiteConcernee("");
     setMsg("Non-conformité créée.");
   };
 
   const changerChamp = (nc, champ, valeur) => {
     qseModifierNC(nc.id, { [champ]: valeur }, user, userData);
+  };
+
+  const valeurEstimeePerte = (nc) => {
+    var lot = lotParNumero[nc.numeroLot];
+    if (!lot || nc.quantiteConcernee == null) return null;
+    return nc.quantiteConcernee * getProduit(lot.type).prix;
   };
 
   return (
@@ -4323,6 +4417,7 @@ function QseNonConformites(props) {
           {lots.map((l) => <option key={l.id} value={l.numeroLot} />)}
         </datalist>
         <input placeholder="Description de la non-conformité" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <input type="number" min="0" placeholder="Quantité concernée (u)" value={quantiteConcernee} onChange={(e) => setQuantiteConcernee(e.target.value)} />
         <input placeholder="Cause probable" value={causeProbable} onChange={(e) => setCauseProbable(e.target.value)} />
         <input placeholder="Action corrective" value={actionCorrective} onChange={(e) => setActionCorrective(e.target.value)} />
         <input placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
@@ -4332,22 +4427,33 @@ function QseNonConformites(props) {
       {numeroLot.trim() !== "" && (
         <div className="qse-lot-recap">
           {lotSelectionne
-            ? ("✅ Lot reconnu — " + lotSelectionne.type + " · " + lotSelectionne.quantite + " u · produit le " + lotSelectionne.date)
+            ? ("✅ Lot reconnu — " + lotSelectionne.type + " · " + lotSelectionne.quantite + " u · produit le " + lotSelectionne.date
+              + (quantiteConcernee !== "" && !isNaN(Number(quantiteConcernee))
+                ? (" · perte estimée: " + (Number(quantiteConcernee) * getProduit(lotSelectionne.type).prix).toLocaleString("fr-FR", { minimumFractionDigits: 2 }) + " €")
+                : ""))
             : "ℹ️ Lot inconnu du système QSE — vérifiez le numéro, ou continuez, il sera enregistré tel quel."}
         </div>
       )}
       <table className="qse-table">
         <thead>
           <tr>
-            <th>Lot</th><th>Type BTC</th><th>Description</th><th>Cause</th><th>Action corrective</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th></th>
+            <th>Lot</th><th>Type BTC</th><th>Description</th><th>Qté concernée</th><th>Valeur estimée</th><th>Cause</th><th>Action corrective</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th></th>
           </tr>
         </thead>
         <tbody>
-          {liste.map((nc) => (
+          {liste.map((nc) => {
+            var valeurPerte = valeurEstimeePerte(nc);
+            return (
             <tr key={nc.id}>
-              <td>{nc.numeroLot}</td>
+              <td>
+                {onOuvrirLot && nc.numeroLot
+                  ? <a href="#" onClick={(e) => { e.preventDefault(); onOuvrirLot(nc.numeroLot); }}>{nc.numeroLot}</a>
+                  : (nc.numeroLot || "—")}
+              </td>
               <td>{lotParNumero[nc.numeroLot] ? lotParNumero[nc.numeroLot].type : "—"}</td>
               <td>{nc.description}</td>
+              <td><input type="number" min="0" defaultValue={nc.quantiteConcernee != null ? nc.quantiteConcernee : ""} onBlur={(e) => { var v = e.target.value === "" ? null : Number(e.target.value); if (v !== nc.quantiteConcernee) changerChamp(nc, "quantiteConcernee", v); }} /></td>
+              <td>{valeurPerte != null ? (valeurPerte.toLocaleString("fr-FR", { minimumFractionDigits: 2 }) + " €") : "—"}</td>
               <td><input defaultValue={nc.causeProbable} onBlur={(e) => { if (e.target.value !== nc.causeProbable) changerChamp(nc, "causeProbable", e.target.value); }} /></td>
               <td><input defaultValue={nc.actionCorrective} onBlur={(e) => { if (e.target.value !== nc.actionCorrective) changerChamp(nc, "actionCorrective", e.target.value); }} /></td>
               <td><input defaultValue={nc.responsable} onBlur={(e) => { if (e.target.value !== nc.responsable) changerChamp(nc, "responsable", e.target.value); }} /></td>
@@ -4362,9 +4468,10 @@ function QseNonConformites(props) {
                 )}
               </td>
             </tr>
-          ))}
+            );
+          })}
           {liste.length === 0 && (
-            <tr><td colSpan="9">Aucune non-conformité enregistrée.</td></tr>
+            <tr><td colSpan="11">Aucune non-conformité enregistrée.</td></tr>
           )}
         </tbody>
       </table>
@@ -4378,16 +4485,341 @@ async function qseRecupererProductionDuLot(lot) {
   return snap.exists ? Object.assign({ id: snap.id }, snap.data()) : null;
 }
 
-function QseTracabiliteLots(props) {
+// ===================== FICHE LOT 360° =====================
+// Statut deduit uniquement des donnees factuelles (jamais d'un champ "statut" saisi a la main).
+// Ordre de priorite, documente pour rester facile a maintenir:
+//   1) une non-conformite non cloturee sur le lot            -> Bloque
+//   2) au moins un controle reellement effectue (pas "Non mesure"):
+//        - un resultat "Non conforme"                        -> Non conforme (a traiter)
+//        - sinon un resultat "Conforme"                       -> Conforme
+//   3) aucun controle effectue:
+//        - duree de sechage (DUREE_SECHAGE) pas encore ecoulee -> En sechage
+//        - duree ecoulee                                       -> Pret a controler
+function qseStatutLot(lot, controles, ncs) {
+  var ncOuvertes = (ncs || []).filter(function (nc) { return nc.statut !== "Cloturee"; });
+  if (ncOuvertes.length > 0) {
+    return { code: "bloque", label: "Bloqué — non-conformité ouverte", classe: "fichelot-statut-bloque", icone: "🔴" };
+  }
+  var controlesEffectues = (controles || []).filter(function (c) { return c.resultat && c.resultat !== "Non mesuré"; });
+  var aNonConforme = controlesEffectues.some(function (c) { return c.resultat === "Non conforme"; });
+  var aConforme = controlesEffectues.some(function (c) { return c.resultat === "Conforme"; });
+  if (aNonConforme) {
+    return { code: "non_conforme", label: "Non conforme — à traiter", classe: "fichelot-statut-non_conforme", icone: "🟠" };
+  }
+  if (aConforme) {
+    return { code: "conforme", label: "Conforme", classe: "fichelot-statut-conforme", icone: "🟢" };
+  }
+  var restant = joursRestants(lot);
+  if (restant > 0) {
+    return { code: "sechage", label: "En séchage — " + restant + " j restant" + (restant > 1 ? "s" : ""), classe: "fichelot-statut-sechage", icone: "🟠" };
+  }
+  return { code: "pret_controle", label: "Prêt à contrôler", classe: "fichelot-statut-pret_controle", icone: "🔵" };
+}
+
+// Signale des incoherences entre donnees existantes. Ne corrige jamais rien silencieusement.
+function qseAnomaliesLot(lot, production, controles, ncs) {
+  var out = [];
+  if (!lot) return out;
+  if (lot.quantite == null || lot.quantite <= 0) {
+    out.push("Quantité du lot nulle ou négative (" + lot.quantite + ").");
+  }
+  if (lot.productionId && !production) {
+    out.push("La production d'origine de ce lot est introuvable (peut-être supprimée depuis).");
+  }
+  if (production && lot.type && production.type && production.type !== lot.type) {
+    out.push("Type BTC incohérent entre la production (" + production.type + ") et le lot QSE (" + lot.type + ").");
+  }
+  var ncOuvertes = (ncs || []).filter(function (nc) { return nc.statut !== "Cloturee"; });
+  var aConforme = (controles || []).some(function (c) { return c.resultat === "Conforme"; });
+  if (ncOuvertes.length > 0 && aConforme) {
+    out.push("Une non-conformité est encore ouverte alors qu'un contrôle \"Conforme\" a été enregistré sur ce lot.");
+  }
+  var dateLotMs = qseTsMs(lot.dateCreation) || dateProductionMs(lot);
+  (controles || []).forEach(function (c) {
+    var dc = qseTsMs(c.dateControle);
+    if (dc && dateLotMs && dc < dateLotMs) {
+      out.push("Un contrôle est daté avant la création du lot (donnée à vérifier).");
+    }
+  });
+  return out;
+}
+
+// Fiche 360 d'un lot : centralise tout ce qui le concerne (production, controles, NC, origines,
+// stock/commandes du meme type). Auto-suffisante: n'a besoin que du numero de lot pour s'ouvrir,
+// donc reutilisable telle quelle depuis QSE, la Production ou n'importe quel futur ecran (recherche
+// globale en Phase 3 notamment).
+function FicheLot(props) {
+  const numeroLot = props.numeroLot;
   const user = props.user;
   const userData = props.userData;
+  const onClose = props.onClose;
+  const onDeclarerNC = props.onDeclarerNC; // optionnel: fourni uniquement depuis le contexte QSE
+
+  const [lot, setLot] = React.useState(null);
+  const [production, setProduction] = React.useState(null);
+  const [controles, setControles] = React.useState([]);
+  const [ncs, setNcs] = React.useState([]);
+  const [origines, setOrigines] = React.useState([]);
+  const [commandesType, setCommandesType] = React.useState([]);
+  const [stockType, setStockType] = React.useState(null);
+  const [charge, setCharge] = React.useState(true);
+  const [erreur, setErreur] = React.useState("");
+  const [msgAction, setMsgAction] = React.useState("");
+
+  React.useEffect(() => {
+    let annule = false;
+    setCharge(true); setErreur(""); setMsgAction("");
+    (async () => {
+      try {
+        const lotSnap = await db.collection("qse_lots").doc(numeroLot).get();
+        if (!lotSnap.exists) {
+          if (!annule) { setErreur("Lot introuvable : " + numeroLot); setCharge(false); }
+          return;
+        }
+        const lotData = Object.assign({ id: lotSnap.id }, lotSnap.data());
+        const [prod, controlesSnap, ncSnap, originesSnap, stockSnap] = await Promise.all([
+          qseRecupererProductionDuLot(lotData),
+          db.collection("qse_controles").where("numeroLot", "==", numeroLot).get(),
+          db.collection("qse_nc").where("numeroLot", "==", numeroLot).get(),
+          db.collection("qse_origines_terre").where("numeroLot", "==", numeroLot).get(),
+          db.collection("stocks").doc(lotData.type).get()
+        ]);
+        if (annule) return;
+        setLot(lotData);
+        setProduction(prod);
+        setControles(controlesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+        setNcs(ncSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+        setOrigines(originesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+        setStockType(stockSnap.exists ? stockSnap.data() : null);
+        const cmdSnap = await db.collection("commandes").where("type", "==", lotData.type).get();
+        if (!annule) setCommandesType(cmdSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+      } catch (e) {
+        if (!annule) setErreur("Erreur de chargement : " + e.message);
+      } finally {
+        if (!annule) setCharge(false);
+      }
+    })();
+    return () => { annule = true; };
+  }, [numeroLot]);
+
+  if (charge) {
+    return (
+      <div className="btp-modal-overlay" onClick={onClose}>
+        <div className="btp-modal" style={{ maxWidth: 260 }} onClick={(e) => e.stopPropagation()}>Chargement du lot…</div>
+      </div>
+    );
+  }
+
+  if (erreur || !lot) {
+    return (
+      <div className="btp-modal-overlay" onClick={onClose}>
+        <div className="btp-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="btp-alert alert-error">⚠️ {erreur || "Lot introuvable."}</div>
+          <button className="btn btn-ghost btn-full" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    );
+  }
+
+  const statut = qseStatutLot(lot, controles, ncs);
+  const anomalies = qseAnomaliesLot(lot, production, controles, ncs);
+  const produit = getProduit(lot.type);
+  const ageJours = (function () { var ms = dateProductionMs(lot); return ms ? Math.floor((Date.now() - ms) / MS_PAR_JOUR) : null; })();
+  const dateFinSechageMs = (function () { var ms = dateProductionMs(lot); return ms ? ms + DUREE_SECHAGE * MS_PAR_JOUR : null; })();
+  const valeurLot = (lot.quantite || 0) * produit.prix;
+  const ncOuvertes = ncs.filter(function (nc) { return nc.statut !== "Cloturee"; });
+  const pertesDocumentees = ncs.reduce(function (a, nc) { return a + (nc.quantiteConcernee || 0); }, 0);
+  const quantiteEstimeeRestante = Math.max(0, (lot.quantite || 0) - pertesDocumentees);
+  const controleATraiter = controles.find(function (c) { return !c.resultat || c.resultat === "Non mesuré"; });
+
+  const marquerControle = async (resultat) => {
+    if (!controleATraiter) return;
+    const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+    await db.collection("qse_controles").doc(controleATraiter.id).update({
+      resultat: resultat, controleur: auteur, dateControle: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    setControles(function (prev) { return prev.map(function (c) { return c.id === controleATraiter.id ? Object.assign({}, c, { resultat: resultat, controleur: auteur, dateControle: { _ms: Date.now() } }) : c; }); });
+    setMsgAction("Contrôle enregistré : " + resultat);
+  };
+
+  const declarerNC = () => {
+    if (onDeclarerNC) { onDeclarerNC(lot.numeroLot); }
+    else { setMsgAction("Ouvrez QSE > Non-conformités et saisissez le lot " + lot.numeroLot + " (autocomplétion disponible)."); }
+  };
+
+  return (
+    <div className="btp-modal-overlay" onClick={onClose}>
+      <div className="btp-modal" style={{ maxWidth: 820, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="fichelot-header">
+          <div>
+            <div className="btp-modal-title" style={{ marginBottom: 4 }}>🏷️ Lot {lot.numeroLot}</div>
+            <div style={{ fontSize: 13, color: "var(--btp-text2)" }}>{produit.nom} <span style={{ color: "var(--btp-orange)" }}>({produit.dim})</span></div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span className={"fichelot-statut " + statut.classe}>{statut.icone} {statut.label}</span>
+            <button className="btn btn-sm btn-ghost" onClick={onClose}>✕ Fermer</button>
+          </div>
+        </div>
+
+        {/* Action necessaire : une seule mise en avant, pas dix boutons en permanence */}
+        <div className="fichelot-action">
+          {statut.code === "sechage" && <span>⏳ Séchage en cours — aucune action requise pour l'instant.</span>}
+          {statut.code === "pret_controle" && (
+            <React.Fragment>
+              <span>🔵 Séchage terminé : ce lot attend son contrôle qualité.</span>
+              <span style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-sm btn-success" onClick={() => marquerControle("Conforme")}>✅ Conforme</button>
+                <button className="btn btn-sm btn-danger" onClick={() => marquerControle("Non conforme")}>❌ Non conforme</button>
+              </span>
+            </React.Fragment>
+          )}
+          {statut.code === "conforme" && <span>✅ Lot conforme — aucune action nécessaire.</span>}
+          {statut.code === "non_conforme" && (
+            <React.Fragment>
+              <span>🟠 Contrôle non conforme, aucune NC déclarée pour l'instant.</span>
+              <button className="btn btn-sm btn-primary" onClick={declarerNC}>⚠️ Déclarer une non-conformité</button>
+            </React.Fragment>
+          )}
+          {statut.code === "bloque" && <span>🔴 {ncOuvertes.length} non-conformité(s) ouverte(s) — à traiter dans l'onglet Non-conformités.</span>}
+          {msgAction && <div style={{ width: "100%", fontSize: 12, color: "var(--btp-green)", marginTop: 6 }}>{msgAction}</div>}
+        </div>
+
+        {anomalies.length > 0 && (
+          <div className="fichelot-anomalies">
+            <h4>⚠️ Incohérences détectées (signalées, rien n'a été corrigé automatiquement)</h4>
+            <ul>{anomalies.map(function (a, i) { return <li key={i}>{a}</li>; })}</ul>
+          </div>
+        )}
+
+        <div className="fichelot-grid">
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Quantité produite</div><div className="fichelot-fait-valeur">{(lot.quantite || 0).toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Date de fabrication</div><div className="fichelot-fait-valeur">{lot.date || "—"}</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Âge du lot</div><div className="fichelot-fait-valeur">{ageJours != null ? (ageJours + " j") : "—"}</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Fin de séchage théorique</div><div className="fichelot-fait-valeur">{dateFinSechageMs ? new Date(dateFinSechageMs).toLocaleDateString("fr-FR") : "—"}</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Opérateur</div><div className="fichelot-fait-valeur">{production ? (production.responsable || "—") : "—"}</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Origine de la terre</div><div className="fichelot-fait-valeur">{origines.length > 0 ? origines.map(function (o) { return o.origine; }).join(", ") : "Non renseignée"}</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Pertes documentées (NC)</div><div className="fichelot-fait-valeur">{pertesDocumentees.toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Quantité restante estimée*</div><div className="fichelot-fait-valeur">{quantiteEstimeeRestante.toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Valeur estimée du lot</div><div className="fichelot-fait-valeur">{valeurLot.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €</div></div>
+        </div>
+        <div className="fichelot-caveat">* Estimation = quantité produite − pertes documentées via NC. Les livraisons ne sont pas décomptées lot par lot (stock géré globalement par type de BTC).</div>
+
+        <div className="fichelot-section">
+          <h4>Historique du lot</h4>
+          <div className="fichelot-timeline">
+            <div className="fichelot-tl-item tl-ok">
+              <div><div className="fichelot-tl-titre">⚙️ Production</div><div className="fichelot-tl-detail">{lot.date || "—"} · {(lot.quantite || 0).toLocaleString()} u · {production ? (production.responsable || "—") : (lot.creePar || "—")}</div></div>
+            </div>
+            {lot.phase === "sechage" ? (
+              <div className="fichelot-tl-item tl-ok">
+                <div><div className="fichelot-tl-titre">⏳ Mise en séchage</div><div className="fichelot-tl-detail">Durée prévue : {DUREE_SECHAGE} jours</div></div>
+              </div>
+            ) : (
+              <div className="fichelot-tl-item tl-pending">
+                <div><div className="fichelot-tl-titre">⏳ Séchage</div><div className="fichelot-tl-detail">Enregistré directement en stock sec (pas de séchage suivi)</div></div>
+              </div>
+            )}
+            {controles.length === 0 && (
+              <div className="fichelot-tl-item tl-pending"><div><div className="fichelot-tl-titre">🔍 Contrôle qualité</div><div className="fichelot-tl-detail">Aucun contrôle enregistré</div></div></div>
+            )}
+            {controles.map(function (c) {
+              var effectue = c.resultat && c.resultat !== "Non mesuré";
+              var cls = !effectue ? "tl-pending" : (c.resultat === "Conforme" ? "tl-ok" : "tl-bad");
+              return (
+                <div key={c.id} className={"fichelot-tl-item " + cls}>
+                  <div>
+                    <div className="fichelot-tl-titre">🔍 Contrôle qualité — {effectue ? c.resultat : "en attente"}</div>
+                    <div className="fichelot-tl-detail">{effectue ? ("Le " + (qseTsMs(c.dateControle) ? new Date(qseTsMs(c.dateControle)).toLocaleDateString("fr-FR") : "?") + " par " + (c.controleur || "—")) : "Contrôle créé automatiquement à la production, résultat non encore saisi"}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {ncs.map(function (nc) {
+              var cls = nc.statut === "Cloturee" ? "tl-ok" : "tl-bad";
+              return (
+                <div key={nc.id} className={"fichelot-tl-item " + cls}>
+                  <div>
+                    <div className="fichelot-tl-titre">🚫 Non-conformité — {nc.statut}</div>
+                    <div className="fichelot-tl-detail">{nc.description}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="fichelot-section">
+          <h4>Contrôles qualité ({controles.length})</h4>
+          {controles.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucun contrôle enregistré pour ce lot.</p> : (
+            <table className="btp-table">
+              <thead><tr><th>Date lot</th><th>Réalisé le</th><th>Résultat</th><th>Contrôleur</th></tr></thead>
+              <tbody>
+                {controles.map(function (c) {
+                  return (
+                    <tr key={c.id}>
+                      <td>{c.date || "—"}</td>
+                      <td>{qseTsMs(c.dateControle) ? new Date(qseTsMs(c.dateControle)).toLocaleDateString("fr-FR") : "—"}</td>
+                      <td>{c.resultat || "Non mesuré"}</td>
+                      <td>{c.controleur || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="fichelot-section">
+          <h4>Non-conformités ({ncs.length})</h4>
+          {ncs.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucune non-conformité liée à ce lot.</p> : (
+            <table className="btp-table">
+              <thead><tr><th>Description</th><th>Qté concernée</th><th>Valeur estimée</th><th>Action corrective</th><th>Statut</th></tr></thead>
+              <tbody>
+                {ncs.map(function (nc) {
+                  var valeur = nc.quantiteConcernee != null ? nc.quantiteConcernee * produit.prix : null;
+                  return (
+                    <tr key={nc.id}>
+                      <td>{nc.description}</td>
+                      <td>{nc.quantiteConcernee != null ? (nc.quantiteConcernee.toLocaleString() + " u") : "—"}</td>
+                      <td>{valeur != null ? (valeur.toLocaleString("fr-FR", { minimumFractionDigits: 2 }) + " €") : "—"}</td>
+                      <td>{nc.actionCorrective || "—"}</td>
+                      <td>{nc.statut}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="fichelot-section">
+          <h4>Stock &amp; livraisons</h4>
+          <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>
+            Stock global actuel du type <strong>{produit.nom}</strong> : {stockType ? (((stockType.sec || 0) + (stockType.sechage || 0)).toLocaleString() + " u") : "0 u"}.
+          </p>
+          <p className="fichelot-caveat">⚠️ Le stock est suivi globalement par type de BTC, pas lot par lot : ce chiffre concerne l'ensemble du type, pas uniquement ce lot précis.</p>
+          {commandesType.length > 0 && (
+            <React.Fragment>
+              <p style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 8 }}>Commandes existantes pour ce type de BTC (non attribuables individuellement à ce lot) :</p>
+              <table className="btp-table">
+                <thead><tr><th>N° BC</th><th>Chantier</th><th>Quantité</th><th>Statut</th></tr></thead>
+                <tbody>
+                  {commandesType.slice(0, 10).map(function (c) {
+                    return (<tr key={c.id}><td>{c.numBC || "—"}</td><td>{c.chantierNom || "—"}</td><td>{(c.quantite || 0).toLocaleString()} u</td><td>{c.status || "—"}</td></tr>);
+                  })}
+                </tbody>
+              </table>
+            </React.Fragment>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QseTracabiliteLots(props) {
+  const onOuvrirLot = props.onOuvrirLot; // ouvre la fiche 360 du lot (centralisee dans ModuleQSE)
   const [lots, setLots] = React.useState([]);
-  const [lotSelectionne, setLotSelectionne] = React.useState(null);
-  const [productionDuLot, setProductionDuLot] = React.useState(null);
-  const [controlesDuLot, setControlesDuLot] = React.useState([]);
-  const [ncDuLot, setNcDuLot] = React.useState([]);
-  const [originesDuLot, setOriginesDuLot] = React.useState([]);
-  const [chargeDetail, setChargeDetail] = React.useState(false);
 
   React.useEffect(() => {
     const unsub = db.collection("qse_lots")
@@ -4400,22 +4832,6 @@ function QseTracabiliteLots(props) {
       });
     return () => unsub();
   }, []);
-
-  const voirLot = async (lot) => {
-    setLotSelectionne(lot);
-    setChargeDetail(true);
-    const [production, controlesSnap, ncSnap, originesSnap] = await Promise.all([
-      qseRecupererProductionDuLot(lot),
-      db.collection("qse_controles").where("numeroLot", "==", lot.numeroLot).get(),
-      db.collection("qse_nc").where("numeroLot", "==", lot.numeroLot).get(),
-      db.collection("qse_origines_terre").where("numeroLot", "==", lot.numeroLot).get()
-    ]);
-    setProductionDuLot(production);
-    setControlesDuLot(controlesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
-    setNcDuLot(ncSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
-    setOriginesDuLot(originesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
-    setChargeDetail(false);
-  };
 
   return (
     <div className="qse-tracabilite">
@@ -4431,7 +4847,7 @@ function QseTracabiliteLots(props) {
               <td>{l.type}</td>
               <td>{l.quantite}</td>
               <td>{l.date}</td>
-              <td><button className="btn btn-sm" onClick={() => voirLot(l)}>Voir</button></td>
+              <td><button className="btn btn-sm" onClick={() => onOuvrirLot && onOuvrirLot(l.numeroLot)}>📋 Fiche du lot</button></td>
             </tr>
           ))}
           {lots.length === 0 && (
@@ -4439,42 +4855,6 @@ function QseTracabiliteLots(props) {
           )}
         </tbody>
       </table>
-
-      {lotSelectionne && (
-        <div className="qse-detail-lot">
-          <h4>Détail du lot {lotSelectionne.numeroLot}</h4>
-          {chargeDetail && <div>Chargement...</div>}
-          {!chargeDetail && (
-            <React.Fragment>
-              <p>Production liée : {productionDuLot ? (productionDuLot.type + " - " + productionDuLot.quantite + " - " + productionDuLot.date) : "Production introuvable"}</p>
-
-              <h5>Contrôles</h5>
-              <ul>
-                {controlesDuLot.map((c) => (
-                  <li key={c.id}>{c.type} - {c.date} - {c.resultat}</li>
-                ))}
-                {controlesDuLot.length === 0 && <li>Aucun contrôle enregistré.</li>}
-              </ul>
-
-              <h5>Non-conformités liées</h5>
-              <ul>
-                {ncDuLot.map((nc) => (
-                  <li key={nc.id}>{nc.description} - {nc.statut}</li>
-                ))}
-                {ncDuLot.length === 0 && <li>Aucune non-conformité liée.</li>}
-              </ul>
-
-              <h5>Origines des terres</h5>
-              <ul>
-                {originesDuLot.map((o) => (
-                  <li key={o.id}>{o.origine} - {o.quantite} - {o.date}</li>
-                ))}
-                {originesDuLot.length === 0 && <li>Aucune origine enregistrée pour ce lot.</li>}
-              </ul>
-            </React.Fragment>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -4483,6 +4863,15 @@ function ModuleQSE(props) {
   const user = props.user;
   const userData = props.userData;
   const [ongletQSE, setOngletQSE] = React.useState("tableau");
+  const [lotOuvert, setLotOuvert] = React.useState(null); // numeroLot en cours d'affichage dans la fiche 360
+  const [prefillNCLot, setPrefillNCLot] = React.useState(null);
+
+  const ouvrirLot = (numeroLot) => setLotOuvert(numeroLot);
+  const demanderNCPourLot = (numeroLot) => {
+    setLotOuvert(null);
+    setPrefillNCLot(numeroLot);
+    setOngletQSE("nc");
+  };
 
   const onglets = [
     { key: "tableau", label: "Tableau de bord" },
@@ -4497,6 +4886,7 @@ function ModuleQSE(props) {
 
   return (
     <div className="qse-module">
+      {lotOuvert && <FicheLot numeroLot={lotOuvert} user={user} userData={userData} onClose={() => setLotOuvert(null)} onDeclarerNC={demanderNCPourLot} />}
       <div className="qse-nav">
         {onglets.map((o) => (
           <button
@@ -4510,9 +4900,9 @@ function ModuleQSE(props) {
       </div>
       <div className="qse-contenu">
         {ongletQSE === "tableau" && <QseTableauDeBord user={user} userData={userData} />}
-        {ongletQSE === "controles" && <QseControlesAFaire user={user} userData={userData} />}
-        {ongletQSE === "tracabilite" && <QseTracabiliteLots user={user} userData={userData} />}
-        {ongletQSE === "nc" && <QseNonConformites user={user} userData={userData} />}
+        {ongletQSE === "controles" && <QseControlesAFaire user={user} userData={userData} onOuvrirLot={ouvrirLot} />}
+        {ongletQSE === "tracabilite" && <QseTracabiliteLots user={user} userData={userData} onOuvrirLot={ouvrirLot} />}
+        {ongletQSE === "nc" && <QseNonConformites user={user} userData={userData} onOuvrirLot={ouvrirLot} prefillLot={prefillNCLot} onPrefillConsumed={() => setPrefillNCLot(null)} />}
         {ongletQSE === "environnement" && <QseIndicateursEnvironnement user={user} userData={userData} />}
         {ongletQSE === "risques" && <QseRisquesOpportunites user={user} userData={userData} />}
         {ongletQSE === "aspects" && <QseAspectsEnvironnementaux user={user} userData={userData} />}
