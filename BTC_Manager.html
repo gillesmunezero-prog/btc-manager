@@ -421,6 +421,106 @@ input,select,textarea,button{font-family:inherit;}
   .btp-header{height:56px;}
   .btp-header-title{font-size:15px;}
 }
+
+/* ============ PRIORITE DU JOUR (bandeau "a faire") ============ */
+.priorite-jour{background:var(--btp-card);border:1px solid var(--btp-border);border-left:4px solid var(--btp-gold);
+  border-radius:var(--btp-radius);padding:16px 20px;margin-bottom:20px;box-shadow:var(--btp-shadow2);}
+.priorite-jour-titre{font-size:13px;font-weight:800;color:var(--btp-gold);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;}
+.priorite-jour-liste{display:flex;flex-wrap:wrap;gap:8px;}
+.priorite-jour-item{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:20px;
+  border:1px solid var(--btp-border);background:rgba(255,255,255,.05);color:var(--btp-text);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .2s;}
+.priorite-jour-item:hover{background:rgba(255,255,255,.1);transform:translateY(-1px);}
+.priorite-jour-urgent{border-color:rgba(231,76,60,.4);background:rgba(231,76,60,.1);}
+.priorite-jour-surveiller{border-color:rgba(240,165,0,.4);background:rgba(240,165,0,.1);}
+.priorite-jour-ok{display:flex;align-items:center;gap:8px;background:rgba(29,185,84,.1);
+  border:1px solid rgba(29,185,84,.3);border-left:4px solid var(--btp-green);border-radius:var(--btp-radius);
+  padding:14px 20px;margin-bottom:20px;color:#2ecc71;font-weight:700;font-size:13px;}
+
+/* ============ MODULE QSE (homogeneisation visuelle avec le reste de l'appli) ============ */
+.qse-module{display:flex;flex-direction:column;gap:18px;}
+.qse-nav{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--btp-border);padding-bottom:10px;}
+.qse-nav-btn{background:rgba(255,255,255,.05);border:1px solid var(--btp-border);color:var(--btp-text2);
+  font-size:13px;font-weight:600;padding:9px 14px;border-radius:20px;cursor:pointer;transition:all .2s;}
+.qse-nav-btn:hover{background:rgba(255,255,255,.1);color:white;}
+.qse-nav-btn.actif{background:linear-gradient(135deg,var(--btp-orange),var(--btp-orange2));color:white;border-color:transparent;}
+.qse-contenu{background:var(--btp-card);border:1px solid var(--btp-border);border-radius:var(--btp-radius);padding:22px;box-shadow:var(--btp-shadow2);}
+.qse-contenu h3{color:white;font-size:18px;font-weight:800;margin-bottom:16px;}
+.qse-contenu h4{color:var(--btp-orange2);font-size:14px;font-weight:700;margin:16px 0 10px;}
+.qse-contenu h5{color:var(--btp-text2);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px;}
+
+.qse-msg{padding:10px 14px;border-radius:8px;background:rgba(29,185,84,.12);border:1px solid rgba(29,185,84,.3);color:#2ecc71;font-size:13px;font-weight:600;margin-bottom:14px;}
+.qse-lot-recap{padding:8px 14px;border-radius:8px;background:rgba(93,173,226,.1);border:1px solid rgba(93,173,226,.3);
+  color:#5dade2;font-size:12px;font-weight:600;margin-bottom:14px;}
+
+.qse-form-nc,.qse-form-env,.qse-form-aspect,.qse-form-risque,.qse-form-objectif{
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  background:var(--btp-card2);border:1px solid var(--btp-border);border-radius:var(--btp-radius2);
+  padding:16px;margin-bottom:18px;
+}
+.qse-form-env label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--btp-text2);
+  text-transform:uppercase;letter-spacing:.5px;font-weight:700;flex:1 1 150px;}
+.qse-form-nc input,.qse-form-risque input,.qse-form-objectif input,.qse-form-aspect input{flex:1 1 160px;min-width:120px;}
+
+.qse-module input[type=text],
+.qse-module input[type=number],
+.qse-module input[type=date],
+.qse-module input:not([type]),
+.qse-module select,
+.qse-module textarea{
+  background:var(--btp-steel);border:1.5px solid var(--btp-border);border-radius:var(--btp-radius2);
+  padding:9px 12px;color:white;font-size:13px;outline:none;transition:border-color .2s;
+}
+.qse-module input:focus,.qse-module select:focus,.qse-module textarea:focus{border-color:var(--btp-orange);box-shadow:0 0 0 3px rgba(232,96,28,.15);}
+.qse-module input::placeholder{color:rgba(189,195,199,.4);}
+.qse-module select option{background:var(--btp-steel);}
+
+.qse-module button.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;
+  border:none;background:linear-gradient(135deg,var(--btp-orange),var(--btp-orange2));color:white;
+  box-shadow:0 4px 12px rgba(232,96,28,.3);transition:all .2s;
+}
+.qse-module button.btn:hover{box-shadow:0 6px 18px rgba(232,96,28,.45);transform:translateY(-1px);}
+.qse-module button.btn-sm{padding:5px 10px;font-size:11px;box-shadow:none;}
+
+.qse-table{width:100%;border-collapse:collapse;font-size:13px;border-radius:var(--btp-radius2);overflow:hidden;}
+.qse-table thead tr{background:var(--btp-steel);}
+.qse-table th{color:var(--btp-text2);padding:10px 12px;text-align:left;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid var(--btp-border);white-space:nowrap;}
+.qse-table td{padding:9px 12px;border-bottom:1px solid rgba(44,62,80,.6);color:var(--btp-text);vertical-align:middle;}
+.qse-table tbody tr:hover{background:rgba(255,255,255,.04);}
+.qse-table td input,.qse-table td select{width:100%;min-width:90px;padding:6px 8px;font-size:12px;}
+
+.qse-dashboard{display:flex;flex-direction:column;gap:16px;}
+.qse-bloc-afaire,.qse-bloc-qualite,.qse-bloc-environnement{
+  background:var(--btp-card2);border:1px solid var(--btp-border);border-radius:var(--btp-radius);
+  padding:16px 20px;
+}
+.qse-bloc-afaire{border-left:4px solid var(--btp-gold);}
+.qse-bloc-qualite{border-left:4px solid var(--btp-blue);}
+.qse-bloc-environnement{border-left:4px solid var(--btp-green);}
+.qse-dashboard ul{list-style:none;display:flex;flex-direction:column;gap:6px;}
+.qse-dashboard li{font-size:13px;color:var(--btp-text);}
+.qse-dashboard li ul{margin-top:8px;padding-left:14px;border-left:2px solid var(--btp-border);gap:6px;}
+.qse-bloc-afaire button.btn-sm{margin-left:10px;}
+
+.qse-controles-afaire{background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);border-radius:var(--btp-radius);padding:16px 20px;}
+
+.qse-crit-critique{color:#F1948A;font-weight:800;}
+.qse-crit-important{color:var(--btp-gold);font-weight:700;}
+.qse-crit-modere{color:var(--btp-blue);font-weight:600;}
+.qse-crit-faible{color:var(--btp-text2);}
+.qse-ligne-alerte{background:rgba(231,76,60,.08)!important;}
+
+.qse-detail-lot{margin-top:18px;padding-top:16px;border-top:1px solid var(--btp-border);}
+.qse-detail-lot ul{list-style:none;display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+.qse-detail-lot li{font-size:13px;color:var(--btp-text2);}
+
+@media(max-width:700px){
+  .qse-form-nc,.qse-form-env,.qse-form-aspect,.qse-form-risque,.qse-form-objectif{flex-direction:column;align-items:stretch;}
+  .qse-table{display:block;overflow-x:auto;}
+}
 </style>
 </head>
 <body>
@@ -512,6 +612,44 @@ return actif;
 }
 function getProduit(id) {
   return CATALOGUE.find(function(p) { return p.id === id; }) || { nom: id, dim: "", prix: 0 };
+}
+
+// Bandeau "A faire aujourd'hui" : n'affiche que ce qui necessite reellement une action humaine.
+function PrioriteDuJour({ stocks, cmdAttenteCount, controlesQSE, ncOuvertesQSE, onNavigate }) {
+  var stocksCritiques = CATALOGUE.filter(function(p) {
+    var s = stocks[p.id] || {};
+    return ((s.sec || 0) + (s.sechage || 0)) < STOCK_ALERTE;
+  });
+  var items = [];
+  if (stocksCritiques.length > 0) {
+    items.push({ niveau: "urgent", icone: "🔴", texte: stocksCritiques.length + " référence(s) en stock critique", cible: "stock" });
+  }
+  if (ncOuvertesQSE > 0) {
+    items.push({ niveau: "urgent", icone: "🔴", texte: ncOuvertesQSE + " non-conformité(s) QSE ouverte(s)", cible: "qse" });
+  }
+  if (cmdAttenteCount > 0) {
+    items.push({ niveau: "surveiller", icone: "🟠", texte: cmdAttenteCount + " commande(s) en attente de validation", cible: "commandes" });
+  }
+  if (controlesQSE > 0) {
+    items.push({ niveau: "surveiller", icone: "🟠", texte: controlesQSE + " contrôle(s) qualité à réaliser", cible: "qse" });
+  }
+  if (items.length === 0) {
+    return <div className="priorite-jour-ok">🟢 Rien d'urgent — production, stock et qualité sont sous contrôle.</div>;
+  }
+  return (
+    <div className="priorite-jour">
+      <div className="priorite-jour-titre">À faire aujourd'hui</div>
+      <div className="priorite-jour-liste">
+        {items.map(function(it, i) {
+          return (
+            <button key={i} className={"priorite-jour-item priorite-jour-" + it.niveau} onClick={function(){ onNavigate(it.cible); }}>
+              <span>{it.icone}</span> {it.texte}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 
@@ -613,6 +751,8 @@ const [editUserPwd, setEditUserPwd] = useState("");
 const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
   const [pertes, setPertes] = React.useState([]);
+  const [controlesQSEDir, setControlesQSEDir] = React.useState(0);
+  const [ncOuvertesQSEDir, setNcOuvertesQSEDir] = React.useState(0);
 
   const [evenements, setEvenements] = React.useState([]); const [showNewChantier, setShowNewChantier] = React.useState(false); const [dirNomChantier, setDirNomChantier] = React.useState(""); const [dirClientChantier, setDirClientChantier] = React.useState(""); const [dirAdresseChantier, setDirAdresseChantier] = React.useState(""); const [dirMsgChantier, setDirMsgChantier] = React.useState(""); const creerChantierDirection = async () => { if(!dirNomChantier||!dirClientChantier){ setDirMsgChantier("Remplissez le nom et le client"); return; } try { await db.collection("chantiers").add({ nom:dirNomChantier, client:dirClientChantier, adresse:dirAdresseChantier, besoins:{}, chefUid:user.uid, chefNom:userData.nom||user.email, createdAt:firebase.firestore.FieldValue.serverTimestamp() }); setDirNomChantier(""); setDirClientChantier(""); setDirAdresseChantier(""); setDirMsgChantier("Chantier cree avec succes !"); setTimeout(()=>{setShowNewChantier(false); setDirMsgChantier("");},1200); } catch(e){ setDirMsgChantier("Erreur: "+e.message); } }; const supprimerChantierDirection = async (ch) => { if(window.confirm('Supprimer definitivement le chantier "'+ch.nom+'" ?')){ try { await db.collection("chantiers").doc(ch.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } }; const supprimerEvenement = async (ev) => { if(window.confirm("Supprimer cette action du journal de tracabilite ?")){ try { await db.collection("evenements").doc(ev.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } };
   useEffect(() => {
@@ -639,8 +779,12 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
     const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
-  
-  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); uMat(); };
+    var u7 = db.collection("qse_controles").where("resultat","==","Non mesuré").onSnapshot(snap => setControlesQSEDir(snap.size));
+    var u8 = db.collection("qse_nc").onSnapshot(snap => {
+      setNcOuvertesQSEDir(snap.docs.filter(function(d){ return d.data().statut !== "Cloturee"; }).length);
+    });
+
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); uMat(); };
   }, []);
 
   async function toggleModeDemo() {
@@ -720,13 +864,17 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     var qte = parseInt(dirSaisieQte);
     if (isNaN(qte) || qte <= 0) { setDirSaisieMsg("Quantite invalide"); return; }
     try {
-      await db.collection("productions").add({
+      var dateFrDir = new Date().toLocaleDateString("fr-FR");
+      var refProdDir = await db.collection("productions").add({
         type: dirSaisieType, quantite: qte, phase: dirSaisiePhase,
-        date: new Date().toLocaleDateString("fr-FR"),
+        date: dateFrDir,
         responsable: (userData.nom || user.email) + " (Admin)",
         responsableUid: user.uid, statut: "Valide",
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
+      qseCreerLotEtControlePourProduction(refProdDir.id, {
+        type: dirSaisieType, quantite: qte, phase: dirSaisiePhase, date: dateFrDir
+      }, user, userData).catch(function(e){ console.error("Erreur creation lot QSE", e); });
       var st = stocks[dirSaisieType] || {};
       var upd = {};
       if (dirSaisiePhase === "sec") { upd.sec = (st.sec || 0) + qte; } else { upd.sechage = (st.sechage || 0) + qte; }
@@ -967,9 +1115,8 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
       {/* CONTENT */}
       <div className="btp-content">
-      
 
-
+        <PrioriteDuJour stocks={stocks} cmdAttenteCount={cmdAttente.length} controlesQSE={controlesQSEDir} ncOuvertesQSE={ncOuvertesQSEDir} onNavigate={setTab} />
 
         {tab==="stock"&&(
           <div className="fade-up">
@@ -1617,7 +1764,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
         prixUnit: catItem.prix||0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      try { await db.collection("evenements").add({ numBC: numBC, chantier: cmdChantierNom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "direction", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte, statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantier.nom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+(chantier.nom||""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       setMsgCmd("Commande envoyée ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
       setCmdQte(""); setCmdNotes(""); setCmdType("");
       setTabFiche("suivi");
@@ -2473,15 +2620,23 @@ function DashboardChef({ user, userData }) {
     if (!cmdChantierId||!cmdType||!cmdQte) { setMsgCmd("Choisissez un chantier, un type et une quantite"); return; }
     var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
     try {
+      var nowCmd = new Date();
+      var yyyyCmd = nowCmd.getFullYear();
+      var mmCmd = String(nowCmd.getMonth()+1).padStart(2,"0");
+      var randCmd = Math.floor(1000+Math.random()*9000);
+      var numBC = "BC-"+yyyyCmd+mmCmd+"-"+randCmd;
+      var catItemCmd = CATALOGUE.find(function(p){return p.id===cmdType;})||{};
       await db.collection("commandes").add({
-        type: cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        numBC: numBC,
+        type: cmdType, typNom: catItemCmd.nom||cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
         chantierId: cmdChantierId, chantierNom: ch?ch.nom:"", client: ch?ch.client:"",
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
         status: "EnAttente", quantiteLivree: 0,
+        prixUnit: catItemCmd.prix||0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantierNom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+chantierNom, statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
-      setMsgCmd("Commande envoyee ! En attente de validation Direction.");
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: ch?ch.nom:"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+(ch?ch.nom:""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
+      setMsgCmd("Commande envoyee ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
       setCmdQte(""); setCmdNotes("");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
@@ -4109,6 +4264,7 @@ function QseNonConformites(props) {
   const user = props.user;
   const userData = props.userData;
   const [liste, setListe] = React.useState([]);
+  const [lots, setLots] = React.useState([]);
   const [numeroLot, setNumeroLot] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [causeProbable, setCauseProbable] = React.useState("");
@@ -4125,6 +4281,23 @@ function QseNonConformites(props) {
     });
     return () => unsub();
   }, []);
+
+  React.useEffect(() => {
+    const unsub = db.collection("qse_lots").orderBy("dateCreation", "desc").limit(200).onSnapshot((snap) => {
+      const arr = [];
+      snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+      setLots(arr);
+    });
+    return () => unsub();
+  }, []);
+
+  const lotParNumero = React.useMemo(() => {
+    const m = {};
+    lots.forEach((l) => { m[l.numeroLot] = l; });
+    return m;
+  }, [lots]);
+
+  const lotSelectionne = lotParNumero[numeroLot] || null;
 
   const ajouter = async () => {
     if (!description.trim()) {
@@ -4145,7 +4318,10 @@ function QseNonConformites(props) {
       <h3>Non-conformités & actions</h3>
       {msg && <div className="qse-msg">{msg}</div>}
       <div className="qse-form-nc">
-        <input placeholder="N° de lot concerné" value={numeroLot} onChange={(e) => setNumeroLot(e.target.value)} />
+        <input list="qse-lots-datalist" placeholder="N° de lot concerné (tapez pour rechercher)" value={numeroLot} onChange={(e) => setNumeroLot(e.target.value)} />
+        <datalist id="qse-lots-datalist">
+          {lots.map((l) => <option key={l.id} value={l.numeroLot} />)}
+        </datalist>
         <input placeholder="Description de la non-conformité" value={description} onChange={(e) => setDescription(e.target.value)} />
         <input placeholder="Cause probable" value={causeProbable} onChange={(e) => setCauseProbable(e.target.value)} />
         <input placeholder="Action corrective" value={actionCorrective} onChange={(e) => setActionCorrective(e.target.value)} />
@@ -4153,16 +4329,24 @@ function QseNonConformites(props) {
         <input type="date" value={echeanceAction} onChange={(e) => setEcheanceAction(e.target.value)} />
         <button className="btn" onClick={ajouter}>+ Déclarer une non-conformité</button>
       </div>
+      {numeroLot.trim() !== "" && (
+        <div className="qse-lot-recap">
+          {lotSelectionne
+            ? ("✅ Lot reconnu — " + lotSelectionne.type + " · " + lotSelectionne.quantite + " u · produit le " + lotSelectionne.date)
+            : "ℹ️ Lot inconnu du système QSE — vérifiez le numéro, ou continuez, il sera enregistré tel quel."}
+        </div>
+      )}
       <table className="qse-table">
         <thead>
           <tr>
-            <th>Lot</th><th>Description</th><th>Cause</th><th>Action corrective</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th></th>
+            <th>Lot</th><th>Type BTC</th><th>Description</th><th>Cause</th><th>Action corrective</th><th>Responsable</th><th>Échéance</th><th>Statut</th><th></th>
           </tr>
         </thead>
         <tbody>
           {liste.map((nc) => (
             <tr key={nc.id}>
               <td>{nc.numeroLot}</td>
+              <td>{lotParNumero[nc.numeroLot] ? lotParNumero[nc.numeroLot].type : "—"}</td>
               <td>{nc.description}</td>
               <td><input defaultValue={nc.causeProbable} onBlur={(e) => { if (e.target.value !== nc.causeProbable) changerChamp(nc, "causeProbable", e.target.value); }} /></td>
               <td><input defaultValue={nc.actionCorrective} onBlur={(e) => { if (e.target.value !== nc.actionCorrective) changerChamp(nc, "actionCorrective", e.target.value); }} /></td>
@@ -4180,7 +4364,7 @@ function QseNonConformites(props) {
             </tr>
           ))}
           {liste.length === 0 && (
-            <tr><td colSpan="8">Aucune non-conformité enregistrée.</td></tr>
+            <tr><td colSpan="9">Aucune non-conformité enregistrée.</td></tr>
           )}
         </tbody>
       </table>
