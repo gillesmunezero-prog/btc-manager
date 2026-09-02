@@ -565,6 +565,26 @@ input,select,textarea,button{font-family:inherit;}
   .pilotage-barre-periode{flex-direction:column;align-items:stretch;}
 }
 
+/* ============ PHASE 10 — Planification (points 22/23/48) ============ */
+.plan-panneau{max-width:900px;max-height:88vh;overflow-y:auto;}
+.plan-jours-rangee{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;}
+.plan-jour-carte{flex:0 0 200px;background:var(--btp-card2);border:1px solid var(--btp-border);
+  border-radius:10px;padding:10px;}
+.plan-jour-date{font-size:12px;font-weight:800;color:var(--btp-orange);text-transform:capitalize;
+  margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--btp-border);}
+.plan-ligne{border-left:3px solid var(--btp-border);padding:6px 8px;margin-bottom:8px;
+  background:rgba(255,255,255,.03);border-radius:0 6px 6px 0;}
+.plan-ligne-type{font-size:12px;font-weight:700;color:var(--btp-text);}
+.plan-ligne-qte{font-size:15px;font-weight:800;}
+.plan-ligne-tier{font-size:10px;font-weight:700;text-transform:uppercase;margin-top:2px;}
+.plan-ligne-maturite{font-size:10px;color:var(--btp-text2);margin-top:4px;}
+/* Mobile (point 23/48) : cartes empilees verticalement plutot qu'en rangee horizontale scrollable —
+   plus naturel au pouce qu'un scroll horizontal sur un planning. */
+@media (max-width:640px){
+  .plan-jours-rangee{flex-direction:column;overflow-x:visible;}
+  .plan-jour-carte{flex:none;width:100%;box-sizing:border-box;}
+}
+
 /* ============ MODULE QSE (homogeneisation visuelle avec le reste de l'appli) ============ */
 .qse-module{display:flex;flex-direction:column;gap:18px;}
 .qse-nav{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--btp-border);padding-bottom:10px;}
@@ -1077,7 +1097,7 @@ function trierPriorites(liste) {
 // de reutiliser le meme moteur sans le reecrire, en ne montrant que les types de priorite qui le
 // concernent. "direction" (et tout role absent de la table) voit tout, sans filtre.
 var PRIORITES_PAR_ROLE = {
-  resp_production: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "lot_pret", "lot_pret_groupe", "lot_bientot_mature", "controle_retard", "controle_retard_groupe", "lot_sans_controle", "lot_sans_controle_groupe"],
+  resp_production: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "lot_pret", "lot_pret_groupe", "lot_bientot_mature", "controle_retard", "controle_retard_groupe", "lot_sans_controle", "lot_sans_controle_groupe", "production_retard"],
   qualite: ["controle_retard", "controle_retard_groupe", "lot_pret", "lot_pret_groupe", "lot_sans_controle", "lot_sans_controle_groupe", "nc_bloquante", "nc_bloquante_groupe", "nc_echeance", "nc_echeance_groupe", "nc_recurrente"],
   chef_chantier: ["commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe", "commande_a_valider", "commande_a_valider_groupe"],
   // Phase 8 (point 21) : le Responsable Stock voit son propre perimetre operationnel — l'etat du
@@ -1420,6 +1440,23 @@ function calculerPrioritesOperationnelles(donnees) {
     });
   }
 
+  // --- Phase 10 (point 36) : une ligne de plan validee dont la date est deja passee sans avoir ete
+  // demarree ("Termine") ni reportee/annulee -> alimente le MEME moteur de priorites (jamais un
+  // second systeme d'alerte). Optionnel : n'agit que si "planLignes" est fourni (seul le Responsable
+  // Production / la Direction en ont besoin ; zero impact sur les autres appelants).
+  if (donnees.planLignes) {
+    var aujourdHuiDebutMs = new Date(maintenant); aujourdHuiDebutMs.setHours(0, 0, 0, 0);
+    donnees.planLignes.forEach(function (l) {
+      if (l.statut !== "Valide" || l.dateMs >= aujourdHuiDebutMs.getTime()) return;
+      priorites.push({
+        type: "production_retard", niveau: "important",
+        titre: "Production " + getProduit(l.typeBTC).nom + " en retard — " + (l.quantitePrevue || 0).toLocaleString() + " u",
+        explication: "Planifiée le " + new Date(l.dateMs).toLocaleDateString("fr-FR") + ", toujours non démarrée." + (l.motif ? (" (" + l.motif + ")") : ""),
+        urgence: -60, objet: { type: "tab", id: "production" }, action: "Démarrer ou reporter", ligne: l
+      });
+    });
+  }
+
   return trierPriorites(priorites);
 }
 
@@ -1543,7 +1580,19 @@ const PARAMETRES_INDUSTRIELS_DEFAUT = {
   cadenceCibleParJour: null,       // pas de constante cachee : reste explicitement absent tant que Direction ne l'a pas saisie (point 5)
   objectifProductionMensuelle: null,
   objectifTauxPertesMaxPct: null,
-  objectifTauxConformiteMinPct: null
+  objectifTauxConformiteMinPct: null,
+  // --- Phase 10 (points 1/2) : AUCUNE de ces donnees n'existe dans Firestore avant cette phase
+  // (audit confirme : pas de capacite/jour, pas de calendrier d'equipes, pas d'horaires). Restent
+  // donc explicitement configurables, jamais fabriquees. capaciteJournaliere=null tant que non
+  // saisie -> le moteur de planification refuse alors de generer un calendrier daté (point 52),
+  // il n'affiche que les besoins quantitatifs (deja fiables depuis la Phase 9).
+  capaciteJournaliere: null,
+  // joursTravail : jours de la semaine ouvres (0=dimanche..6=samedi). Valeur de depart usuelle
+  // (lundi->samedi) mais PLEINEMENT modifiable — presentee comme un parametre configure, jamais
+  // comme une donnee mesuree.
+  joursTravail: [1, 2, 3, 4, 5, 6],
+  horizonPlanificationDefaut: 7,
+  seuilJoursConfianceCadence: 10 // nombre mini de jours distincts de donnees pour afficher une cadence "par type" jugee fiable (point 13/14)
 };
 async function chargerParametresIndustriels() {
   try {
@@ -2003,6 +2052,379 @@ function calculerIndicateursIndustriels(donnees, periode, parametres) {
     delaiControle: delaiControle, stockSechage: stockSechage,
     parType: parType, planProductionSuggere: besoinsTriés, qualiteDonnees: qualiteDonnees
   };
+}
+
+// ============================================================================================
+// PHASE 10 — MOTEUR DE PLANIFICATION/ORDONNANCEMENT. "BTC Manager calcule, explique et propose ;
+// le responsable de production decide et valide." calculerPlanProduction() est une fonction PURE :
+// elle ne lit ni n'ecrit jamais Firestore elle-meme (l'appelant lui fournit tout, et c'est
+// l'appelant — uniquement sur clic explicite "Valider le plan" — qui persiste le resultat).
+//
+// Audit prealable (point 1) — aucune de ces donnees n'existe dans Firestore avant cette phase :
+//   - capacite reelle/theorique par jour : ABSENTE -> parametre capaciteJournaliere (nullable).
+//   - jours travailles/horaires/equipes/temps de changement : ABSENTS -> parametre joursTravail
+//     (liste de jours de semaine ouvres, valeur de depart modifiable, jamais presentee comme mesuree).
+//   - capacite de sechage/de stockage : ABSENTES -> jamais modelisees, signalees explicitement
+//     comme telles partout ou elles seraient pertinentes (points 20/21).
+//   - commandes avec echeance : ABSENTE avant cette phase -> champ optionnel "dateBesoin" ajoute
+//     aux formulaires de commande (Chef) ; les commandes anterieures restent simplement sans
+//     echeance connue, jamais une urgence inventee a partir de rien.
+//   - cadence historique par type BTC : DISPONIBLE (collection productions), utilisee uniquement a
+//     titre informatif (point 13/14), jamais pour re-restreindre la capacite globale configuree.
+// ============================================================================================
+
+function dateLocaleISO(ms) {
+  var d = new Date(ms);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+// Decompose le besoin Phase 9 en deux composantes additives (memes chiffres, juste separes) : ce
+// qui manque pour honorer des commandes DEJA VALIDEES (dette certaine) vs ce qui ne sert qu'a
+// reconstituer le stock cible. Point 6 : une commande ferme doit toujours passer avant la simple
+// reconstitution — cette decomposition est ce qui permet de le garantir sans dupliquer la formule
+// du besoin (le total besoinCommandes+besoinStockCible reste toujours egal a besoin.besoin).
+function decomposerBesoin(besoin) {
+  var couvertureEngagements = besoin.disponible + besoin.sechageBientotMature;
+  var besoinCommandes = Math.max(0, besoin.engagements - couvertureEngagements);
+  var besoinStockCible = Math.max(0, besoin.besoin - besoinCommandes);
+  return { besoinCommandes: besoinCommandes, besoinStockCible: besoinStockCible };
+}
+
+// Echeance la plus proche parmi les commandes VALIDEES de ce type qui portent une dateBesoin
+// renseignee (point 19 : jamais d'echeance inventee pour les commandes qui n'en ont pas).
+function echeanceLaPlusProcheParType(commandes, typeBTC, maintenant) {
+  var aujourdHuiISO = dateLocaleISO(maintenant);
+  var meilleure = null;
+  commandes.forEach(function (c) {
+    if (c.type !== typeBTC || normTxt(c.status) !== normTxt("Validee") || !c.dateBesoin) return;
+    if ((c.quantite || 0) <= (c.quantiteLivree || 0)) return; // deja entierement livree
+    var j = joursEntreDatesISO(c.dateBesoin, aujourdHuiISO);
+    if (j == null) return;
+    if (meilleure === null || j < meilleure.jours) meilleure = { jours: j, commande: c };
+  });
+  return meilleure;
+}
+
+// Cadence historique d'un type BTC (point 13/14) : moyenne des quantites produites sur les jours
+// DISTINCTS ou ce type a ete produit, dans la fenetre recente. A TITRE INFORMATIF SEULEMENT — ne
+// restreint jamais la capacite journaliere globale (point 13 : "ne construis pas une
+// pseudo-precision à partir de 1 ou 2 journées").
+function calculerCadenceHistoriqueParType(productions, typeBTC, fenetreJours, maintenant, seuilJoursConfiance) {
+  var periode = calculerPeriode("custom", maintenant, { debut: maintenant - (fenetreJours - 1) * MS_PAR_JOUR, fin: maintenant });
+  var parJour = {};
+  productions.forEach(function (p) {
+    if (p.type !== typeBTC) return;
+    var t = qseTsMs(p.timestamp);
+    if (!dansPeriode(t, periode)) return;
+    var cle = dateLocaleISO(t);
+    parJour[cle] = (parJour[cle] || 0) + (p.quantite || 0);
+  });
+  var jours = Object.keys(parJour);
+  var fiable = jours.length >= seuilJoursConfiance;
+  var moyenne = jours.length > 0 ? jours.reduce(function (a, k) { return a + parJour[k]; }, 0) / jours.length : null;
+  return {
+    moyenneParJourProduit: moyenne, joursDistincts: jours.length, fiable: fiable,
+    origine: fiable ? ("Cadence basée sur " + jours.length + " jours de données") : "Capacité configurée manuellement (historique insuffisant)"
+  };
+}
+
+// Score de priorite EXPLICITE, en PALIERS (point 5 : "ne crée pas de score opaque"). Jamais un
+// score continu qui pourrait, par accumulation, faire passer une grosse reconstitution de stock
+// cible devant un petit deficit de commande ferme (point 6) : les paliers l'interdisent
+// structurellement plutot que par un savant dosage de poids.
+function calculerScorePrioritePlanification(besoinDecompose, rupture, echeance, seuilRuptureJours) {
+  if (besoinDecompose.besoinCommandes > 0) {
+    return { tier: 1, libelleTier: "Déficit certain sur commande(s) validée(s)", echeanceJours: echeance ? echeance.jours : null, magnitude: besoinDecompose.besoinCommandes };
+  }
+  if (rupture && rupture.etat === "projection" && rupture.joursAvantRupture != null && rupture.joursAvantRupture < seuilRuptureJours) {
+    return { tier: 2, libelleTier: "Risque de rupture à court terme", echeanceJours: Math.round(rupture.joursAvantRupture), magnitude: besoinDecompose.besoinStockCible };
+  }
+  if (besoinDecompose.besoinStockCible > 0) {
+    return { tier: 3, libelleTier: "Reconstitution du stock cible", echeanceJours: null, magnitude: besoinDecompose.besoinStockCible };
+  }
+  return { tier: 4, libelleTier: "Stock suffisant", echeanceJours: null, magnitude: 0 };
+}
+function comparerScoresPriorite(a, b) {
+  if (a.tier !== b.tier) return a.tier - b.tier;
+  if (a.echeanceJours != null && b.echeanceJours != null && a.echeanceJours !== b.echeanceJours) return a.echeanceJours - b.echeanceJours;
+  if (a.echeanceJours != null && b.echeanceJours == null) return -1;
+  if (a.echeanceJours == null && b.echeanceJours != null) return 1;
+  return b.magnitude - a.magnitude;
+}
+
+// Liste des jours ouvres (point 15) a partir d'aujourd'hui, pour un horizon donne. Garde-fou anti-
+// boucle infinie si joursTravail est vide par erreur de saisie.
+function genererJoursTravailles(maintenant, horizonJours, joursTravail) {
+  var jours = [];
+  var cursor = new Date(maintenant); cursor.setHours(0, 0, 0, 0);
+  var garde = 0;
+  while (jours.length < horizonJours && garde < horizonJours * 4 + 14) {
+    if (!joursTravail || joursTravail.length === 0 || joursTravail.indexOf(cursor.getDay()) !== -1) jours.push(cursor.getTime());
+    cursor = new Date(cursor.getTime() + MS_PAR_JOUR);
+    garde++;
+  }
+  return jours;
+}
+
+// Repartition gloutonne, capacite-contrainte, JAMAIS au-dela de capaciteJournaliere par jour (point
+// 12/45). Respecte le classement de priorite a chaque jour (les types les plus prioritaires sont
+// servis en premier, chaque jour, jusqu'a epuisement de leur besoin ou de la capacite du jour).
+function allouerCapacitePlanification(lignesTri, joursTravailles, capaciteJournaliere) {
+  if (capaciteJournaliere == null || capaciteJournaliere <= 0) {
+    return { planLignes: [], calendrierPossible: false };
+  }
+  var restant = {};
+  lignesTri.forEach(function (l) { restant[l.typeBTC] = l.besoin.besoin; });
+  var planLignes = [];
+  joursTravailles.forEach(function (dateJourMs) {
+    var capaciteRestanteJour = capaciteJournaliere;
+    for (var i = 0; i < lignesTri.length && capaciteRestanteJour > 0; i++) {
+      var l = lignesTri[i];
+      var reste = restant[l.typeBTC];
+      if (!reste || reste <= 0) continue;
+      var qte = Math.min(reste, capaciteRestanteJour);
+      if (qte <= 0) continue;
+      planLignes.push({
+        dateMs: dateJourMs, typeBTC: l.typeBTC, quantite: qte,
+        tier: l.score.tier, libelleTier: l.score.libelleTier, motif: l.motif,
+        dateMaturiteTheorique: dateJourMs + l.dureeSechageJours * MS_PAR_JOUR
+      });
+      restant[l.typeBTC] -= qte;
+      capaciteRestanteJour -= qte;
+    }
+  });
+  var resteNonPlanifie = {};
+  Object.keys(restant).forEach(function (t) { if (restant[t] > 0) resteNonPlanifie[t] = restant[t]; });
+  return { planLignes: planLignes, calendrierPossible: true, resteNonPlanifie: resteNonPlanifie };
+}
+
+// Point 10/11/43 : detecte les commandes dont l'echeance est structurellement impossible a tenir
+// avec les delais de sechage actuels — INDEPENDAMMENT de la capacite (meme en produisant a
+// l'instant, le sechage seul suffit a rendre l'echeance intenable). Affine avec la duree de
+// production estimee (derivee de la capacite configuree, jamais fabriquee) quand elle est connue.
+function detecterEcheancesImpossibles(commandes, indicateursParType, dureeSechageJours, capaciteJournaliere, maintenant) {
+  var aujourdHuiISO = dateLocaleISO(maintenant);
+  var parType = {}; indicateursParType.forEach(function (x) { parType[x.produit.id] = x; });
+  var resultats = [];
+  commandes.forEach(function (c) {
+    if (normTxt(c.status) !== normTxt("Validee") || !c.dateBesoin) return;
+    var resteACouvrir = Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0));
+    if (resteACouvrir <= 0) return;
+    var joursRestants = joursEntreDatesISO(c.dateBesoin, aujourdHuiISO);
+    if (joursRestants == null) return;
+    var x = parType[c.type];
+    var dejaCouvert = x ? (x.besoin.disponible + x.besoin.sechageBientotMature) : 0;
+    if (dejaCouvert >= resteACouvrir) return; // deja couvert par le stock/sechage existant -> pas de risque de sechage a analyser
+    // Delai minimal incompressible = duree de sechage seule (produire a l'instant T ne rend
+    // disponible qu'a T+dureeSechage). Affine avec la duree de production si la capacite est connue.
+    var dureeProductionEstimee = capaciteJournaliere ? Math.ceil(resteACouvrir / capaciteJournaliere) : 0;
+    var delaiMinimalJours = dureeSechageJours + dureeProductionEstimee;
+    if (joursRestants < delaiMinimalJours) {
+      resultats.push({
+        commande: c, joursRestants: joursRestants, delaiMinimalJours: delaiMinimalJours,
+        message: "Échéance impossible à tenir avec les délais actuels (séchage " + dureeSechageJours + " j" + (dureeProductionEstimee > 0 ? " + production ~" + dureeProductionEstimee + " j" : "") + ", il reste " + joursRestants + " j)."
+      });
+    }
+  });
+  return resultats;
+}
+
+// Point 11 : date de demarrage au plus tard pour une commande donnee.
+function dateDemarrageAuPlusTard(dateBesoinISO, dureeSechageJours, quantite, capaciteJournaliere) {
+  if (!dateBesoinISO) return null;
+  var msBesoin = new Date(dateBesoinISO + "T00:00:00").getTime();
+  var dureeProduction = capaciteJournaliere ? Math.ceil(quantite / capaciteJournaliere) : 0;
+  return msBesoin - (dureeSechageJours + dureeProduction) * MS_PAR_JOUR;
+}
+
+// ============================================================================================
+// MOTEUR PRINCIPAL — calculerPlanProduction(indicateurs, donnees, parametres, horizonJours,
+// maintenant). Fonction PURE (aucun acces Firestore). "indicateurs" = sortie de
+// calculerIndicateursIndustriels (Phase 9) : reutilisee telle quelle, jamais recalculee en double.
+// ============================================================================================
+function calculerPlanProduction(indicateurs, donnees, parametres, horizonJours, maintenant) {
+  maintenant = maintenant || Date.now();
+  horizonJours = horizonJours || parametres.horizonPlanificationDefaut || 7;
+  var commandes = donnees.commandes || [];
+  var productions = donnees.productions || [];
+  var seuilRuptureJours = 5; // seuil de declenchement du "tier 2" (rupture a court terme) — documente, pas cache
+  var dureeSechageJours = parametres.dureeSechageJours;
+
+  var lignes = indicateurs.parType
+    .filter(function (x) { return x.besoin.besoin > 0; })
+    .map(function (x) {
+      var decompose = decomposerBesoin(x.besoin);
+      var echeance = echeanceLaPlusProcheParType(commandes, x.produit.id, maintenant);
+      var score = calculerScorePrioritePlanification(decompose, x.rupture, echeance, seuilRuptureJours);
+      var cadence = calculerCadenceHistoriqueParType(productions, x.produit.id, 30, maintenant, parametres.seuilJoursConfianceCadence);
+      var motifParts = [];
+      if (decompose.besoinCommandes > 0) motifParts.push(decompose.besoinCommandes.toLocaleString() + " u pour couvrir des commandes déjà validées" + (echeance ? (" (échéance la plus proche : " + echeance.commande.dateBesoin + ", dans " + echeance.jours + " j)") : ""));
+      if (decompose.besoinStockCible > 0) motifParts.push(decompose.besoinStockCible.toLocaleString() + " u pour atteindre le stock cible (" + x.besoin.stockCible.toLocaleString() + " u)");
+      return {
+        typeBTC: x.produit.id, produit: x.produit, besoin: x.besoin, besoinDecompose: decompose,
+        score: score, echeance: echeance, cadenceHistorique: cadence, dureeSechageJours: dureeSechageJours,
+        motif: motifParts.join(" + ") || "Reconstitution du stock cible"
+      };
+    })
+    .sort(function (a, b) { return comparerScoresPriorite(a.score, b.score); });
+
+  var joursTravailles = genererJoursTravailles(maintenant, horizonJours, parametres.joursTravail);
+  var allocation = allouerCapacitePlanification(lignes, joursTravailles, parametres.capaciteJournaliere);
+  var echeancesImpossibles = detecterEcheancesImpossibles(commandes, indicateurs.parType, dureeSechageJours, parametres.capaciteJournaliere, maintenant);
+
+  return {
+    genereLe: maintenant, horizonJours: horizonJours, joursTravailles: joursTravailles,
+    lignesPrioritaires: lignes, planLignes: allocation.planLignes, calendrierPossible: allocation.calendrierPossible,
+    resteNonPlanifie: allocation.resteNonPlanifie || {}, echeancesImpossibles: echeancesImpossibles,
+    capaciteJournaliere: parametres.capaciteJournaliere, joursTravail: parametres.joursTravail,
+    messageSiPasDeCalendrier: allocation.calendrierPossible ? null : "Plan quantitatif disponible — calendrier impossible tant que la capacité journalière n'est pas renseignée."
+  };
+}
+
+// Points 8/9 : projection JOUR PAR JOUR du stock disponible sur l'horizon du plan — pour montrer
+// que produire suffisamment sur l'ensemble de l'horizon n'empeche pas une rupture TEMPORAIRE si une
+// commande arrive a echeance avant que la production planifiee pour la couvrir soit murie. Aucune
+// consommation n'est inventee : seules les commandes VALIDEES portant une dateBesoin connue sont
+// traitees comme des sorties (a defaut de dateBesoin, une commande n'est prise en compte nulle part
+// dans cette projection — jamais une hypothese de consommation moyenne fabriquee). Les arrivees sont
+// comptees a la date de MATURITE theorique de chaque ligne planifiee (dateProduction + sechage),
+// jamais a sa date de production (point 7 : produire aujourd'hui n'est pas disponible aujourd'hui).
+// Ne modelise PAS la capacite de sechage/stockage (absente des donnees, points 20/21) : aucune
+// saturation physique du sechoir n'est jamais signalee ici, uniquement des ruptures de STOCK.
+function calculerProjectionStock(planCalcule, indicateursParType, commandes, horizonJours, maintenant) {
+  var joursCalendrier = [];
+  var jour0 = new Date(maintenant); jour0.setHours(0, 0, 0, 0);
+  for (var i = 0; i < horizonJours; i++) {
+    var d = new Date(jour0.getTime()); d.setDate(d.getDate() + i);
+    joursCalendrier.push(d.getTime());
+  }
+  var projectionParType = {};
+  indicateursParType.forEach(function (x) {
+    var typeId = x.produit.id;
+    var stockCourant = x.besoin.disponible;
+    var pointsJour = joursCalendrier.map(function (jourMs) {
+      var jourISO = dateLocaleISO(jourMs);
+      var arrivee = planCalcule.planLignes.filter(function (l) { return l.typeBTC === typeId && dateLocaleISO(l.dateMaturiteTheorique) === jourISO; })
+        .reduce(function (s, l) { return s + l.quantite; }, 0);
+      var sortie = commandes.filter(function (c) { return c.type === typeId && normTxt(c.status) === normTxt("Validee") && c.dateBesoin === jourISO; })
+        .reduce(function (s, c) { return s + Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0)); }, 0);
+      stockCourant = stockCourant + arrivee - sortie;
+      return { dateMs: jourMs, stock: stockCourant, arrivee: arrivee, sortie: sortie, rupture: stockCourant < 0 };
+    });
+    var premiereRupture = pointsJour.find(function (p) { return p.rupture; });
+    projectionParType[typeId] = { produit: x.produit, points: pointsJour, ruptureTemporaire: !!premiereRupture, premiereRuptureMs: premiereRupture ? premiereRupture.dateMs : null };
+  });
+  return { jours: joursCalendrier, parType: projectionParType };
+}
+
+// Point 38 : diff entre deux jeux de lignes (le dernier plan valide vs un nouveau calcul), agrege
+// par type BTC (quantite totale + date la plus tot) — assez fin pour l'exemple du cahier des
+// charges ("+2000 et avance d'un jour"), sans dependre d'un alignement exact ligne-a-ligne qui
+// serait fragile des que la repartition jour-par-jour change legerement.
+function calculerDiffPlan(lignesAvant, lignesApres) {
+  function grouper(lignes) {
+    var m = {};
+    (lignes || []).forEach(function (l) {
+      var t = l.typeBTC;
+      if (!m[t]) m[t] = { quantiteTotale: 0, dateLaPlusTot: null };
+      m[t].quantiteTotale += (l.quantitePrevue != null ? l.quantitePrevue : l.quantite) || 0;
+      var d = l.dateMs;
+      if (d != null && (m[t].dateLaPlusTot == null || d < m[t].dateLaPlusTot)) m[t].dateLaPlusTot = d;
+    });
+    return m;
+  }
+  var avant = grouper(lignesAvant), apres = grouper(lignesApres);
+  var types = {};
+  Object.keys(avant).forEach(function (t) { types[t] = true; });
+  Object.keys(apres).forEach(function (t) { types[t] = true; });
+  var resultats = [];
+  Object.keys(types).forEach(function (t) {
+    var a = avant[t] || { quantiteTotale: 0, dateLaPlusTot: null };
+    var b = apres[t] || { quantiteTotale: 0, dateLaPlusTot: null };
+    var deltaQuantite = b.quantiteTotale - a.quantiteTotale;
+    var deltaJours = (a.dateLaPlusTot != null && b.dateLaPlusTot != null) ? Math.round((b.dateLaPlusTot - a.dateLaPlusTot) / MS_PAR_JOUR) : null;
+    if (deltaQuantite === 0 && !deltaJours) return;
+    resultats.push({ typeBTC: t, quantiteAvant: a.quantiteTotale, quantiteApres: b.quantiteTotale, deltaQuantite: deltaQuantite, deltaJours: deltaJours });
+  });
+  return resultats;
+}
+
+// ============================================================================================
+// PHASE 10 — Persistance du plan de production. AUCUNE ecriture ne se produit avant un clic
+// explicite "Valider le plan" (point 24) : jusque-la, le plan calcule par calculerPlanProduction()
+// vit uniquement en memoire cote client. Structure (point 25) :
+//   plans_production/{id}          : horizon, genereLe, statut, creePar, dateCreation, version, hypotheses
+//   plan_production_lignes/{id}    : planId, dateMs, typeBTC, quantitePrevue, tier/motif, statut,
+//                                     dateMaturitePrevue, productionId (une fois demarree), quantiteRealisee
+// Statuts volontairement minimaux (point 27) : Valide -> Termine | Reporte | Annule.
+// ============================================================================================
+async function validerPlanProduction(planCalcule, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var planRef = db.collection("plans_production").doc(token);
+  var dejaExiste = await planRef.get();
+  if (dejaExiste.exists) return token; // idempotence : double clic/retry sur la meme validation
+
+  // Versionnement (point 26) : ne remplace ni n'ecrase jamais un plan deja valide — la version
+  // suivante s'ajoute simplement a l'historique.
+  var precedent = await db.collection("plans_production").orderBy("version", "desc").limit(1).get();
+  var version = precedent.empty ? 1 : (precedent.docs[0].data().version || 0) + 1;
+
+  var batch = db.batch();
+  batch.set(planRef, {
+    horizonJours: planCalcule.horizonJours, genereLe: planCalcule.genereLe,
+    statut: "Valide", creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp(),
+    version: version, hypotheses: {
+      capaciteJournaliere: planCalcule.capaciteJournaliere, joursTravail: planCalcule.joursTravail
+    }, calendrierPossible: planCalcule.calendrierPossible
+  });
+  planCalcule.planLignes.forEach(function (ligne, i) {
+    batch.set(db.collection("plan_production_lignes").doc(token + "_" + i), {
+      planId: token, dateMs: ligne.dateMs, typeBTC: ligne.typeBTC, quantitePrevue: ligne.quantite,
+      tier: ligne.tier, libelleTier: ligne.libelleTier, motif: ligne.motif,
+      dateMaturitePrevue: ligne.dateMaturiteTheorique, statut: "Valide",
+      productionId: null, quantiteRealisee: null, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  });
+  await batch.commit();
+  return token;
+}
+// Dernier plan valide + ses lignes (requetes CIBLEES, point 49 — jamais tout l'historique).
+async function chargerDernierPlanProduction() {
+  var planSnap = await db.collection("plans_production").orderBy("version", "desc").limit(1).get();
+  if (planSnap.empty) return null;
+  var plan = Object.assign({ id: planSnap.docs[0].id }, planSnap.docs[0].data());
+  var lignesSnap = await db.collection("plan_production_lignes").where("planId", "==", plan.id).get();
+  plan.lignes = lignesSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+  return plan;
+}
+// Point 28/33 : relie la ligne planifiee a la production reellement enregistree, sans jamais
+// compter deux fois (planifie + realise) — la ligne passe a "Termine" et porte desormais la
+// quantite REELLE, que la projection future doit utiliser a la place de la quantite prevue.
+async function terminerLigneProductionPlan(ligneId, productionId, quantiteRealisee, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("plan_production_lignes").doc(ligneId).update({
+    statut: "Termine", productionId: productionId, quantiteRealisee: quantiteRealisee,
+    dateRealisation: firebase.firestore.FieldValue.serverTimestamp(), realisePar: auteur
+  });
+}
+// Point 31 : report PROPOSE puis VALIDE par l'utilisateur — jamais deplace automatiquement.
+async function reporterLigneProductionPlan(ligne, nouvelleDateMs, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var batch = db.batch();
+  batch.update(db.collection("plan_production_lignes").doc(ligne.id), { statut: "Reporte", reportePar: auteur, dateReport: firebase.firestore.FieldValue.serverTimestamp() });
+  var nouvelleRef = db.collection("plan_production_lignes").doc();
+  batch.set(nouvelleRef, {
+    planId: ligne.planId, dateMs: nouvelleDateMs, typeBTC: ligne.typeBTC, quantitePrevue: ligne.quantitePrevue,
+    tier: ligne.tier, libelleTier: ligne.libelleTier, motif: "Reporté depuis le " + new Date(ligne.dateMs).toLocaleDateString("fr-FR") + " (" + ligne.motif + ")",
+    dateMaturitePrevue: nouvelleDateMs + (ligne.dateMaturitePrevue - ligne.dateMs), statut: "Valide",
+    productionId: null, quantiteRealisee: null, ligneReporteeDepuisId: ligne.id,
+    dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await batch.commit();
+}
+async function annulerLigneProductionPlan(ligneId, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("plan_production_lignes").doc(ligneId).update({ statut: "Annule", annulePar: auteur, dateAnnulation: firebase.firestore.FieldValue.serverTimestamp() });
 }
 
 // Navigation centrale : un seul point d'entree pour ouvrir n'importe quel objet metier depuis
@@ -2945,10 +3367,235 @@ function PilotageDetailModal({ titre, sousTitre, colonnes, lignes, onFermer, onL
   );
 }
 
+// Phase 10 — panneau de planification (point 22/24). Desktop : rangee horizontale de cartes-jour.
+// Mobile : memes cartes, empilees verticalement (CSS, point 23/48) — jamais un Gantt.
+function PanneauPlanification({ indicateurs, commandes, productions, parametres, maintenant, enLigne, user, userData, ouvrirObjet, onFermer }) {
+  const [horizon, setHorizon] = React.useState(parametres.horizonPlanificationDefaut || 7);
+  const [dernierPlan, setDernierPlan] = React.useState(null);
+  const [chargementDernierPlan, setChargementDernierPlan] = React.useState(true);
+  const [simulation, setSimulation] = React.useState(null); // null = reel ; sinon overrides temporaires
+  const [showSimForm, setShowSimForm] = React.useState(false);
+  const [formSim, setFormSim] = React.useState(null);
+  const [statutValidation, setStatutValidation] = React.useState({ etat: "idle", texte: "" });
+
+  React.useEffect(function () {
+    chargerDernierPlanProduction().then(function (p) { setDernierPlan(p); setChargementDernierPlan(false); }).catch(function () { setChargementDernierPlan(false); });
+  }, []);
+
+  const parametresEffectifs = React.useMemo(function () {
+    return simulation ? Object.assign({}, parametres, simulation) : parametres;
+  }, [parametres, simulation]);
+
+  const planCalcule = React.useMemo(function () {
+    return calculerPlanProduction(indicateurs, { commandes: commandes, productions: productions }, parametresEffectifs, horizon, maintenant);
+  }, [indicateurs, commandes, productions, parametresEffectifs, horizon, maintenant]);
+
+  // Jamais de diff / de bouton de validation actif en mode simulation (point 17 : aucune donnee
+  // reelle n'est modifiee ; comparer une simulation au plan reel serait trompeur).
+  const diff = React.useMemo(function () {
+    if (!dernierPlan || simulation) return null;
+    return calculerDiffPlan(dernierPlan.lignes, planCalcule.planLignes);
+  }, [dernierPlan, planCalcule, simulation]);
+
+  // Points 8/9 : projection jour par jour du stock, pour reveler une rupture TEMPORAIRE meme quand
+  // le plan produit globalement assez sur l'horizon (ex : commande a echeance avant que la
+  // production planifiee pour la couvrir ait fini de secher). Desactivee tant qu'aucun calendrier
+  // n'est possible (pas de date de maturite fiable sans capacite configuree).
+  const projectionStock = React.useMemo(function () {
+    if (!planCalcule.calendrierPossible) return null;
+    return calculerProjectionStock(planCalcule, indicateurs.parType, commandes, horizon, maintenant);
+  }, [planCalcule, indicateurs, commandes, horizon, maintenant]);
+  const typesEnRuptureTemporaire = React.useMemo(function () {
+    if (!projectionStock) return [];
+    return Object.keys(projectionStock.parType).map(function (t) { return projectionStock.parType[t]; }).filter(function (p) { return p.ruptureTemporaire; });
+  }, [projectionStock]);
+  const [voirCalendrierStock, setVoirCalendrierStock] = React.useState(false);
+
+  const joursCartes = React.useMemo(function () {
+    var parJour = {};
+    planCalcule.joursTravailles.forEach(function (ms) { parJour[ms] = []; });
+    planCalcule.planLignes.forEach(function (l) { (parJour[l.dateMs] = parJour[l.dateMs] || []).push(l); });
+    return Object.keys(parJour).map(Number).sort(function (a, b) { return a - b; }).map(function (ms) { return { dateMs: ms, lignes: parJour[ms] }; });
+  }, [planCalcule]);
+
+  const valider = async function () {
+    if (simulation) return;
+    var token = "plan_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    await executerOperationCritique({
+      cle: "valider_plan_production", enLigne: enLigne, setStatut: setStatutValidation,
+      texteEnCours: "Enregistrement du plan...", texteSucces: "✓ Plan de production validé (v" + ((dernierPlan ? (dernierPlan.version || 0) : 0) + 1) + ").",
+      texteHorsLigne: "🚫 Connexion requise — validation du plan impossible hors connexion.",
+      operation: function () { return validerPlanProduction(planCalcule, token, user, userData); },
+      onSuccess: function () { chargerDernierPlanProduction().then(setDernierPlan); }
+    }).catch(function () {});
+  };
+
+  var tierCouleur = { 1: "#EC7063", 2: "#F39C12", 3: "#5DADE2", 4: "#2ECC71" };
+
+  return (
+    <div className="btp-modal-overlay" onClick={onFermer}>
+      <div className="btp-modal plan-panneau" onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title" style={{ marginBottom: 4 }}>📅 Planification de la production</div>
+        <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>Plan calculé à partir du stock, des commandes et de la capacité — jamais une décision automatique, toujours soumis à validation humaine.</div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 14 }}>
+          <div className="pilotage-selecteur-periode">
+            {[7, 14, 30].map(function (h) { return <button key={h} className={"pilotage-periode-btn" + (horizon === h ? " active" : "")} onClick={() => setHorizon(h)}>{h} jours</button>; })}
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={() => { setFormSim(simulation || Object.assign({}, parametres)); setShowSimForm(true); }}>{simulation ? "🧪 Modifier la simulation" : "🧪 Et si… (simulation)"}</button>
+          {simulation && <button className="btn btn-sm btn-danger" onClick={() => setSimulation(null)}>Quitter la simulation</button>}
+        </div>
+
+        {simulation && (
+          <div className="btp-alert" style={{ background: "rgba(93,173,226,.12)", border: "1px solid rgba(93,173,226,.4)", color: "#5DADE2", marginBottom: 14, fontSize: 12, fontWeight: 700 }}>
+            🧪 Mode simulation actif — aucune donnée réelle n'est modifiée. Validation désactivée tant que la simulation est active.
+          </div>
+        )}
+
+        {planCalcule.echeancesImpossibles.length > 0 && (
+          <div className="btp-alert alert-error" style={{ marginBottom: 14 }}>
+            <strong>⚠️ Échéance(s) impossible(s) à tenir</strong>
+            <ul style={{ margin: "6px 0 0 18px", fontSize: 12 }}>
+              {planCalcule.echeancesImpossibles.map(function (e, i) {
+                return <li key={i}>{getProduit(e.commande.type).nom} — {e.commande.numBC || e.commande.id} : {e.message}</li>;
+              })}
+            </ul>
+          </div>
+        )}
+
+        {/* Points 8/9 : rupture temporaire de stock reveleee par la projection jour-par-jour, meme
+            si le total planifie sur l'horizon suffit — jamais masquee derriere le plan. */}
+        {typesEnRuptureTemporaire.length > 0 && (
+          <div className="btp-alert alert-error" style={{ marginBottom: 14 }}>
+            <strong>⚠️ Rupture temporaire de stock malgré le plan</strong>
+            <div style={{ fontSize: 12, marginTop: 4, color: "var(--btp-text2)" }}>La production planifiée suffit sur l'ensemble de l'horizon, mais certaines commandes arrivent à échéance avant que la production correspondante ait fini de sécher.</div>
+            <ul style={{ margin: "6px 0 0 18px", fontSize: 12 }}>
+              {typesEnRuptureTemporaire.map(function (p, i) {
+                return <li key={i}>{p.produit.nom} : rupture prévue le {new Date(p.premiereRuptureMs).toLocaleDateString("fr-FR")}</li>;
+              })}
+            </ul>
+            <button className="btn btn-sm btn-ghost" style={{ marginTop: 8 }} onClick={() => setVoirCalendrierStock(!voirCalendrierStock)}>{voirCalendrierStock ? "Masquer" : "Voir"} le calendrier de stock projeté</button>
+          </div>
+        )}
+        {voirCalendrierStock && projectionStock && (
+          <div style={{ overflowX: "auto", marginBottom: 14 }}>
+            <table className="btp-table">
+              <thead><tr><th>Type BTC</th>{projectionStock.jours.map(function (j, i) { return <th key={i}>{new Date(j).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}</th>; })}</tr></thead>
+              <tbody>
+                {typesEnRuptureTemporaire.map(function (p, i) {
+                  return (
+                    <tr key={i}>
+                      <td>{p.produit.nom}</td>
+                      {p.points.map(function (pt, j) { return <td key={j} style={{ color: pt.rupture ? "#EC7063" : "var(--btp-text)", fontWeight: pt.rupture ? 800 : 400 }}>{pt.stock.toLocaleString()}</td>; })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!planCalcule.calendrierPossible ? (
+          <div>
+            <div className="btp-alert" style={{ background: "rgba(240,165,0,.12)", border: "1px solid rgba(240,165,0,.35)", color: "#F0A500", marginBottom: 14, fontSize: 13 }}>
+              ℹ️ {planCalcule.messageSiPasDeCalendrier}
+            </div>
+            <table className="btp-table">
+              <thead><tr><th>Priorité</th><th>Type BTC</th><th>Besoin</th><th>Motif</th></tr></thead>
+              <tbody>
+                {planCalcule.lignesPrioritaires.filter(function (l) { return l.besoin.besoin > 0; }).map(function (l, i) {
+                  return (<tr key={i}><td style={{ color: tierCouleur[l.score.tier] }}>{l.score.libelleTier}</td><td>{l.produit.nom}</td><td>{l.besoin.besoin.toLocaleString()} u</td><td style={{ fontSize: 11 }}>{l.motif}</td></tr>);
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="plan-jours-rangee">
+            {joursCartes.map(function (jc) {
+              var d = new Date(jc.dateMs);
+              return (
+                <div key={jc.dateMs} className="plan-jour-carte">
+                  <div className="plan-jour-date">{d.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" })}</div>
+                  {jc.lignes.length === 0 && <div className="pilotage-vide" style={{ padding: "10px 0" }}>—</div>}
+                  {jc.lignes.map(function (l, i) {
+                    return (
+                      <div key={i} className="plan-ligne" style={{ borderLeftColor: tierCouleur[l.tier] }} title={l.motif}>
+                        <div className="plan-ligne-type">{getProduit(l.typeBTC).nom}</div>
+                        <div className="plan-ligne-qte">{l.quantite.toLocaleString()} u</div>
+                        <div className="plan-ligne-tier" style={{ color: tierCouleur[l.tier] }}>{l.libelleTier}</div>
+                        <div className="plan-ligne-maturite">Maturité prévue : {new Date(l.dateMaturiteTheorique).toLocaleDateString("fr-FR")}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {Object.keys(planCalcule.resteNonPlanifie).length > 0 && (
+          <div style={{ fontSize: 12, color: "#F39C12", marginTop: 10 }}>
+            ⚠️ Au-delà de {horizon} jours à cette capacité, il reste à planifier : {Object.keys(planCalcule.resteNonPlanifie).map(function (t) { return getProduit(t).nom + " (" + planCalcule.resteNonPlanifie[t].toLocaleString() + " u)"; }).join(", ")}.
+          </div>
+        )}
+
+        {diff && diff.length > 0 && (
+          <div className="pilotage-section" style={{ marginTop: 16 }}>
+            <div className="pilotage-section-titre">Différences par rapport au dernier plan validé (v{dernierPlan.version})</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+              {diff.map(function (d, i) {
+                return (
+                  <li key={i}>{getProduit(d.typeBTC).nom} : {d.deltaQuantite !== 0 ? ((d.deltaQuantite > 0 ? "+" : "") + d.deltaQuantite.toLocaleString() + " u") : "quantité inchangée"}
+                    {d.deltaJours ? (", " + (d.deltaJours < 0 ? ("avancé de " + Math.abs(d.deltaJours) + " j") : ("reporté de " + d.deltaJours + " j"))) : ""}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        {dernierPlan && !chargementDernierPlan && (!diff || diff.length === 0) && !simulation && (
+          <div style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 10 }}>Identique au dernier plan validé (v{dernierPlan.version}).</div>
+        )}
+
+        {statutValidation.texte && <div style={{ marginTop: 12, fontSize: 13, fontWeight: 700, color: statutValidation.etat === "echec" ? "#EC7063" : "#2ECC71" }}>{statutValidation.texte}</div>}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} disabled={!!simulation || !planCalcule.calendrierPossible || statutValidation.etat === "encours" || !enLigne}
+            onClick={valider}>
+            {statutValidation.etat === "encours" ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "✓ Valider le plan")}
+          </button>
+          <button className="btn btn-ghost btn-full" onClick={onFermer}>Fermer</button>
+        </div>
+      </div>
+
+      {showSimForm && formSim && (
+        <div className="btp-modal-overlay" onClick={() => setShowSimForm(false)}>
+          <div className="btp-modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+            <div className="btp-modal-title" style={{ marginBottom: 4 }}>🧪 Scénario "Et si…"</div>
+            <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 12 }}>Modifie temporairement les hypothèses pour voir l'impact — aucune donnée réelle n'est touchée.</div>
+            <label className="btp-label">Capacité journalière (u/j)</label>
+            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 10 }} value={formSim.capaciteJournaliere || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { capaciteJournaliere: e.target.value ? parseInt(e.target.value, 10) : null }))} />
+            <label className="btp-label">Stock cible par défaut (u)</label>
+            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 10 }} value={formSim.stockCibleDefaut || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { stockCibleDefaut: parseInt(e.target.value, 10) || 0 }))} />
+            <label className="btp-label">Durée de séchage (jours)</label>
+            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 14 }} value={formSim.dureeSechageJours || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { dureeSechageJours: parseInt(e.target.value, 10) || parametres.dureeSechageJours }))} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-full" style={{ background: "#5DADE2", color: "white" }} onClick={() => { setSimulation(formSim); setShowSimForm(false); }}>Appliquer la simulation</button>
+              <button className="btn btn-ghost btn-full" onClick={() => setShowSimForm(false)}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Le cockpit lui-meme. 5 lignes (point 24) : chiffres cles / production dans le temps / stock-
 // couverture-besoins / qualite-NC / priorites decisionnelles. Chaque donnee affichee provient du
 // moteur d'indicateurs (calculerIndicateursIndustriels) — aucun calcul propre au composant.
 function PilotageDirection({ user, userData, stocks, commandes, productions, lots, controles, ncs, chantiers, ouvrirObjet }) {
+  const { enLigne } = useConnexion();
+  const [showPlanification, setShowPlanification] = React.useState(false);
   const [periodeCle, setPeriodeCle] = React.useState("30j");
   const [customDebut, setCustomDebut] = React.useState("");
   const [customFin, setCustomFin] = React.useState("");
@@ -3001,6 +3648,27 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
   const prioriteDonneesPilotage = React.useMemo(function () {
     return { stocks: stocks, commandes: commandes, lots: lots, controlesEnAttente: controles.filter(function (c) { return !c.resultat || c.resultat === "Non mesuré"; }), numerosAvecControleRecent: {}, ncs: ncs, mouvements: mouvements, maintenant: maintenant };
   }, [stocks, commandes, lots, controles, ncs, mouvements, maintenant]);
+
+  // Point 34 : synthese "Besoin total / Planifié / Capacité disponible" visible directement dans le
+  // cockpit, sans ouvrir le panneau de planification. Reutilise integralement les agregats deja
+  // charges (indicateurs/commandes/productions/parametres) — aucune requete Firestore supplementaire
+  // (point 49). Horizon fixe a la valeur par defaut (7 j, point 16) pour rester une vue "aujourd'hui",
+  // coherente avec la valeur par defaut du panneau de planification lui-meme.
+  const resumePlanCockpit = React.useMemo(function () {
+    var horizon = parametres.horizonPlanificationDefaut || 7;
+    var plan = calculerPlanProduction(indicateurs, { commandes: commandes, productions: productions }, parametres, horizon, maintenant);
+    var besoinTotal = indicateurs.parType.reduce(function (s, x) { return s + x.besoin.besoin; }, 0);
+    var planifieTotal = plan.planLignes.reduce(function (s, l) { return s + l.quantite; }, 0);
+    var joursOuvres = plan.joursTravailles.length;
+    var capaciteDisponible = parametres.capaciteJournaliere != null ? parametres.capaciteJournaliere * joursOuvres : null;
+    // Risques de rupture (etat != "indetermine", besoin reel) que ce plan couvre effectivement par
+    // une quantite planifiee sur l'horizon — jamais une affirmation causale plus forte que ca.
+    var rupturesCouvertes = indicateurs.parType.filter(function (x) {
+      if (x.rupture.etat === "indetermine" || !(x.besoin.besoin > 0)) return false;
+      return plan.planLignes.some(function (l) { return l.typeBTC === x.produit.id; });
+    }).length;
+    return { horizon: horizon, besoinTotal: besoinTotal, planifieTotal: planifieTotal, capaciteDisponible: capaciteDisponible, calendrierPossible: plan.calendrierPossible, rupturesCouvertes: rupturesCouvertes };
+  }, [indicateurs, commandes, productions, parametres, maintenant]);
 
   const enregistrerParametres = async function () {
     setMsgParametres("Enregistrement...");
@@ -3137,13 +3805,33 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
             </tbody>
           </table>
         </div>
-        <button className="btn btn-sm btn-gold" style={{ marginTop: 10 }} onClick={() => setDetail({
-          titre: "Plan de production suggéré", sousTitre: "Proposition déterministe, pas un ordre automatique — trie les besoins réels par ordre décroissant.",
-          nomExportCSV: "plan_production.csv",
-          colonnes: [{ label: "Rang", champ: "rang" }, { label: "Type BTC", valeur: (l) => getProduit(l.typeBTC).nom }, { label: "Besoin", valeur: (l) => l.besoin.toLocaleString() }, { label: "Formule", champ: "formule" }],
-          lignes: indicateurs.planProductionSuggere, onLigneClick: (l) => ouvrirObjet("tab", "production")
-        })}>📋 Voir le plan de production suggéré</button>
+
+        {/* Point 34 : synthese du plan, toujours visible sans ouvrir le panneau. */}
+        <div className="pilotage-grid pilotage-grid-4" style={{ marginTop: 14 }}>
+          <StatTile label={"Besoin total (" + resumePlanCockpit.horizon + " j)"} valeur={resumePlanCockpit.besoinTotal.toLocaleString() + " u"} couleur="#F39C12" />
+          <StatTile label="Planifié" valeur={resumePlanCockpit.planifieTotal.toLocaleString() + " u"} couleur="#5DADE2" onClick={() => setShowPlanification(true)} />
+          <StatTile label="Capacité disponible" valeur={resumePlanCockpit.capaciteDisponible != null ? resumePlanCockpit.capaciteDisponible.toLocaleString() + " u" : "Non configurée"} couleur={resumePlanCockpit.capaciteDisponible != null ? "#2ECC71" : "var(--btp-text2)"} onClick={() => setShowPlanification(true)} />
+          {resumePlanCockpit.rupturesCouvertes > 0 && (
+            <StatTile label="Risques de rupture couverts" valeur={String(resumePlanCockpit.rupturesCouvertes)} couleur="#2ECC71" onClick={() => setShowPlanification(true)} />
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+          <button className="btn btn-sm btn-gold" onClick={() => setDetail({
+            titre: "Plan de production suggéré", sousTitre: "Proposition déterministe, pas un ordre automatique — trie les besoins réels par ordre décroissant.",
+            nomExportCSV: "plan_production.csv",
+            colonnes: [{ label: "Rang", champ: "rang" }, { label: "Type BTC", valeur: (l) => getProduit(l.typeBTC).nom }, { label: "Besoin", valeur: (l) => l.besoin.toLocaleString() }, { label: "Formule", champ: "formule" }],
+            lignes: indicateurs.planProductionSuggere, onLigneClick: (l) => ouvrirObjet("tab", "production")
+          })}>📋 Voir le plan de production suggéré</button>
+          <button className="btn btn-sm btn-primary" onClick={() => setShowPlanification(true)}>📅 Planifier la production (7 jours)</button>
+        </div>
       </div>
+
+      {showPlanification && (
+        <PanneauPlanification indicateurs={indicateurs} commandes={commandes} productions={productions} parametres={parametres}
+          maintenant={maintenant} enLigne={enLigne} user={user} userData={userData} ouvrirObjet={ouvrirObjet}
+          onFermer={() => setShowPlanification(false)} />
+      )}
 
       {/* LIGNE 4 — qualite / NC */}
       <div className="pilotage-section">
@@ -4335,6 +5023,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   const [cmdType, setCmdType] = useState("");
   const [cmdQte, setCmdQte] = useState("");
   const [cmdNotes, setCmdNotes] = useState("");
+  const [cmdDateBesoin, setCmdDateBesoin] = useState(""); // Phase 10 (point 11/19) : echeance optionnelle, jamais inventee si absente
   const [msgCmd, setMsgCmd] = useState("");
   const [qteNonConformeInput, setQteNonConformeInput] = React.useState({});
 
@@ -4364,6 +5053,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
       await db.collection("commandes").add({
         numBC: numBC,
         type: cmdType, typNom: catItem.nom||cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        dateBesoin: cmdDateBesoin || null,
         chantierId: chantier.id, chantierNom: chantier.nom, client: chantier.client,
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
         status: "EnAttente", quantiteLivree: 0,
@@ -4372,7 +5062,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
       });
       try { await db.collection("evenements").add({ numBC: numBC, chantier: chantier.nom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+(chantier.nom||""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       setMsgCmd("Commande envoyée ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
-      setCmdQte(""); setCmdNotes(""); setCmdType("");
+      setCmdQte(""); setCmdNotes(""); setCmdType(""); setCmdDateBesoin("");
       setTabFiche("suivi");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
@@ -4508,6 +5198,8 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                   </select>
                   <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Quantite a commander</label>
                   <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:12}} />
+                  <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de besoin sur chantier (optionnel)</label>
+                  <input type="date" value={cmdDateBesoin} onChange={e=>setCmdDateBesoin(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:12,boxSizing:"border-box"}} />
                   <textarea placeholder="Notes pour la Direction (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,resize:"vertical",minHeight:50,marginBottom:12}} />
                   <button onClick={passerCommande} style={{width:"100%",padding:"11px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande a la Direction ↗</button>
                 </div>
@@ -5196,6 +5888,7 @@ function DashboardChef({ user, userData }) {
   const [cmdType, setCmdType] = useState("");
   const [cmdQte, setCmdQte] = useState("");
   const [cmdNotes, setCmdNotes] = useState("");
+  const [cmdDateBesoin, setCmdDateBesoin] = useState(""); // Phase 10 (point 11/19) : echeance optionnelle, jamais inventee si absente
   const [msgCmd, setMsgCmd] = useState("");
   const [msgScan, setMsgScan] = React.useState(""); // Phase 7 (point 16)
   const [showScanChef, setShowScanChef] = React.useState(false);
@@ -5329,6 +6022,7 @@ function DashboardChef({ user, userData }) {
       await db.collection("commandes").add({
         numBC: numBC,
         type: cmdType, typNom: catItemCmd.nom||cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        dateBesoin: cmdDateBesoin || null,
         chantierId: cmdChantierId, chantierNom: ch?ch.nom:"", client: ch?ch.client:"",
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
         status: "EnAttente", quantiteLivree: 0,
@@ -5337,7 +6031,7 @@ function DashboardChef({ user, userData }) {
       });
       try { await db.collection("evenements").add({ numBC: numBC, chantier: ch?ch.nom:"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+(ch?ch.nom:""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       setMsgCmd("Commande envoyee ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
-      setCmdQte(""); setCmdNotes("");
+      setCmdQte(""); setCmdNotes(""); setCmdDateBesoin("");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
 
@@ -5536,6 +6230,8 @@ function DashboardChef({ user, userData }) {
                       <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Quantite a commander</label>
                       <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14}} />
                     </div>
+                    <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de besoin sur chantier (optionnel)</label>
+                    <input type="date" value={cmdDateBesoin} onChange={e=>setCmdDateBesoin(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,boxSizing:"border-box"}} />
                     <textarea placeholder="Notes (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,resize:"vertical",minHeight:50}} />
                     {msgCmd&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msgCmd.includes("envoyee")?"#EBF5FB":"#FFECEC",color:msgCmd.includes("envoyee")?"#1A5276":"#C0392B"}}>{msgCmd}</div>}
                     <button onClick={passerCommande} style={{width:"100%",padding:"10px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande</button>
@@ -6043,9 +6739,40 @@ function DashboardProduction({ user, userData }) {
   const [lotOuvert, setLotOuvert] = React.useState(null);
   const [lots, setLots] = React.useState([]);
   const [controlesEnAttente, setControlesEnAttente] = React.useState([]);
-  var prioriteDonneesProd = { stocks: stocks, lots: lots, controlesEnAttente: controlesEnAttente, ncs: [], maintenant: Date.now() };
+  // Phase 10 (points 28/29/35/36) : lignes du dernier plan de production VALIDE. Charge une seule
+  // fois au montage (requete ciblee, point 49) puis rafraichi localement apres chaque demarrage —
+  // jamais un abonnement temps reel supplementaire pour un ecran qui n'en a pas besoin.
+  const [planLignes, setPlanLignes] = React.useState([]);
+  const [planLigneActive, setPlanLigneActive] = React.useState(null); // ligne en cours de demarrage (prefill du formulaire)
+  const rafraichirPlan = React.useCallback(function () {
+    chargerDernierPlanProduction().then(function (p) { setPlanLignes(p ? p.lignes : []); }).catch(function () { setPlanLignes([]); });
+  }, []);
+  React.useEffect(function () { rafraichirPlan(); }, [rafraichirPlan]);
+  var aujourdHuiISOProd = dateLocaleISO(Date.now());
+  var planDuJour = planLignes.filter(function (l) { return l.statut === "Valide" && dateLocaleISO(l.dateMs) === aujourdHuiISOProd; });
+  var planEnRetard = planLignes.filter(function (l) { return l.statut === "Valide" && dateLocaleISO(l.dateMs) < aujourdHuiISOProd; });
+  var prioriteDonneesProd = { stocks: stocks, lots: lots, controlesEnAttente: controlesEnAttente, ncs: [], maintenant: Date.now(), planLignes: planLignes };
   var compteurPrioritesProd = useCompteurPriorites(prioriteDonneesProd, "resp_production");
-  var ouvrirObjetProd = function (type, idOuObjet) { if (type === "lot") setLotOuvert(idOuObjet); };
+  var ouvrirObjetProd = function (type, idOuObjet) { if (type === "lot") setLotOuvert(idOuObjet); if (type === "tab" && idOuObjet === "production") setTabProd("production"); };
+  var demarrerLignePlan = function (l) {
+    setPlanLigneActive(l); setSaisieType(l.typeBTC); setSaisieQte(String(l.quantitePrevue));
+    setTabProd("production");
+    setTimeout(function () { var el = document.getElementById("prod-form-saisie"); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 50);
+  };
+  // Point 31 : le report est PROPOSE puis VALIDE explicitement par l'utilisateur — jamais deplace
+  // automatiquement. Date proposee par defaut : demain (le responsable peut de toute facon
+  // reprogrammer une nouvelle ligne au prochain recalcul de plan si besoin).
+  var proposerReportLigne = async function (l) {
+    if (!enLigne) { window.alert("🚫 Connexion requise — report impossible hors connexion."); return; }
+    var demain = new Date(); demain.setDate(demain.getDate() + 1); demain.setHours(0, 0, 0, 0);
+    var libelleDate = demain.toLocaleDateString("fr-FR");
+    var okc = window.confirm((l.quantitePrevue || 0).toLocaleString() + " u de " + getProduit(l.typeBTC).nom + " non réalisées — proposer un report au " + libelleDate + " ?");
+    if (!okc) return;
+    try {
+      await reporterLigneProductionPlan(l, demain.getTime(), user, userData);
+      rafraichirPlan();
+    } catch (e) { window.alert("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")"); }
+  };
 
   useEffect(() => {
     var u1 = db.collection("stocks").onSnapshot(snap => {
@@ -6110,6 +6837,16 @@ function DashboardProduction({ user, userData }) {
       var upd = {};
       if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
       await db.collection("stocks").doc(saisieType).set(upd, { merge:true });
+      // Phase 10 (points 28/33) : si cette production demarre une ligne planifiee, on la relie a la
+      // production REELLEMENT enregistree (quantite reelle, jamais la quantite prevue) pour que la
+      // projection future ne compte jamais planifie + realise en double. Echec de liaison = simple
+      // avertissement console (la production, elle, est deja bien enregistree) — jamais un blocage.
+      if (planLigneActive) {
+        terminerLigneProductionPlan(planLigneActive.id, refProductionQSE.id, qte, user, userData)
+          .then(rafraichirPlan)
+          .catch(function (e) { console.error("Erreur liaison plan/production", e); });
+        setPlanLigneActive(null);
+      }
       clearTimeout(alerteLente);
       setEnregistrementEnCours(false);
       setMsg("✓ " + qte.toLocaleString() + " u — production enregistrée, stock mis à jour.");
@@ -6242,6 +6979,43 @@ function DashboardProduction({ user, userData }) {
           <BoutonScanner user={user} userData={userData} libelle="Scanner un lot" />
           {compteurPrioritesProd > 0 && <span className="btp-badge-compteur">{compteurPrioritesProd}</span>}
         </div>
+        {/* Phase 10 (points 28/35) : ecran simplifie "Aujourd'hui : ... -> Démarrer production" —
+            issu du dernier plan VALIDE (jamais calcule a la volee ici, jamais une decision automatique :
+            juste un pre-remplissage du formulaire existant, que le responsable verifie et valide). */}
+        {(planDuJour.length > 0 || planEnRetard.length > 0) && (
+          <div style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 4, color: "#1E8449" }}>📅 Aujourd'hui</h3>
+            <div style={{ fontSize: 11, color: "var(--btp-text2)", marginBottom: 10 }}>Plan calculé à partir du stock, des commandes et de la capacité — à vérifier avant de démarrer.</div>
+            {planDuJour.length === 0 && <div className="pilotage-vide" style={{ marginBottom: 10 }}>Aucune ligne planifiée aujourd'hui.</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
+              {planDuJour.map(function (l) {
+                return (
+                  <div key={l.id} style={{ background: "var(--btp-card)", borderRadius: 12, padding: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderLeft: "4px solid #1E8449" }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{getProduit(l.typeBTC).nom}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: "#1E8449", margin: "4px 0" }}>{(l.quantitePrevue || 0).toLocaleString()} u</div>
+                    <div style={{ fontSize: 11, color: "var(--btp-text2)", marginBottom: 8 }}>{l.libelleTier}{l.motif ? (" — " + l.motif) : ""}</div>
+                    <button className="btn btn-sm" style={{ background: "#1E8449", color: "white", width: "100%" }} onClick={() => demarrerLignePlan(l)}>▶️ Démarrer production</button>
+                  </div>
+                );
+              })}
+            </div>
+            {planEnRetard.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                {planEnRetard.map(function (l) {
+                  return (
+                    <div key={l.id} style={{ background: "#FFF6EC", border: "1px solid #F0A500", borderRadius: 10, padding: "10px 14px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>⚠️ {getProduit(l.typeBTC).nom} — {(l.quantitePrevue || 0).toLocaleString()} u en retard (prévu le {new Date(l.dateMs).toLocaleDateString("fr-FR")})</div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn btn-sm" style={{ background: "#1E8449", color: "white" }} onClick={() => demarrerLignePlan(l)}>Démarrer</button>
+                        <button className="btn btn-sm btn-ghost" onClick={() => proposerReportLigne(l)}>Proposer un report</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
         <div style={{ marginBottom: 18 }}>
           <ModeAujourdhui donnees={prioriteDonneesProd} ouvrirObjet={ouvrirObjetProd} role="resp_production" />
@@ -6273,7 +7047,13 @@ function DashboardProduction({ user, userData }) {
             );
           })}
         </div>
-<div style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
+<div id="prod-form-saisie" style={{background:"var(--btp-card)",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",maxWidth:440,marginBottom:24}}>
+          {planLigneActive && (
+            <div style={{ background: "rgba(30,132,73,.12)", border: "1px solid rgba(30,132,73,.4)", color: "#1E8449", borderRadius: 8, padding: "8px 10px", marginBottom: 12, fontSize: 12, fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span>▶️ Démarrage de la ligne planifiée — vérifiez puis validez.</span>
+              <button className="btn btn-sm btn-ghost" style={{ padding: "2px 8px" }} onClick={() => setPlanLigneActive(null)}>Annuler</button>
+            </div>
+          )}
           <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
             {typesParUrgence.map(function(item) {
               return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - {item.prod.dim}</option>;
