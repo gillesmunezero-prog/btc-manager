@@ -756,7 +756,7 @@ function trierPriorites(liste) {
 var PRIORITES_PAR_ROLE = {
   resp_production: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "lot_pret", "lot_pret_groupe", "lot_bientot_mature", "controle_retard", "controle_retard_groupe", "lot_sans_controle", "lot_sans_controle_groupe"],
   qualite: ["controle_retard", "controle_retard_groupe", "lot_pret", "lot_pret_groupe", "lot_sans_controle", "lot_sans_controle_groupe", "nc_bloquante", "nc_bloquante_groupe", "nc_echeance", "nc_echeance_groupe", "nc_recurrente"],
-  chef_chantier: ["commande_stock_insuffisant", "commande_stock_insuffisant_groupe", "commande_a_preparer", "commande_a_valider", "commande_a_valider_groupe"]
+  chef_chantier: ["commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe", "commande_a_valider", "commande_a_valider_groupe"]
 };
 function filtrerPrioritesParRole(liste, role) {
   var autorises = PRIORITES_PAR_ROLE[role];
@@ -830,43 +830,74 @@ function calculerPrioritesOperationnelles(donnees) {
     });
   }
 
-  // --- COMMANDES validees non livrees : comparees par TYPE (pas commande par commande) car
-  // plusieurs commandes du meme type se disputent le meme stock sec disponible. ---
+  // --- COMMANDES validees non livrees (Phase 6, point 23) : comparees par TYPE, mais desormais en
+  // tenant compte des RESERVATIONS deja posees (commande.quantiteReservee, cache tenu a jour par
+  // reserverCommandeStock/livrerReservation/annulerReservation — aucune lecture Firestore
+  // supplementaire ici, tout vient de "commandes"/"stocks" deja charges : discipline de performance,
+  // point 34). "stock physique != stock reellement disponible" : le moteur distingue maintenant les
+  // deux, sans dupliquer les anciennes alertes de deficit (elles sont remplacees, pas ajoutees). ---
   var commandesValidees = commandes.filter(function (c) { return normTxt(c.status) === normTxt("Validee") && (c.quantite || 0) > (c.quantiteLivree || 0); });
   var parType = {};
   commandesValidees.forEach(function (c) {
-    var reste = (c.quantite || 0) - (c.quantiteLivree || 0);
-    (parType[c.type] = parType[c.type] || []).push({ cmd: c, reste: reste });
+    var resteACouvrir = Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0));
+    var pretALivrer = resteACouvrir === 0 && (c.quantiteReservee || 0) > 0; // reservation active, plus rien a reserver, en attente du depart camion
+    (parType[c.type] = parType[c.type] || []).push({ cmd: c, resteACouvrir: resteACouvrir, pretALivrer: pretALivrer, reserve: c.quantiteReservee || 0 });
   });
   Object.keys(parType).forEach(function (type) {
     var lignes = parType[type];
-    var totalEngage = lignes.reduce(function (a, l) { return a + l.reste; }, 0);
-    var disponible = (stocks[type] || {}).sec || 0;
-    if (totalEngage > disponible) {
-      var deficit = totalEngage - disponible;
-      if (lignes.length === 1) {
+    var reserveType = lignes.reduce(function (a, l) { return a + l.reserve; }, 0);
+    var disponibleAReserverType = Math.max(0, ((stocks[type] || {}).sec || 0) - reserveType);
+    var totalACouvrirType = lignes.reduce(function (a, l) { return a + l.resteACouvrir; }, 0);
+
+    if (totalACouvrirType > disponibleAReserverType) {
+      var deficit = totalACouvrirType - disponibleAReserverType;
+      var lignesADeficit = lignes.filter(function (l) { return l.resteACouvrir > 0; });
+      if (lignesADeficit.length === 1) {
         priorites.push({
-          type: "commande_stock_insuffisant", niveau: "critique",
-          titre: "Commande " + (lignes[0].cmd.numBC || lignes[0].cmd.id) + " (" + (lignes[0].cmd.chantierNom || lignes[0].cmd.client || "-") + ") : besoin " + lignes[0].reste.toLocaleString() + ", disponible " + disponible.toLocaleString() + ", déficit " + deficit.toLocaleString(),
-          explication: "Le stock sec actuel ne couvre pas cette commande validée.",
-          urgence: -100 - deficit, objet: { type: "commande", id: lignes[0].cmd.id }, action: "Voir la commande"
+          type: "commande_reservation_insuffisante", niveau: "critique",
+          titre: "Commande " + (lignesADeficit[0].cmd.numBC || lignesADeficit[0].cmd.id) + " (" + (lignesADeficit[0].cmd.chantierNom || lignesADeficit[0].cmd.client || "-") + ") : à réserver " + lignesADeficit[0].resteACouvrir.toLocaleString() + ", disponible à réserver " + disponibleAReserverType.toLocaleString() + ", déficit " + deficit.toLocaleString(),
+          explication: "Le stock disponible à réserver ne couvre pas cette commande validée (stock physique moins réservations déjà posées).",
+          urgence: -100 - deficit, objet: { type: "commande", id: lignesADeficit[0].cmd.id }, action: "Voir la commande"
         });
       } else {
         priorites.push({
-          type: "commande_stock_insuffisant_groupe", niveau: "critique",
-          titre: lignes.length + " commandes validées de " + getProduit(type).nom + " dépassent le stock disponible (déficit total " + deficit.toLocaleString() + " u)",
-          explication: "Demande cumulée " + totalEngage.toLocaleString() + " u pour " + disponible.toLocaleString() + " u disponibles.",
+          type: "commande_reservation_insuffisante_groupe", niveau: "critique",
+          titre: lignesADeficit.length + " commandes validées de " + getProduit(type).nom + " dépassent le stock disponible à réserver (déficit total " + deficit.toLocaleString() + " u)",
+          explication: "Demande cumulée " + totalACouvrirType.toLocaleString() + " u pour " + disponibleAReserverType.toLocaleString() + " u disponibles à réserver.",
           urgence: -100 - deficit, objet: { type: "tab", id: "stock" }, action: "Voir le stock"
         });
       }
     } else {
-      lignes.forEach(function (l) {
+      var lignesAReserver = lignes.filter(function (l) { return l.resteACouvrir > 0; });
+      if (lignesAReserver.length === 1) {
         priorites.push({
-          type: "commande_a_preparer", niveau: "info",
-          titre: "Commande " + (l.cmd.numBC || l.cmd.id) + " validée, à préparer",
-          explication: (l.cmd.chantierNom || l.cmd.client || "-") + " · " + l.reste.toLocaleString() + " u restant à livrer",
-          urgence: 5, objet: { type: "commande", id: l.cmd.id }, action: "Voir la commande"
+          type: "commande_validee_sans_reservation", niveau: "important",
+          titre: "Commande " + (lignesAReserver[0].cmd.numBC || lignesAReserver[0].cmd.id) + " validée, sans réservation suffisante",
+          explication: (lignesAReserver[0].cmd.chantierNom || lignesAReserver[0].cmd.client || "-") + " · " + lignesAReserver[0].resteACouvrir.toLocaleString() + " u encore à réserver",
+          urgence: 1, objet: { type: "commande", id: lignesAReserver[0].cmd.id }, action: "Réserver le stock"
         });
+      } else if (lignesAReserver.length > 1) {
+        priorites.push({
+          type: "commande_validee_sans_reservation_groupe", niveau: "important",
+          titre: lignesAReserver.length + " commandes validées de " + getProduit(type).nom + " sans réservation suffisante",
+          explication: "", urgence: 1, objet: { type: "tab", id: "stock" }, action: "Réserver le stock"
+        });
+      }
+    }
+
+    var lignesPretes = lignes.filter(function (l) { return l.pretALivrer; });
+    if (lignesPretes.length === 1) {
+      priorites.push({
+        type: "commande_prete_a_livrer", niveau: "info",
+        titre: "Commande " + (lignesPretes[0].cmd.numBC || lignesPretes[0].cmd.id) + " : réservation prête pour livraison",
+        explication: (lignesPretes[0].cmd.chantierNom || lignesPretes[0].cmd.client || "-") + " · " + lignesPretes[0].reserve.toLocaleString() + " u réservées",
+        urgence: 5, objet: { type: "commande", id: lignesPretes[0].cmd.id }, action: "Voir la commande"
+      });
+    } else if (lignesPretes.length > 1) {
+      priorites.push({
+        type: "commande_prete_a_livrer_groupe", niveau: "info",
+        titre: lignesPretes.length + " commandes de " + getProduit(type).nom + " prêtes pour livraison",
+        explication: "", urgence: 5, objet: { type: "tab", id: "stock" }, action: "Voir le stock"
       });
     }
   });
@@ -1259,7 +1290,7 @@ function GlobalSearch(props) {
                 return (
                   <div key={c.id} className="gsearch-item" onClick={() => ouvrir({ type: "commande", id: c.id, label: c.numBC || "(sans n°)", subtitle: c.chantierNom || c.client || "-" })}>
                     <div className="gsearch-item-titre">📋 {c.numBC || "(sans n°)"}</div>
-                    <div className="gsearch-item-sub">{c.chantierNom || c.client || "-"} · {(c.quantite || 0).toLocaleString()} u</div>
+                    <div className="gsearch-item-sub">{c.chantierNom || c.client || "-"} · {(c.quantite || 0).toLocaleString()} u demandé{(c.quantiteReservee || 0) > 0 ? (" · " + c.quantiteReservee.toLocaleString() + " réservé") : ""}{(c.quantiteLivree || 0) > 0 ? (" · " + c.quantiteLivree.toLocaleString() + " livré") : ""} · reste {Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0)).toLocaleString()}</div>
                   </div>
                 );
               })}
@@ -1303,19 +1334,33 @@ function GlobalSearch(props) {
 // ecran consulte en continu (point 22).
 function DiagnosticStockPhase5({ stocks, user, userData }) {
   const [ecarts, setEcarts] = React.useState(null);
+  const [anomalies, setAnomalies] = React.useState(null);
   const [chargement, setChargement] = React.useState(false);
   const [msgMigration, setMsgMigration] = React.useState("");
   const [migrationEnCours, setMigrationEnCours] = React.useState(false);
+  const [msgReparation, setMsgReparation] = React.useState({}); // lot -> message
 
+  // Point 19 : donnees deja chargees une fois (pas d'ecouteur permanent), reutilisees pour le
+  // tableau de reconciliation ET pour le diagnostic d'anomalies — un seul jeu de requetes ciblees.
   const calculerDiagnostic = async () => {
     setChargement(true);
     try {
-      const mvtSnap = await db.collection("stock_mouvements").limit(2000).get();
+      const [mvtSnap, lotsSnap, allocSnap, cmdSnap] = await Promise.all([
+        db.collection("stock_mouvements").limit(3000).get(),
+        db.collection("qse_lots").limit(1000).get(),
+        db.collection("stock_allocations").limit(2000).get(),
+        db.collection("commandes").limit(1000).get()
+      ]);
       const mouvements = mvtSnap.docs.map((d) => d.data());
-      const res = CATALOGUE.map((prod) => reconcilierStockType(prod.id, stocks, mouvements)).filter((r) => r.ancien > 0 || r.calculeDepuisMouvements !== 0);
+      const lots = lotsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      const allocations = allocSnap.docs.map((d) => d.data());
+      const commandes = cmdSnap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      const res = CATALOGUE.map((prod) => reconcilierStockType(prod.id, stocks, mouvements, lots, allocations))
+        .filter((r) => r.ancien > 0 || r.calculeDepuisMouvements !== 0 || r.reserve > 0);
       setEcarts(res);
+      setAnomalies(diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, stocks));
     } catch (e) {
-      setEcarts([]);
+      setEcarts([]); setAnomalies([]);
     } finally {
       setChargement(false);
     }
@@ -1334,9 +1379,30 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
     }
   };
 
+  // Point 20 : reparation controlee — ne touche QUE le cache, avec confirmation et tracabilite.
+  const reparerCache = async (a) => {
+    if (!window.confirm("Recalculer le cache du lot " + a.lot + " à " + a.attendu.toLocaleString() + " u (valeur déduite du grand livre) ?")) return;
+    try {
+      await reparerCacheLot(a.lot, a.attendu, user, userData);
+      setMsgReparation(function (prev) { return Object.assign({}, prev, { [a.lot]: "✅ Cache recalculé." }); });
+    } catch (e) {
+      setMsgReparation(function (prev) { return Object.assign({}, prev, { [a.lot]: "❌ Erreur : " + e.message }); });
+    }
+  };
+
+  const libellesAnomalie = {
+    cache_incoherent: "Cache de disponibilité incohérent avec le grand livre",
+    stock_negatif: "Stock physique négatif sur le lot",
+    reservation_superieure_au_disponible: "Réservations actives supérieures au stock physique",
+    mouvement_sans_allocation_correspondante: "Mouvements de livraison sans allocation correspondante",
+    commande_livree_sans_mouvement: "Commande livrée sans mouvement de stock",
+    commande_livraison_incoherente: "Quantité livrée de la commande incohérente avec ses allocations",
+    compteur_negatif: "Compteur agrégé négatif"
+  };
+
   return (
     <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginTop: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
-      <h4 style={{ marginBottom: 6, color: "var(--btp-gold)" }}>🔎 Diagnostic stock (Phase 5 — grand livre de traçabilité par lot)</h4>
+      <h4 style={{ marginBottom: 6, color: "var(--btp-gold)" }}>🔎 Diagnostic stock (grand livre de traçabilité par lot)</h4>
       <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 12 }}>
         Outil de transition, réservé à la Direction. Un écart n'est pas forcément une anomalie : il correspond souvent au stock antérieur à l'activation du suivi par lot, jamais individuellement journalisé.
       </p>
@@ -1348,17 +1414,49 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
       <p style={{ fontSize: 11, color: "var(--btp-text2)", marginBottom: 12, fontStyle: "italic" }}>
         "Initialiser le suivi par lot" fixe, pour chaque lot QSE déjà existant qui n'a pas encore de suivi précis, sa disponibilité de départ = sa quantité produite. Aucun mouvement n'a jamais pu réduire un lot avant cette fonctionnalité, donc cette valeur est fiable. Action idempotente : cliquer plusieurs fois ne modifie pas les lots déjà initialisés, et ne touche à aucune donnée de production ou de qualité.
       </p>
+
+      {anomalies != null && (
+        <div style={{ marginBottom: 16, padding: "8px 12px", borderRadius: 8, background: anomalies.length === 0 ? "rgba(46,204,113,.12)" : "rgba(243,156,18,.12)", border: "1px solid " + (anomalies.length === 0 ? "#2ecc71" : "#F39C12") }}>
+          <strong>{anomalies.length === 0 ? "🟢 Santé du stock : cohérent" : ("🟠 Santé du stock : " + anomalies.length + " anomalie(s) à vérifier")}</strong>
+        </div>
+      )}
+      {anomalies != null && anomalies.length > 0 && (
+        <table className="btp-table" style={{ marginBottom: 16 }}>
+          <thead><tr><th>Lot / Commande</th><th>Type d'écart</th><th>Attendu</th><th>Trouvé</th><th></th></tr></thead>
+          <tbody>
+            {anomalies.map(function (a, i) {
+              return (
+                <tr key={i}>
+                  <td>{a.lot || a.numBC || a.typeBTC || "—"}</td>
+                  <td>{libellesAnomalie[a.type] || a.type}</td>
+                  <td>{a.attendu != null ? a.attendu.toLocaleString() : "—"}</td>
+                  <td>{a.trouve != null ? a.trouve.toLocaleString() : "—"}</td>
+                  <td>
+                    {a.type === "cache_incoherent"
+                      ? <button className="btn btn-sm btn-ghost" onClick={() => reparerCache(a)}>Recalculer le cache</button>
+                      : <span style={{ fontSize: 11, color: "var(--btp-text2)" }}>{a.action}</span>}
+                    {msgReparation[a.lot] && <div style={{ fontSize: 11, marginTop: 4, color: msgReparation[a.lot].indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgReparation[a.lot]}</div>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
       {ecarts && ecarts.length === 0 && <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucun écart notable détecté.</p>}
       {ecarts && ecarts.length > 0 && (
         <table className="btp-table">
-          <thead><tr><th>Type BTC</th><th>Compteur actuel</th><th>Calculé depuis le grand livre</th><th>Écart</th></tr></thead>
+          <thead><tr><th>Type BTC</th><th>Physique</th><th>Traçable</th><th>Historique non traçable</th><th>Réservé</th><th>Disponible</th></tr></thead>
           <tbody>
             {ecarts.map((r) => (
               <tr key={r.type}>
                 <td>{getProduit(r.type).nom}</td>
-                <td>{r.ancien.toLocaleString()} u</td>
-                <td>{r.calculeDepuisMouvements.toLocaleString()} u</td>
-                <td style={{ fontWeight: 700, color: r.ecart === 0 ? "#2ecc71" : "var(--btp-gold)" }}>{r.ecart > 0 ? "+" : ""}{r.ecart.toLocaleString()} u</td>
+                <td>{r.physique.toLocaleString()} u</td>
+                <td>{r.tracable.toLocaleString()} u</td>
+                <td>{r.historiqueNonTracable.toLocaleString()} u</td>
+                <td style={{ color: "#5DADE2" }}>{r.reserve.toLocaleString()} u</td>
+                <td style={{ fontWeight: 700, color: "#2ecc71" }}>{r.disponible.toLocaleString()} u</td>
               </tr>
             ))}
           </tbody>
@@ -1447,6 +1545,7 @@ function DashboardDirection({ user, userData }) {
   const [editQte, setEditQte] = React.useState("");
   const [editPhase, setEditPhase] = React.useState("sec");
   const [editMsg, setEditMsg] = React.useState("");
+  const [editToken, setEditToken] = React.useState(""); // Phase 6 : identifiant stable de correction (idempotence)
   const [utilisateurs, setUtilisateurs] = useState([]);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1676,13 +1775,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     setEditQte(String(p.quantite || ""));
     setEditPhase(p.phase || "sec");
     setEditMsg("");
-  }
-  async function ajusterStock(type, phase, delta){
-    if (!type || !delta) return;
-    var st = stocks[type] || {};
-    var upd = {};
-    if (phase === "sec") { upd.sec = Math.max(0,(st.sec||0)+delta); } else { upd.sechage = Math.max(0,(st.sechage||0)+delta); }
-    await db.collection("stocks").doc(type).set(upd, { merge:true });
+    setEditToken(p.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2)); // Phase 6
   }
   async function sauvegarderEditProd(){
     if (!editProd) return;
@@ -1693,11 +1786,10 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     if (editDate) { var parts = editDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
     setEditMsg("Enregistrement...");
     try {
-      await ajusterStock(editProd.type, editProd.phase, -(editProd.quantite||0));
-      await ajusterStock(editType, editPhase, qte);
-      await db.collection("productions").doc(editProd.id).update({
-        type: editType, quantite: qte, phase: editPhase, date: dateFr
-      });
+      // Phase 6 : passe par la fonction metier centrale (corrigerProductionLot) — jamais de
+      // decrementation directe de stocks/{type}. Cree un mouvement CORRECTION_PRODUCTION traçable
+      // et refuse la correction si elle rendrait le stock du lot negatif (deja livre/reserve/perdu).
+      await corrigerProductionLot(editProd, editType, qte, editPhase, dateFr, editToken, user, userData);
       setEditMsg("✅ Production modifiee.");
       setTimeout(function(){ setEditProd(null); setEditMsg(""); }, 900);
     } catch (e) { setEditMsg("❌ Erreur: " + e.message); }
@@ -1712,8 +1804,10 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       await auth.currentUser.reauthenticateWithCredential(cred);
     } catch (e) { window.alert("Mot de passe incorrect. Suppression annulee."); return; }
     try {
-      await ajusterStock(p.type, p.phase, -(p.quantite||0));
-      await db.collection("productions").doc(p.id).delete();
+      // Phase 6 : passe par annulerProductionLot — bloque si une partie du lot a deja ete
+      // livree/reservee/perdue, et trace un mouvement ANNULATION_PRODUCTION plutot que de
+      // simplement retirer la quantite du compteur agrege.
+      await annulerProductionLot(p, user, userData);
       if (editProd && editProd.id === p.id) { setEditProd(null); }
     } catch (e) { window.alert("Erreur: " + e.message); }
   }
@@ -2683,7 +2777,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                         <div style={{fontWeight:600,fontSize:13}}>{getProduit(c.type).nom} — {tot.toLocaleString()} u</div>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:10,background:couleur,color:"white"}}>{c.status}</span>
                       </div>
-                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:3}}>Livre: {livree.toLocaleString()} | Reste: <strong style={{color:reste===0?"#2ECC71":"#EC7063"}}>{reste.toLocaleString()}</strong> | Confirme par chef: {confirme.toLocaleString()}</div>
+                      <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:3}}>Réservé: {(c.quantiteReservee||0).toLocaleString()} | Livré: {livree.toLocaleString()} | Reste à livrer: <strong style={{color:reste===0?"#2ECC71":"#EC7063"}}>{reste.toLocaleString()}</strong> | Confirmé par chef: {confirme.toLocaleString()}</div>
                     </div>
                   );
                 })
@@ -2986,21 +3080,25 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot }) {
 
           {tabFiche==="lots"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:6,color:"var(--btp-orange)"}}>Traçabilité inverse : lots livrés sur ce chantier</h4>
-              <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Uniquement les livraisons enregistrées depuis l'activation du suivi de stock par lot (Phase 5) — les livraisons antérieures ne sont pas listées ici.</p>
+              <h4 style={{marginBottom:6,color:"var(--btp-orange)"}}>Traçabilité inverse : lots réservés/livrés sur ce chantier</h4>
+              <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Uniquement les réservations/livraisons enregistrées depuis l'activation du suivi de stock par lot (Phase 5) — les livraisons antérieures ne sont pas listées ici.</p>
               {lotsUtilises===null && <p style={{color:"var(--btp-text2)"}}>Chargement…</p>}
-              {lotsUtilises!==null && lotsUtilises.length===0 && <p style={{color:"var(--btp-text2)"}}>Aucun lot tracé livré sur ce chantier pour l'instant.</p>}
+              {lotsUtilises!==null && lotsUtilises.length===0 && <p style={{color:"var(--btp-text2)"}}>Aucun lot tracé réservé/livré sur ce chantier pour l'instant.</p>}
               {lotsUtilises && lotsUtilises.length>0 && (
                 <table className="btp-table">
-                  <thead><tr><th>Lot</th><th>Type BTC</th><th>Quantité</th><th>Statut</th><th></th></tr></thead>
+                  <thead><tr><th>Lot</th><th>Type BTC</th><th>Réservé</th><th>Livré</th><th>Statut</th><th></th></tr></thead>
                   <tbody>
                     {lotsUtilises.map(function(a){
+                      var libelles = { Reservee: "📌 Réservée", PartiellementLivree: "🚚 Partiellement livrée", Livree: "✅ Livrée", Annulee: "↩️ Annulée" };
+                      var qteReservee = a.quantiteReservee != null ? a.quantiteReservee : (a.quantite || 0); // compat Phase 5
+                      var qteLivree = a.quantiteLivree != null ? a.quantiteLivree : (a.statut === "Livree" ? qteReservee : 0);
                       return (
                         <tr key={a.id}>
                           <td>{a.numeroLot || "Stock historique non traçable"}</td>
                           <td>{getProduit(a.typeBTC).nom}</td>
-                          <td>{(a.quantite||0).toLocaleString()} u</td>
-                          <td>{a.statut==="Livree"?"✅ Livrée":a.statut==="Annulee"?"↩️ Annulée":a.statut}</td>
+                          <td>{qteReservee.toLocaleString()} u</td>
+                          <td>{qteLivree.toLocaleString()} u</td>
+                          <td>{libelles[a.statut] || a.statut}</td>
                           <td>{a.numeroLot && onOuvrirLot && <button className="btn btn-sm btn-ghost" onClick={()=>onOuvrirLot(a.numeroLot)}>Voir le lot</button>}</td>
                         </tr>
                       );
@@ -3698,8 +3796,16 @@ function DashboardStock({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [qteEnvoi, setQteEnvoi] = useState({}); // par cmdId
   const [productions, setProductions] = React.useState([]);
-  const [fifoParCmd, setFifoParCmd] = React.useState({}); // cmdId -> { chargement, lignes, deficit, utiliseHistorique, erreur }
-  const [msgLivraison, setMsgLivraison] = React.useState({}); // cmdId -> message
+  const [fifoParCmd, setFifoParCmd] = React.useState({}); // cmdId -> { chargement, lignes, deficit, utiliseHistorique, erreur, token }
+  const [msgLivraison, setMsgLivraison] = React.useState({}); // cmdId -> message (reservation)
+  const [allocationsParCmd, setAllocationsParCmd] = React.useState({}); // cmdId -> [allocation]
+  const [msgAllocLivraison, setMsgAllocLivraison] = React.useState({}); // allocId -> message
+  const [chantiers, setChantiers] = React.useState([]);
+  const [editCmd, setEditCmd] = React.useState(null);
+  const [editCmdType, setEditCmdType] = React.useState("");
+  const [editCmdQte, setEditCmdQte] = React.useState("");
+  const [editCmdChantierId, setEditCmdChantierId] = React.useState("");
+  const [msgEditCmd, setMsgEditCmd] = React.useState("");
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -3711,21 +3817,41 @@ function DashboardStock({ user, userData }) {
     var u3 = db.collection("productions").orderBy("timestamp","desc").onSnapshot(snap => {
       setProductions(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
-    return () => { u1(); u2(); u3(); };
+    var u4 = db.collection("chantiers").onSnapshot(snap => {
+      setChantiers(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
+    });
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
-  // Calcule la proposition FIFO pour une commande des que l'utilisateur saisit une quantite.
-  // Requetes ciblees a la demande (pas d'ecouteur permanent) : coherent avec la discipline de
-  // performance des phases precedentes.
+  // Charge les reservations d'une commande precise (requete CIBLEE, pas d'ecouteur permanent sur
+  // tout le grand livre — discipline de performance, point 34). Regenere un token de livraison
+  // stable par allocation a chaque chargement, pour l'idempotence du prochain clic "Confirmer".
+  const chargerAllocationsCmd = async (cmdId) => {
+    var snap = await db.collection("stock_allocations").where("commandeId","==",cmdId).get();
+    var allocs = snap.docs
+      .map(function (d) { return Object.assign({ id: d.id, _token: d.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2), _qte: "" }, d.data()); })
+      .filter(function (a) { return a.statut === "Reservee" || a.statut === "PartiellementLivree"; });
+    setAllocationsParCmd(function (prev) { return Object.assign({}, prev, { [cmdId]: allocs }); });
+  };
+
+  React.useEffect(() => {
+    commandes.forEach(function (cmd) {
+      if ((cmd.quantiteReservee || 0) > 0 && !allocationsParCmd[cmd.id]) { chargerAllocationsCmd(cmd.id); }
+    });
+  }, [commandes]);
+
+  // Calcule la proposition FIFO pour une commande des que l'utilisateur saisit une quantite (simple
+  // simulation, ne reserve rien). Requetes ciblees a la demande (pas d'ecouteur permanent).
   const calculerPropositionFIFO = async (cmd, qte) => {
     setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: { chargement: true } }); });
     try {
       var lotsEligibles = await chargerLotsDisponiblesPourType(cmd.type);
       var totalTracable = lotsEligibles.reduce(function (a, l) { return a + l.disponible; }, 0);
       var s = stocks[cmd.type] || {};
-      var stockHistorique = Math.max(0, (s.sec || 0) - totalTracable);
+      var stockHistorique = Math.max(0, (s.sec || 0) - totalTracable - (s.historiqueReserve || 0));
       var proposition = proposerAllocationFIFO(lotsEligibles, qte, stockHistorique);
-      setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: Object.assign({ chargement: false }, proposition) }); });
+      var token = cmd.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+      setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: Object.assign({ chargement: false, token: token }, proposition) }); });
     } catch (e) {
       setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: { chargement: false, erreur: e.message } }); });
     }
@@ -3744,22 +3870,113 @@ function DashboardStock({ user, userData }) {
     });
   };
 
-  const enregistrerLivraison = async (cmd) => {
+  // Etape "Réserver" (point 8) : bloque le stock sans le sortir physiquement.
+  const declencherReservation = async (cmd) => {
     var etat = fifoParCmd[cmd.id];
     if (!etat || !etat.lignes || etat.lignes.length === 0) return;
-    setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "Enregistrement..." }); });
+    setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "Réservation..." }); });
     try {
-      await enregistrerLivraisonAvecAllocation(cmd, etat.lignes, user, userData);
+      await reserverCommandeStock(cmd, etat.lignes, etat.token, user, userData);
       var newQte = Object.assign({}, qteEnvoi); delete newQte[cmd.id]; setQteEnvoi(newQte);
       var newFifo = Object.assign({}, fifoParCmd); delete newFifo[cmd.id]; setFifoParCmd(newFifo);
-      setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "✅ Livraison enregistrée." }); });
+      setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "✅ Réservation enregistrée." }); });
+      await chargerAllocationsCmd(cmd.id);
     } catch (e) {
       setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "❌ Erreur : " + e.message }); });
     }
   };
 
+  // Etape "Confirmer livraison" (point 8/10) : sortie physique reelle, totale ou partielle, d'une
+  // reservation existante.
+  const livrerAlloc = async (cmdId, alloc) => {
+    var reste = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
+    var qte = parseInt(alloc._qte, 10);
+    if (!qte || qte <= 0) qte = reste;
+    if (qte > reste) qte = reste;
+    setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "Enregistrement..." }); });
+    try {
+      await livrerReservation(alloc, qte, alloc._token, user, userData);
+      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "✅ Livré." }); });
+      await chargerAllocationsCmd(cmdId);
+    } catch (e) {
+      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "❌ Erreur : " + e.message }); });
+    }
+  };
+
+  const annulerAlloc = async (cmdId, alloc) => {
+    var reste = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
+    if (!window.confirm("Annuler cette réservation de " + reste.toLocaleString() + " u ? Le stock redeviendra disponible.")) return;
+    try {
+      await annulerReservation(alloc, null, "Annulation manuelle (Responsable Stock)", user, userData);
+      await chargerAllocationsCmd(cmdId);
+    } catch (e) {
+      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "❌ Erreur : " + e.message }); });
+    }
+  };
+
+  const modifierQteAllocInput = (cmdId, allocId, v) => {
+    setAllocationsParCmd(function (prev) {
+      var liste = (prev[cmdId] || []).map(function (a) { return a.id === allocId ? Object.assign({}, a, { _qte: v }) : a; });
+      return Object.assign({}, prev, { [cmdId]: liste });
+    });
+  };
+
+  const ouvrirEditCmd = (cmd) => {
+    setEditCmd(cmd); setEditCmdType(cmd.type); setEditCmdQte(String(cmd.quantite || "")); setEditCmdChantierId(cmd.chantierId || ""); setMsgEditCmd("");
+  };
+
+  // Points 12/13/32 : modifie quantite/type/chantier d'une commande deja validee. Bloque le
+  // changement de type si des reservations existent (verifie cote fonction metier centrale).
+  const sauvegarderEditCmd = async () => {
+    if (!editCmd) return;
+    var qte = parseInt(editCmdQte, 10);
+    if (!(qte > 0)) { setMsgEditCmd("Quantité invalide"); return; }
+    setMsgEditCmd("Enregistrement...");
+    try {
+      var chantierChoisi = chantiers.find(function (c) { return c.id === editCmdChantierId; });
+      var allocsActuelles = allocationsParCmd[editCmd.id] || [];
+      await modifierCommandeStock(editCmd, editCmdType, qte, editCmdChantierId || null, chantierChoisi ? chantierChoisi.nom : editCmd.chantierNom, allocsActuelles, user, userData);
+      setMsgEditCmd("✅ Commande modifiée.");
+      setTimeout(function () { setEditCmd(null); setMsgEditCmd(""); }, 900);
+    } catch (e) { setMsgEditCmd("❌ Erreur : " + e.message); }
+  };
+
+  // Point 12 : libere explicitement l'exces de reservation apres une reduction de commande.
+  const reajusterExces = async (cmd) => {
+    try {
+      await reajusterReservationCommande(cmd, allocationsParCmd[cmd.id] || [], cmd.quantite, user, userData);
+      await chargerAllocationsCmd(cmd.id);
+    } catch (e) { window.alert("Erreur : " + e.message); }
+  };
+
   return (
     <div className="btp-app">
+      {editCmd && (
+        <div className="btp-modal-overlay" onClick={() => setEditCmd(null)}>
+          <div className="btp-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="btp-modal-title" style={{ marginBottom: 10 }}>✏️ Modifier la commande {editCmd.numBC || ""}</div>
+            <label className="btp-label">Type BTC</label>
+            <select className="btp-input" value={editCmdType} onChange={(e) => setEditCmdType(e.target.value)} style={{ marginBottom: 10, width: "100%" }}>
+              {CATALOGUE.map(function (p) { return <option key={p.id} value={p.id}>{p.nom}</option>; })}
+            </select>
+            {editCmdType !== editCmd.type && ((allocationsParCmd[editCmd.id] || []).length > 0 || (editCmd.quantiteReservee || 0) > 0 || (editCmd.quantiteLivree || 0) > 0) && (
+              <div style={{ fontSize: 12, color: "#F1948A", marginBottom: 10 }}>⚠️ Cette commande a déjà des réservations/livraisons en {getProduit(editCmd.type).nom} : le changement de type sera refusé tant qu'elles ne sont pas annulées.</div>
+            )}
+            <label className="btp-label">Quantité commandée</label>
+            <input type="number" min="1" className="btp-input" value={editCmdQte} onChange={(e) => setEditCmdQte(e.target.value)} style={{ marginBottom: 10, width: "100%" }} />
+            <label className="btp-label">Chantier</label>
+            <select className="btp-input" value={editCmdChantierId} onChange={(e) => setEditCmdChantierId(e.target.value)} style={{ marginBottom: 14, width: "100%" }}>
+              <option value="">{editCmd.chantierNom || "—"}</option>
+              {chantiers.map(function (c) { return <option key={c.id} value={c.id}>{c.nom}</option>; })}
+            </select>
+            {msgEditCmd && <div style={{ fontSize: 12, marginBottom: 10, color: msgEditCmd.indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgEditCmd}</div>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} onClick={sauvegarderEditCmd}>Enregistrer</button>
+              <button className="btn btn-ghost btn-full" onClick={() => setEditCmd(null)}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="btp-header">
         <div className="btp-header-logo">
           <div className="btp-header-logo-icon">📦</div>
@@ -3774,7 +3991,7 @@ function DashboardStock({ user, userData }) {
         </div>
       </div>
       <div className="btp-content">
-        
+
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:28}}>
           {CATALOGUE.map(prod=>{
@@ -3790,6 +4007,7 @@ function DashboardStock({ user, userData }) {
 </div>
 {calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {calcSechageActif(productions,prod.id).toLocaleString()} u pas encore matures</div>}
 <div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:2}}>Total: {total.toLocaleString()}</div>
+{(s.historiqueReserve||0) > 0 && <div style={{fontSize:10,color:"var(--btp-text2)",marginTop:2}}>dont {(s.historiqueReserve||0).toLocaleString()} u historique réservées</div>}
               </div>
             );
           })}
@@ -3799,21 +4017,28 @@ function DashboardStock({ user, userData }) {
           commandes.map(cmd=>{
             var livree = cmd.quantiteLivree || 0;
             var total = cmd.quantite || 0;
+            var reserve = cmd.quantiteReservee || 0;
             var resteCmd = Math.max(0, total - livree);
-            var pct = total>0?Math.min(100,Math.round(livree/total*100)):0;
+            var resteAReserver = Math.max(0, total - livree - reserve);
+            var reserveExces = Math.max(0, reserve - resteCmd);
+            var pctLivre = total>0?Math.min(100,Math.round(livree/total*100)):0;
+            var pctReserve = total>0?Math.min(100-pctLivre,Math.round(reserve/total*100)):0;
+            var allocs = allocationsParCmd[cmd.id] || [];
             return(
               <div key={cmd.id} style={{background:"var(--btp-card)",borderRadius:12,padding:18,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid #2980B9"}}>
                 <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12,alignItems:"flex-start"}}>
                   <div>
-                    <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom}</div>
+                    <div style={{fontWeight:700,fontSize:15}}>{getProduit(cmd.type).nom} {cmd.numBC?("· "+cmd.numBC):""}</div>
                     <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>{getProduit(cmd.type).dim}</div>
                     <div style={{fontSize:13,color:"var(--btp-text)",marginTop:4}}>Chantier: <strong>{cmd.chantierNom||cmd.client||"-"}</strong></div>
                     <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Valide par: {cmd.validePar||"Direction"}</div>
+                    <button className="btn btn-sm btn-ghost" style={{marginTop:6}} onClick={()=>ouvrirEditCmd(cmd)}>✏️ Modifier la commande</button>
                   </div>
                   <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:13,color:"var(--btp-text2)"}}>Commande totale: <strong>{total.toLocaleString()} u</strong></div>
-                    <div style={{fontSize:13,color:"var(--btp-green)"}}>Deja livre: <strong>{livree.toLocaleString()} u</strong></div>
-                    <div style={{fontSize:14,fontWeight:700,color:"#EC7063",marginTop:4}}>Reste a livrer: <strong>{resteCmd.toLocaleString()} u</strong>
+                    <div style={{fontSize:13,color:"var(--btp-text2)"}}>Demandé: <strong>{total.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:13,color:"#5DADE2"}}>Réservé: <strong>{reserve.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:13,color:"var(--btp-green)"}}>Livré: <strong>{livree.toLocaleString()} u</strong></div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#EC7063",marginTop:4}}>Reste à livrer: <strong>{resteCmd.toLocaleString()} u</strong>
 {(function(){
 var sActif=calcSechageActif(productions,cmd.type);
 var sStock=stocks[cmd.type]||{};
@@ -3826,23 +4051,52 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
 })()}</div>
                   </div>
                 </div>
-                <div style={{background:"#EEE",borderRadius:4,height:8,marginBottom:8}}>
-                  <div style={{height:8,borderRadius:4,background:pct===100?"#27AE60":"#2980B9",width:pct+"%"}}></div>
+                <div style={{background:"#EEE",borderRadius:4,height:8,marginBottom:8,display:"flex",overflow:"hidden"}}>
+                  <div style={{height:8,background:"#27AE60",width:pctLivre+"%"}}></div>
+                  <div style={{height:8,background:"#5DADE2",width:pctReserve+"%"}}></div>
                 </div>
-                <div style={{fontSize:11,color:"var(--btp-text2)",marginBottom:12}}>{pct}% livre ({livree.toLocaleString()} / {total.toLocaleString()})</div>
-                {resteCmd > 0 && (
+                <div style={{fontSize:11,color:"var(--btp-text2)",marginBottom:12}}>{livree.toLocaleString()} livrées + {reserve.toLocaleString()} réservées / {total.toLocaleString()}{resteAReserver>0?(" · "+resteAReserver.toLocaleString()+" u à couvrir"):""}</div>
+
+                {reserveExces > 0 && (
+                  <div style={{marginBottom:12,padding:"8px 12px",background:"#FFF3CD",border:"1px solid #F39C12",borderRadius:8,fontSize:12,color:"#7D5A00",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <span>⚠️ {reserveExces.toLocaleString()} unités sont réservées en excès sur cette commande (quantité réduite).</span>
+                    <button className="btn btn-sm" style={{background:"#F39C12",color:"white"}} onClick={()=>reajusterExces(cmd)}>Réajuster la réservation</button>
+                  </div>
+                )}
+
+                {allocs.length > 0 && (
+                  <div style={{marginBottom:14,background:"var(--btp-card2)",borderRadius:8,padding:12}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"var(--btp-text2)",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Réservations actives ({allocs.length})</div>
+                    {allocs.map(function(a){
+                      var resteAlloc = (a.quantiteReservee||0)-(a.quantiteLivree||0);
+                      return (
+                        <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:13,flexWrap:"wrap"}}>
+                          <span style={{flex:1,minWidth:180}}>{a.numeroLot ? ("🏷️ "+a.numeroLot) : "📦 Stock historique non traçable"} — réservé {(a.quantiteReservee||0).toLocaleString()} u{(a.quantiteLivree||0)>0?(", livré "+a.quantiteLivree.toLocaleString()+" u"):""}, reliquat <strong>{resteAlloc.toLocaleString()} u</strong></span>
+                          <input type="number" min="1" max={resteAlloc} placeholder={String(resteAlloc)} value={a._qte}
+                            onChange={e=>modifierQteAllocInput(cmd.id, a.id, e.target.value)}
+                            style={{width:80,padding:"4px 8px",borderRadius:6,border:"1px solid var(--btp-border)",textAlign:"right"}} />
+                          <button className="btn btn-sm" style={{background:"#1E8449",color:"white"}} onClick={()=>livrerAlloc(cmd.id, a)}>🚚 Confirmer livraison</button>
+                          <button className="btn btn-sm btn-ghost" onClick={()=>annulerAlloc(cmd.id, a)}>✖ Annuler</button>
+                          {msgAllocLivraison[a.id] && <div style={{width:"100%",fontSize:11,color:msgAllocLivraison[a.id].indexOf("Erreur")>=0?"#EC7063":"#2ECC71"}}>{msgAllocLivraison[a.id]}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {resteAReserver > 0 && (
                   <div>
                     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                       <div style={{flex:1}}>
-                        <label style={{fontSize:12,fontWeight:600,color:"#145A32",display:"block",marginBottom:4}}>Quantite a livrer :</label>
-                        <input type="number" min="1" max={resteCmd} placeholder={"Max "+resteCmd.toLocaleString()}
+                        <label style={{fontSize:12,fontWeight:600,color:"#145A32",display:"block",marginBottom:4}}>Quantité à réserver :</label>
+                        <input type="number" min="1" max={resteAReserver} placeholder={"Max "+resteAReserver.toLocaleString()}
                           value={qteEnvoi[cmd.id]||""}
-                          onChange={e=>{ var v=parseInt(e.target.value)||0; var mx=Math.max(0,(cmd.quantite||0)-(cmd.quantiteLivree||0)); setQteEnvoi(Object.assign({},qteEnvoi,{[cmd.id]:v>mx?mx:(v||"")})); }}
+                          onChange={e=>{ var v=parseInt(e.target.value)||0; setQteEnvoi(Object.assign({},qteEnvoi,{[cmd.id]:v>resteAReserver?resteAReserver:(v||"")})); }}
                           style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"2px solid #1E8449",fontSize:14}} />
                       </div>
                       <button onClick={()=>calculerPropositionFIFO(cmd, parseInt(qteEnvoi[cmd.id])||0)}
                         disabled={!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0}
-                        style={{background:"#2980B9",color:"white",border:"none",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,marginTop:20,opacity:(!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0)?0.5:1}}>🔍 Préparer la livraison</button>
+                        style={{background:"#2980B9",color:"white",border:"none",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,marginTop:20,opacity:(!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0)?0.5:1}}>🔍 Préparer</button>
                     </div>
 
                     {fifoParCmd[cmd.id] && fifoParCmd[cmd.id].chargement && <div style={{marginTop:10,fontSize:12,color:"var(--btp-text2)"}}>Calcul de la proposition…</div>}
@@ -3862,14 +4116,14 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
                           );
                         })}
                         {fifoParCmd[cmd.id].utiliseHistorique > 0 && (
-                          <div style={{fontSize:12,color:"var(--btp-gold)",fontWeight:700,marginTop:4}}>⚠️ Cette livraison utilise {fifoParCmd[cmd.id].utiliseHistorique.toLocaleString()} unités de stock historique non traçable.</div>
+                          <div style={{fontSize:12,color:"var(--btp-gold)",fontWeight:700,marginTop:4}}>⚠️ Cette réservation utilise {fifoParCmd[cmd.id].utiliseHistorique.toLocaleString()} unités de stock historique non traçable.</div>
                         )}
                         {fifoParCmd[cmd.id].deficit > 0 && (
-                          <div style={{fontSize:12,color:"#EC7063",fontWeight:700,marginTop:4}}>🔴 Déficit : {fifoParCmd[cmd.id].deficit.toLocaleString()} u non couvertes par le stock disponible.</div>
+                          <div style={{fontSize:12,color:"#EC7063",fontWeight:700,marginTop:4}}>🔴 Déficit : {fifoParCmd[cmd.id].deficit.toLocaleString()} u non couvertes par le stock disponible à réserver.</div>
                         )}
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
                           <span style={{fontSize:12,color:"var(--btp-text2)"}}>Total : <strong style={{color:"white"}}>{fifoParCmd[cmd.id].lignes.reduce(function(a,l){return a+l.quantite;},0).toLocaleString()} u</strong></span>
-                          <button onClick={()=>enregistrerLivraison(cmd)} disabled={msgLivraison[cmd.id]==="Enregistrement..."} style={{background:"#1E8449",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,opacity:msgLivraison[cmd.id]==="Enregistrement..."?0.6:1}}>{msgLivraison[cmd.id]==="Enregistrement..."?"Enregistrement…":"✅ Confirmer la livraison"}</button>
+                          <button onClick={()=>declencherReservation(cmd)} disabled={msgLivraison[cmd.id]==="Réservation..."} style={{background:"#2980B9",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,opacity:msgLivraison[cmd.id]==="Réservation..."?0.6:1}}>{msgLivraison[cmd.id]==="Réservation..."?"Réservation…":"📌 Réserver"}</button>
                         </div>
                       </div>
                     )}
@@ -3887,8 +4141,6 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
     </div>
   );
 }
-
-
 function DashboardProduction({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
@@ -3904,12 +4156,14 @@ function DashboardProduction({ user, userData }) {
   const [pEditQte, setPEditQte] = React.useState("");
   const [pEditPhase, setPEditPhase] = React.useState("sec");
   const [pEditMsg, setPEditMsg] = React.useState("");
+  const [pEditToken, setPEditToken] = React.useState(""); // Phase 6 : identifiant stable de correction (idempotence)
   const [pertes, setPertes] = React.useState([]);
   const [commandes, setCommandes] = React.useState([]);
   const [saisiePerteType, setSaisiePerteType] = React.useState("");
   const [saisiePerteQte, setSaisiePerteQte] = React.useState("");
   const [saisiePerteRaison, setSaisiePerteRaison] = React.useState("production");
   const [msgPerte, setMsgPerte] = React.useState("");
+  const [saisiePerteToken, setSaisiePerteToken] = React.useState(function(){ return "perte_" + Date.now() + "_" + Math.random().toString(36).slice(2); }); // Phase 6 : idempotence
   const [tabProd, setTabProd] = React.useState("production");
   const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
   const [lotOuvert, setLotOuvert] = React.useState(null);
@@ -3979,13 +4233,7 @@ function DashboardProduction({ user, userData }) {
   function pOuvrirEdit(p){
     setPEdit(p); setPEditType(p.type||CATALOGUE[0].id); setPEditDate(pFrToInput(p.date));
     setPEditQte(String(p.quantite||"")); setPEditPhase(p.phase||"sec"); setPEditMsg("");
-  }
-  async function pAjusterStock(type, phase, delta){
-    if (!type || !delta) return;
-    var st = stocks[type] || {};
-    var upd = {};
-    if (phase === "sec") { upd.sec = Math.max(0,(st.sec||0)+delta); } else { upd.sechage = Math.max(0,(st.sechage||0)+delta); }
-    await db.collection("stocks").doc(type).set(upd, { merge:true });
+    setPEditToken(p.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2)); // Phase 6
   }
   async function pSauvegarderEdit(){
     if (!pEdit) return;
@@ -3996,9 +4244,8 @@ function DashboardProduction({ user, userData }) {
     if (pEditDate) { var parts = pEditDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
     setPEditMsg("Enregistrement...");
     try {
-      await pAjusterStock(pEdit.type, pEdit.phase, -(pEdit.quantite||0));
-      await pAjusterStock(pEditType, pEditPhase, qte);
-      await db.collection("productions").doc(pEdit.id).update({ type: pEditType, quantite: qte, phase: pEditPhase, date: dateFr });
+      // Phase 6 : idem Direction — fonction metier centrale, jamais de decrementation directe.
+      await corrigerProductionLot(pEdit, pEditType, qte, pEditPhase, dateFr, pEditToken, user, userData);
       setPEditMsg("✅ Production modifiee.");
       setTimeout(function(){ setPEdit(null); setPEditMsg(""); }, 900);
     } catch (e) { setPEditMsg("❌ Erreur: " + e.message); }
@@ -4013,8 +4260,8 @@ function DashboardProduction({ user, userData }) {
       await auth.currentUser.reauthenticateWithCredential(cred);
     } catch (e) { window.alert("Mot de passe incorrect. Suppression annulee."); return; }
     try {
-      await pAjusterStock(p.type, p.phase, -(p.quantite||0));
-      await db.collection("productions").doc(p.id).delete();
+      // Phase 6 : idem Direction — bloque si le lot a deja ete consomme, trace ANNULATION_PRODUCTION.
+      await annulerProductionLot(p, user, userData);
       if (pEdit && pEdit.id === p.id) { setPEdit(null); }
     } catch (e) { window.alert("Erreur: " + e.message); }
   }
@@ -4023,6 +4270,24 @@ function DashboardProduction({ user, userData }) {
     if (!saisiePerteType||!saisiePerteQte) { setMsgPerte("Choisissez un type et une quantite"); return; }
     try {
       var qte = parseInt(saisiePerteQte);
+      if (!(qte > 0)) { setMsgPerte("Quantité invalide"); return; }
+      var token = saisiePerteToken;
+      // Phase 6 : cette perte n'est pas rattachable a un lot precis (declaree au niveau du type,
+      // depuis cet ecran — pour une perte sur un lot connu, utiliser "Déclarer une perte" depuis la
+      // Fiche du lot, qui passe par declarerPerteLot). Elle doit neanmoins passer par le grand livre
+      // (numeroLot: null, comme un ajustement d'inventaire) pour rester coherente avec
+      // reconcilierStockType/diagnostiquerCoherenceStock — jamais de decrementation directe du
+      // compteur agrege en dehors du grand livre.
+      var mvt = { type: "PERTE", numeroLot: null, typeBTC: saisiePerteType, quantite: -qte, sourceType: "perte_type", sourceId: token, utilisateur: userData.nom||user.email, commentaire: saisiePerteRaison || "" };
+      var stockRef = db.collection("stocks").doc(saisiePerteType);
+      await db.runTransaction(async function (tx) {
+        var stockSnap = await tx.get(stockRef);
+        var chk = await verifierMouvementExistant(tx, mvt);
+        if (chk.existe) return; // deja applique (double clic/retry)
+        var sd = stockSnap.exists ? stockSnap.data() : {};
+        ecrireMouvementStock(tx, chk.id, mvt);
+        tx.set(stockRef, { sec: Math.max(0, (sd.sec || 0) - qte), sechage: sd.sechage || 0 }, { merge: true });
+      });
       await db.collection("pertes").add({
         type: saisiePerteType, quantite: qte, raison: saisiePerteRaison,
         responsable: userData.nom||user.email, responsableUid: user.uid,
@@ -4030,13 +4295,9 @@ function DashboardProduction({ user, userData }) {
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
       try { await db.collection("evenements").add({ numBC: "PERTE", chantier: saisiePerteType, action: "Perte enregistrée", acteur: userData.nom||user.email, role: "resp_production", details: "Type: "+saisiePerteType+" | Qté: "+saisiePerteQte+" BTC | Raison: "+saisiePerteRaison, statut: "Perte enregistrée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
-      // Déduire du stock
-      var stockDoc = await db.collection("stocks").doc(saisiePerteType).get();
-      var sd = stockDoc.exists ? stockDoc.data() : {};
-      var newSec = Math.max(0,(sd.sec||0)-qte);
-      await db.collection("stocks").doc(saisiePerteType).set({sec:newSec,sechage:sd.sechage||0},{merge:true});
       setMsgPerte("Perte enregistrée !");
       setSaisiePerteQte(""); setSaisiePerteType(""); setSaisiePerteRaison("production");
+      setSaisiePerteToken("perte_" + Date.now() + "_" + Math.random().toString(36).slice(2));
     } catch(e) { setMsgPerte("Erreur: "+e.message); }
   };
 
@@ -5051,15 +5312,278 @@ async function initialiserDisponibleCachePourLotsExistants(user, userData) {
 }
 
 // Compare le compteur agrege existant (stocks/{type}) a la somme des mouvements du grand livre
-// pour ce type. Un ecart n'est pas forcement une anomalie : il correspond notamment au stock
-// historique anterieur a la Phase 5, jamais individuellement journalise. Fonction pure et
-// diagnostique uniquement — ne corrige jamais rien automatiquement (point 21).
-function reconcilierStockType(typeBTC, stocksCache, mouvements) {
+// pour ce type, ET (Phase 6, point 17) calcule la vue complete : part traçable, part reservee,
+// disponible reel, part historique non traçable expliquee par la difference. Un ecart n'est pas
+// forcement une anomalie : il correspond notamment au stock historique anterieur a la Phase 5,
+// jamais individuellement journalise. Fonction pure et diagnostique uniquement — ne corrige jamais
+// rien automatiquement (point 21).
+function reconcilierStockType(typeBTC, stocksCache, mouvements, lots, allocations) {
   var s = (stocksCache || {})[typeBTC] || {};
-  var ancien = (s.sec || 0) + (s.sechage || 0);
+  var physique = (s.sec || 0) + (s.sechage || 0);
   var mvtsType = (mouvements || []).filter(function (m) { return m.typeBTC === typeBTC; });
   var calculeDepuisMouvements = mvtsType.reduce(function (a, m) { return a + m.quantite; }, 0);
-  return { type: typeBTC, ancien: ancien, calculeDepuisMouvements: calculeDepuisMouvements, ecart: ancien - calculeDepuisMouvements };
+  var lotsDuType = (lots || []).filter(function (l) { return l.type === typeBTC && l.disponibleCache != null; });
+  var tracable = lotsDuType.reduce(function (a, l) { return a + calculerStockLot(l.numeroLot, mvtsType).disponible; }, 0);
+  var historiqueNonTracable = Math.max(0, physique - tracable);
+  var reserveTracable = (allocations || []).filter(function (a) { return a.typeBTC === typeBTC && a.numeroLot; })
+    .reduce(function (a, al) { return a + Math.max(0, (al.quantiteReservee || 0) - (al.quantiteLivree || 0)); }, 0);
+  var reserveHistorique = s.historiqueReserve || 0;
+  var reserveTotal = reserveTracable + reserveHistorique;
+  var disponible = Math.max(0, physique - reserveTotal);
+  return {
+    type: typeBTC, ancien: physique, calculeDepuisMouvements: calculeDepuisMouvements, ecart: physique - calculeDepuisMouvements,
+    physique: physique, tracable: tracable, historiqueNonTracable: historiqueNonTracable, reserve: reserveTotal, disponible: disponible
+  };
+}
+
+// Detecte des incoherences structurelles (point 18) sans jamais rien corriger automatiquement.
+// Prend des donnees DEJA CHARGEES (aucun acces Firestore ici) pour rester rapide et testable —
+// n'est appele qu'a la demande depuis le panneau de diagnostic (point 19), jamais en continu.
+function diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, stocksCache) {
+  var anomalies = [];
+  var mvtsParLot = {};
+  (mouvements || []).forEach(function (m) { if (m.numeroLot) (mvtsParLot[m.numeroLot] = mvtsParLot[m.numeroLot] || []).push(m); });
+  var allocsParLot = {};
+  (allocations || []).forEach(function (a) { if (a.numeroLot) (allocsParLot[a.numeroLot] = allocsParLot[a.numeroLot] || []).push(a); });
+
+  (lots || []).forEach(function (lot) {
+    if (lot.disponibleCache == null) return; // lot non trace : hors perimetre du diagnostic
+    var stockLot = calculerStockLot(lot.numeroLot, mvtsParLot[lot.numeroLot] || []);
+    var reserveActif = (allocsParLot[lot.numeroLot] || []).reduce(function (a, al) { return a + Math.max(0, (al.quantiteReservee || 0) - (al.quantiteLivree || 0)); }, 0);
+    var disponibleAttendu = stockLot.disponible - reserveActif;
+    if (disponibleAttendu !== lot.disponibleCache) {
+      anomalies.push({ lot: lot.numeroLot, type: "cache_incoherent", attendu: disponibleAttendu, trouve: lot.disponibleCache, action: "Recalculer le cache depuis le grand livre" });
+    }
+    if (stockLot.disponible < 0) {
+      anomalies.push({ lot: lot.numeroLot, type: "stock_negatif", attendu: 0, trouve: stockLot.disponible, action: "Vérification manuelle requise" });
+    }
+    if (reserveActif > stockLot.disponible) {
+      anomalies.push({ lot: lot.numeroLot, type: "reservation_superieure_au_disponible", attendu: stockLot.disponible, trouve: reserveActif, action: "Vérification manuelle requise" });
+    }
+  });
+
+  var sortiesParLot = {};
+  (mouvements || []).forEach(function (m) { if (m.type === "SORTIE_LIVRAISON" && m.numeroLot) { sortiesParLot[m.numeroLot] = (sortiesParLot[m.numeroLot] || 0) + (-m.quantite); } });
+  Object.keys(sortiesParLot).forEach(function (numeroLot) {
+    var totalSorti = sortiesParLot[numeroLot];
+    var totalLivreAlloc = (allocsParLot[numeroLot] || []).reduce(function (a, al) { return a + (al.quantiteLivree || 0); }, 0);
+    if (Math.abs(totalSorti - totalLivreAlloc) > 0) {
+      anomalies.push({ lot: numeroLot, type: "mouvement_sans_allocation_correspondante", attendu: totalLivreAlloc, trouve: totalSorti, action: "Vérification manuelle requise" });
+    }
+  });
+
+  (commandes || []).forEach(function (cmd) {
+    var allocsCmd = (allocations || []).filter(function (a) { return a.commandeId === cmd.id; });
+    var livreAllocs = allocsCmd.reduce(function (a, al) { return a + (al.quantiteLivree || 0); }, 0);
+    if (allocsCmd.length === 0 && (cmd.quantiteLivree || 0) > 0) {
+      anomalies.push({ lot: null, type: "commande_livree_sans_mouvement", attendu: cmd.quantiteLivree, trouve: 0, action: "Vérification manuelle requise", commandeId: cmd.id, numBC: cmd.numBC });
+    } else if (allocsCmd.length > 0 && Math.abs(livreAllocs - (cmd.quantiteLivree || 0)) > 0) {
+      anomalies.push({ lot: null, type: "commande_livraison_incoherente", attendu: livreAllocs, trouve: cmd.quantiteLivree || 0, action: "Vérification manuelle requise", commandeId: cmd.id, numBC: cmd.numBC });
+    }
+  });
+
+  Object.keys(stocksCache || {}).forEach(function (type) {
+    var s = stocksCache[type] || {};
+    if ((s.sec || 0) < 0 || (s.sechage || 0) < 0) {
+      anomalies.push({ lot: null, type: "compteur_negatif", attendu: 0, trouve: Math.min(s.sec || 0, s.sechage || 0), action: "Vérification manuelle requise", typeBTC: type });
+    }
+  });
+
+  return anomalies;
+}
+
+// Action de reparation controlee (point 20) : recalcule UNIQUEMENT disponibleCache depuis le grand
+// livre, jamais une donnee physique ambigue. La valeur attendue est calculee juste avant par
+// diagnostiquerCoherenceStock et transmise explicitement (pas de recalcul silencieux a l'interieur
+// de la transaction) ; trace l'utilisateur et la date de la reparation sur le lot.
+async function reparerCacheLot(numeroLot, valeurAttendue, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var lotRef = db.collection("qse_lots").doc(numeroLot);
+  await db.runTransaction(async function (tx) {
+    var lotSnap = await tx.get(lotRef);
+    if (!lotSnap.exists) throw new Error("Lot introuvable.");
+    tx.update(lotRef, { disponibleCache: valeurAttendue, cacheReparePar: auteur, cacheRepareAt: firebase.firestore.FieldValue.serverTimestamp() });
+  });
+}
+
+// ============================================================================================
+// PHASE 6 — corrections/annulations de production et vraie reservation, pour fermer les derniers
+// trous ouverts par la Phase 5.
+//
+// Redefinition importante : disponibleCache represente desormais la DISPONIBILITE A RESERVER d'un
+// lot (stock physique du lot moins ses reservations actives), pas seulement le stock physique brut.
+// Invariant maintenu par CHAQUE fonction ci-dessous :
+//   disponibleCache = (produit + corrections − pertes − livraisons physiques) − reserve_active
+// Une reservation DECREMENTE disponibleCache (elle retire de la disponibilite a reserver, sans
+// toucher au stock physique ni au grand livre : une reservation n'est PAS un mouvement physique).
+// Une livraison qui consomme une reservation existante NE TOUCHE PAS disponibleCache une deuxieme
+// fois : le stock physique et le reserve baissent tous les deux de la meme quantite, la difference
+// (donc disponibleCache) ne bouge pas. Une annulation de reservation RESTITUE disponibleCache. Une
+// perte ou une correction negative de production diminue directement disponibleCache et est refusee
+// si cela le ferait passer sous zero — ce qui protege AUTOMATIQUEMENT aussi bien le stock deja
+// livre/perdu que le stock deja reserve pour une autre commande (point 3).
+// stocks/{type}.historiqueReserve joue le meme role que disponibleCache, mais pour le stock
+// historique non tracable d'un type (qui n'a pas de document de lot individuel adressable) : la
+// portion actuellement engagee dans une reservation. C'est un champ transactionnel supplementaire
+// sur le document stocks/{type}, deja tx.get()-able comme un seul document.
+// ============================================================================================
+
+// Corrige la quantite (et eventuellement la phase/date) d'une production DEJA ENREGISTREE, sans
+// jamais reecrire ni supprimer le mouvement ENTREE_PRODUCTION d'origine (point 2). Le changement de
+// quantite est trace par un mouvement CORRECTION_PRODUCTION signe. Refuse toute correction qui
+// ferait passer la disponibilite du lot sous zero (point 3) : le meme garde-fou protege a la fois
+// contre "on corrige sous ce qui a deja ete livre/perdu" ET "sous ce qui est deja reserve" (voir
+// redefinition de disponibleCache ci-dessus). Bloque tout changement de TYPE de BTC une fois le lot
+// trace (risque commande=typeA / allocation=typeB) : dans ce cas, l'appelant doit passer par
+// annulerProductionLot + une nouvelle saisie. "token" = identifiant stable de ce geste de correction
+// (genere une fois a l'ouverture du formulaire), pour l'idempotence (double clic/retry).
+async function corrigerProductionLot(production, nouveauType, nouvelleQuantite, nouvellePhase, nouvelleDate, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var qte = parseInt(nouvelleQuantite, 10);
+  if (!(qte > 0)) throw new Error("Quantité invalide.");
+  var prodRef = db.collection("productions").doc(production.id);
+  var lotSnapInit = await db.collection("qse_lots").where("productionId", "==", production.id).limit(1).get();
+  var lotDoc = lotSnapInit.docs[0] || null;
+  var estTracable = !!(lotDoc && lotDoc.data().disponibleCache != null);
+
+  if (estTracable && nouveauType !== production.type) {
+    throw new Error("Impossible de changer le type de BTC d'une production déjà suivie par lot. Annulez cette production puis ressaisissez-la avec le type correct.");
+  }
+
+  if (!estTracable) {
+    // Pas de grand livre pour ce lot (anterieur a la Phase 5, ou lot introuvable) : ancien
+    // comportement (ajustement direct du compteur agrege uniquement), limite deja documentee.
+    await db.runTransaction(async function (tx) {
+      var prodSnap = await tx.get(prodRef);
+      if (!prodSnap.exists) throw new Error("Production introuvable.");
+      var ancienneProd = prodSnap.data();
+      var memeType = ancienneProd.type === nouveauType;
+      var refAncien = db.collection("stocks").doc(ancienneProd.type);
+      var refNouveau = memeType ? refAncien : db.collection("stocks").doc(nouveauType);
+      var snapAncien = await tx.get(refAncien);
+      var snapNouveau = memeType ? snapAncien : await tx.get(refNouveau);
+
+      var champAncien = ancienneProd.phase === "sec" ? "sec" : "sechage";
+      var champNouveau = nouvellePhase === "sec" ? "sec" : "sechage";
+      var sA = snapAncien.exists ? snapAncien.data() : {};
+      if (memeType) {
+        var upd = { sec: sA.sec || 0, sechage: sA.sechage || 0 };
+        upd[champAncien] = Math.max(0, (upd[champAncien] || 0) - (ancienneProd.quantite || 0));
+        upd[champNouveau] = Math.max(0, (upd[champNouveau] || 0) + qte);
+        tx.set(refAncien, upd, { merge: true });
+      } else {
+        var updA = {}; updA[champAncien] = Math.max(0, (sA[champAncien] || 0) - (ancienneProd.quantite || 0));
+        tx.set(refAncien, updA, { merge: true });
+        var sN = snapNouveau.exists ? snapNouveau.data() : {};
+        var updN = {}; updN[champNouveau] = Math.max(0, (sN[champNouveau] || 0) + qte);
+        tx.set(refNouveau, updN, { merge: true });
+      }
+      tx.update(prodRef, { type: nouveauType, quantite: qte, phase: nouvellePhase, date: nouvelleDate });
+    });
+    return { tracable: false };
+  }
+
+  var lotRef = lotDoc.ref;
+  var typeBTC = lotDoc.data().type;
+  var stockRef = db.collection("stocks").doc(typeBTC);
+
+  await db.runTransaction(async function (tx) {
+    var lotSnap = await tx.get(lotRef);
+    if (!lotSnap.exists) throw new Error("Lot introuvable.");
+    var prodSnap = await tx.get(prodRef);
+    if (!prodSnap.exists) throw new Error("Production introuvable.");
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementExistant(tx, { type: "CORRECTION_PRODUCTION", numeroLot: lotRef.id, sourceType: "correction_production", sourceId: token });
+    if (chk.existe) return; // deja applique (double clic/retry)
+
+    var ancienneProd = prodSnap.data();
+    var delta = qte - (ancienneProd.quantite || 0);
+    var lot = lotSnap.data();
+    var dispoAvant = lot.disponibleCache != null ? lot.disponibleCache : 0;
+    var dispoApres = dispoAvant + delta;
+    if (dispoApres < 0) {
+      var consomme = (lot.quantite || 0) - dispoAvant;
+      throw new Error("Impossible : " + consomme.toLocaleString() + " unités ont déjà été consommées, livrées, réservées ou déclarées perdues sur ce lot. Vous ne pouvez pas corriger la production en dessous de ce seuil.");
+    }
+
+    if (delta !== 0) {
+      ecrireMouvementStock(tx, chk.id, { type: "CORRECTION_PRODUCTION", numeroLot: lotRef.id, typeBTC: typeBTC, quantite: delta, sourceType: "correction_production", sourceId: token, utilisateur: auteur, commentaire: "Correction : " + (ancienneProd.quantite || 0) + " → " + qte + " u" });
+    }
+    tx.update(lotRef, { disponibleCache: dispoApres, quantite: (lot.quantite || 0) + delta });
+    tx.update(prodRef, { quantite: qte, phase: nouvellePhase, date: nouvelleDate });
+
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    var champAncien = ancienneProd.phase === "sec" ? "sec" : "sechage";
+    var champNouveau = nouvellePhase === "sec" ? "sec" : "sechage";
+    var upd = { sec: s.sec || 0, sechage: s.sechage || 0 };
+    if (champAncien === champNouveau) {
+      upd[champAncien] = Math.max(0, (upd[champAncien] || 0) + delta);
+    } else {
+      upd[champAncien] = Math.max(0, (upd[champAncien] || 0) - (ancienneProd.quantite || 0));
+      upd[champNouveau] = Math.max(0, (upd[champNouveau] || 0) + qte);
+    }
+    tx.set(stockRef, upd, { merge: true });
+  });
+  return { tracable: true };
+}
+
+// Annule une production (point 4). Si le lot est trace et RIEN n'a encore ete consomme dessus
+// (aucune livraison, reservation ni perte : disponibleCache === quantite produite), cree un
+// mouvement ANNULATION_PRODUCTION qui ramene le lot a zero, marque le lot comme annule (jamais
+// supprime : le mouvement ENTREE_PRODUCTION d'origine et l'historique restent visibles dans le
+// grand livre), puis supprime le document de production (coherent avec le bouton "Supprimer" deja
+// existant). Si une partie du lot a deja ete utilisee, l'annulation est refusee et explique pourquoi.
+async function annulerProductionLot(production, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var prodRef = db.collection("productions").doc(production.id);
+  var lotSnapInit = await db.collection("qse_lots").where("productionId", "==", production.id).limit(1).get();
+  var lotDoc = lotSnapInit.docs[0] || null;
+
+  if (!lotDoc || lotDoc.data().disponibleCache == null) {
+    // Pas de grand livre : ancien comportement (retrait direct du compteur agrege), limite connue.
+    await db.runTransaction(async function (tx) {
+      var stockRef = db.collection("stocks").doc(production.type);
+      var sSnap = await tx.get(stockRef);
+      var sd = sSnap.exists ? sSnap.data() : {};
+      var champ = production.phase === "sec" ? "sec" : "sechage";
+      var upd = { sec: sd.sec || 0, sechage: sd.sechage || 0 };
+      upd[champ] = Math.max(0, (upd[champ] || 0) - (production.quantite || 0));
+      tx.set(stockRef, upd, { merge: true });
+      tx.delete(prodRef);
+    });
+    return { tracable: false };
+  }
+
+  var lotRef = lotDoc.ref;
+  var typeBTC = lotDoc.data().type;
+  var stockRef = db.collection("stocks").doc(typeBTC);
+
+  await db.runTransaction(async function (tx) {
+    var lotSnap = await tx.get(lotRef);
+    if (!lotSnap.exists) throw new Error("Lot introuvable.");
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementExistant(tx, { type: "ANNULATION_PRODUCTION", numeroLot: lotRef.id, sourceType: "annulation_production", sourceId: production.id });
+    if (chk.existe) { tx.delete(prodRef); return; } // deja annule cote grand livre : on finit juste la suppression
+
+    var lot = lotSnap.data();
+    var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
+    var quantiteProduite = lot.quantite || 0;
+    if (dispo < quantiteProduite) {
+      var consomme = quantiteProduite - dispo;
+      throw new Error("Impossible d'annuler cette production : " + consomme.toLocaleString() + " unités de ce lot ont déjà été livrées, réservées ou déclarées perdues. Consultez l'historique du lot " + lotRef.id + ".");
+    }
+
+    ecrireMouvementStock(tx, chk.id, { type: "ANNULATION_PRODUCTION", numeroLot: lotRef.id, typeBTC: typeBTC, quantite: -quantiteProduite, sourceType: "annulation_production", sourceId: production.id, utilisateur: auteur, commentaire: "Annulation de la production" });
+    tx.update(lotRef, { disponibleCache: 0, annule: true, annulePar: auteur, annuleAt: firebase.firestore.FieldValue.serverTimestamp() });
+    tx.delete(prodRef);
+
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    var champ = production.phase === "sec" ? "sec" : "sechage";
+    var upd = { sec: s.sec || 0, sechage: s.sechage || 0 };
+    upd[champ] = Math.max(0, (upd[champ] || 0) - quantiteProduite);
+    tx.set(stockRef, upd, { merge: true });
+  });
+  return { tracable: true };
 }
 
 // Declare une perte rattachee a un lot precis (depuis FicheLot). Refuse toute quantite superieure
@@ -5093,12 +5617,15 @@ async function declarerPerteLot(numeroLot, typeBTC, quantite, motif, token, user
   });
 }
 
-// Fonction metier CENTRALE et UNIQUE pour enregistrer une livraison (point 9) : toute sortie
-// physique de stock vers une commande doit passer par ici, jamais par une decrementation directe
-// ailleurs. Prend une liste de lignes {numeroLot|null, quantite} (proposition FIFO, eventuellement
-// corrigee manuellement par l'utilisateur), verifie tout, puis ecrit mouvements + allocations +
-// mise a jour de la commande + mise a jour du cache agrege stocks/{type}, en une seule transaction.
-async function enregistrerLivraisonAvecAllocation(cmd, lignes, user, userData) {
+// Fonction metier CENTRALE et UNIQUE pour reserver du stock (point 5/6/8/15) : bloque des lots (ou
+// du stock historique) SANS les sortir physiquement. L'UI ne doit jamais creer de document
+// stock_allocations directement. Transaction atomique : verifie la disponibilite de chaque lot ET
+// du stock historique dans la MEME transaction, decremente disponibleCache/historiqueReserve, cree
+// les allocations statut "Reservee". "token" identifie ce geste de reservation de maniere stable
+// (genere une seule fois a l'ouverture de l'action "Réserver"), pour l'idempotence — deux
+// utilisateurs qui tentent de reserver le meme lot au meme instant se disputent le meme document
+// (disponibleCache), donc jamais les deux ne peuvent reussir a reserver la meme unite (point 15).
+async function reserverCommandeStock(cmd, lignes, token, user, userData) {
   var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
   var lignesValides = (lignes || []).filter(function (l) { return l.quantite > 0; });
   var totalDemande = lignesValides.reduce(function (a, l) { return a + l.quantite; }, 0);
@@ -5107,9 +5634,8 @@ async function enregistrerLivraisonAvecAllocation(cmd, lignes, user, userData) {
   var cmdRef = db.collection("commandes").doc(cmd.id);
   var stockRef = db.collection("stocks").doc(cmd.type);
   var lotsAvecNumero = lignesValides.filter(function (l) { return l.numeroLot; });
-  var mouvementsAEcrire = lignesValides.map(function (l) {
-    return { ligne: l, mvt: { type: "SORTIE_LIVRAISON", numeroLot: l.numeroLot || null, typeBTC: cmd.type, quantite: -l.quantite, sourceType: "livraison", sourceId: cmd.id + "_" + (l.numeroLot || "HIST"), utilisateur: auteur, commentaire: "" } };
-  });
+  var ligneHistorique = lignesValides.find(function (l) { return !l.numeroLot; });
+  var allocIds = lignesValides.map(function (l) { return { ligne: l, id: (token + "_" + (l.numeroLot || "HIST")).replace(/[\/\s]/g, "-").slice(0, 400) }; });
 
   await db.runTransaction(async function (tx) {
     // --- LECTURES (toutes avant toute ecriture) ---
@@ -5117,100 +5643,257 @@ async function enregistrerLivraisonAvecAllocation(cmd, lignes, user, userData) {
     if (!cmdSnap.exists) throw new Error("Commande introuvable.");
     var cmdData = cmdSnap.data();
     var stockSnap = await tx.get(stockRef);
-
     var lotsLus = [];
     for (var i = 0; i < lotsAvecNumero.length; i++) {
       var lref = db.collection("qse_lots").doc(lotsAvecNumero[i].numeroLot);
-      var lsnap = await tx.get(lref);
-      lotsLus.push({ ligne: lotsAvecNumero[i], ref: lref, snap: lsnap });
+      lotsLus.push({ ligne: lotsAvecNumero[i], ref: lref, snap: await tx.get(lref) });
     }
-    var checks = [];
-    for (var j = 0; j < mouvementsAEcrire.length; j++) {
-      checks.push(await verifierMouvementExistant(tx, mouvementsAEcrire[j].mvt));
+    var allocSnaps = [];
+    for (var j = 0; j < allocIds.length; j++) {
+      allocSnaps.push({ id: allocIds[j].id, ligne: allocIds[j].ligne, snap: await tx.get(db.collection("stock_allocations").doc(allocIds[j].id)) });
     }
 
-    // Idempotence complete (point 11) : si CES mouvements existent deja (double clic, retry
-    // reseau), toute cette livraison a deja ete appliquee — on ne reapplique RIEN (ni mouvement,
-    // ni cache lot, ni allocation, ni commande, ni compteur agrege), pas seulement le mouvement.
-    var dejaApplique = checks.some(function (chk) { return chk.existe; });
-    if (dejaApplique) return;
+    var dejaApplique = allocSnaps.some(function (a) { return a.snap.exists; });
+    if (dejaApplique) return; // double clic/retry : cette reservation existe deja, aucun effet
 
     // --- VALIDATION (aucun acces Firestore, uniquement des verifications) ---
-    var dejaLivre = cmdData.quantiteLivree || 0;
-    var resteReel = Math.max(0, (cmdData.quantite || 0) - dejaLivre);
-    if (totalDemande > resteReel) throw new Error("La commande a évolué entre-temps (reste réel : " + resteReel + " u). Rechargez et réessayez.");
     lotsLus.forEach(function (x) {
       if (!x.snap.exists) throw new Error("Lot " + x.ligne.numeroLot + " introuvable.");
       var lot = x.snap.data();
       var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
-      if (x.ligne.quantite > dispo) throw new Error("Lot " + x.ligne.numeroLot + " : quantité demandée (" + x.ligne.quantite + ") supérieure à sa disponibilité (" + dispo + " u).");
+      if (x.ligne.quantite > dispo) throw new Error("Lot " + x.ligne.numeroLot + " : quantité demandée (" + x.ligne.quantite + ") supérieure à sa disponibilité à réserver (" + dispo + " u).");
     });
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    if (ligneHistorique) {
+      // L'estimation du stock historique disponible (disponibleMax) est calculee "au mieux" par
+      // l'appelant juste avant la transaction (cf. limite documentee, meme classe que la Phase 5) ;
+      // seule la portion deja engagee (historiqueReserve) est verifiee de maniere strictement
+      // transactionnelle ici, ce qui empeche deux reservations concurrentes de consommer deux fois
+      // le meme reliquat historique.
+      var histReserveActuel = s.historiqueReserve || 0;
+      if (ligneHistorique.quantite > Math.max(0, (ligneHistorique.disponibleMax || 0) - histReserveActuel)) {
+        throw new Error("Stock historique non traçable insuffisant pour couvrir cette réservation (une autre réservation concurrente a peut-être déjà consommé ce reliquat). Rechargez la proposition et réessayez.");
+      }
+    }
 
     // --- ECRITURES (toutes apres toutes les lectures) ---
-    checks.forEach(function (chk, idx) { ecrireMouvementStock(tx, chk.id, mouvementsAEcrire[idx].mvt); });
     lotsLus.forEach(function (x) {
       var lot = x.snap.data();
       var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
       tx.update(x.ref, { disponibleCache: dispo - x.ligne.quantite });
     });
-    lignesValides.forEach(function (l) {
-      tx.set(db.collection("stock_allocations").doc(), {
+    if (ligneHistorique) {
+      tx.set(stockRef, { historiqueReserve: (s.historiqueReserve || 0) + ligneHistorique.quantite }, { merge: true });
+    }
+    allocSnaps.forEach(function (a) {
+      tx.set(db.collection("stock_allocations").doc(a.id), {
         commandeId: cmd.id, chantierId: cmd.chantierId || null, chantierNom: cmd.chantierNom || cmd.client || "",
-        numeroLot: l.numeroLot || null, typeBTC: cmd.type, quantite: l.quantite, statut: "Livree",
-        dateAllocation: firebase.firestore.FieldValue.serverTimestamp(),
-        dateLivraison: firebase.firestore.FieldValue.serverTimestamp(),
-        utilisateurAllocation: auteur, utilisateurLivraison: auteur
+        numeroLot: a.ligne.numeroLot || null, typeBTC: cmd.type,
+        quantiteReservee: a.ligne.quantite, quantiteLivree: 0, statut: "Reservee",
+        utilisateurReservation: auteur, dateReservation: firebase.firestore.FieldValue.serverTimestamp()
       });
     });
-    var totalApres = dejaLivre + totalDemande;
-    var newStatus = totalApres >= (cmdData.quantite || 0) ? "Livree" : "Validee";
-    tx.update(cmdRef, { quantiteLivree: totalApres, status: newStatus, livrePar: auteur, livreAt: firebase.firestore.FieldValue.serverTimestamp() });
-    var s = stockSnap.exists ? stockSnap.data() : {};
-    tx.set(stockRef, { sec: Math.max(0, (s.sec || 0) - totalDemande), sechage: s.sechage || 0 }, { merge: true });
+    tx.update(cmdRef, { quantiteReservee: (cmdData.quantiteReservee || 0) + totalDemande });
   });
 
   try {
     await db.collection("evenements").add({
-      numBC: cmd.numBC || cmd.id, chantier: cmd.chantierNom || "", action: "Livraison effectuée", acteur: auteur, role: "resp_stock",
-      details: "N°" + (cmd.numBC || cmd.id) + " | Qté: " + totalDemande + " | Lots: " + lignesValides.map(function (l) { return (l.numeroLot || "stock historique") + ":" + l.quantite; }).join(", "),
+      numBC: cmd.numBC || cmd.id, chantier: cmd.chantierNom || "", action: "Réservation de stock", acteur: auteur, role: "resp_stock",
+      details: "N°" + (cmd.numBC || cmd.id) + " | Qté réservée: " + totalDemande + " | Lots: " + lignesValides.map(function (l) { return (l.numeroLot || "stock historique") + ":" + l.quantite; }).join(", "),
+      statut: "Réservé", timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {}
+}
+
+// Fonction metier CENTRALE et UNIQUE pour transformer (totalement ou partiellement) une reservation
+// en sortie physique reelle (point 8/9/10) : ecrit un mouvement SORTIE_LIVRAISON dans le grand
+// livre, avance quantiteLivree sur l'allocation (statut "PartiellementLivree" ou "Livree"), et met a
+// jour la commande. Ne touche PAS disponibleCache : la quantite avait deja ete retiree de la
+// disponibilite a reserver au moment de la reservation ; la livraison transforme une reservation en
+// sortie physique (le stock physique ET le reserve diminuent tous les deux de la meme quantite, la
+// difference — donc disponibleCache — ne bouge pas). "token" = identifiant stable de CE geste de
+// livraison (genere une fois par clic sur "Confirmer" ; deux livraisons reelles successives de la
+// meme reservation utilisent deux tokens differents et restent bien deux mouvements distincts).
+async function livrerReservation(alloc, quantiteALivrer, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var qte = parseInt(quantiteALivrer, 10);
+  if (!(qte > 0)) throw new Error("Quantité invalide.");
+  var allocRef = db.collection("stock_allocations").doc(alloc.id);
+
+  await db.runTransaction(async function (tx) {
+    var allocSnap = await tx.get(allocRef);
+    if (!allocSnap.exists) throw new Error("Réservation introuvable.");
+    var allocData = allocSnap.data();
+    var cmdRef = db.collection("commandes").doc(allocData.commandeId);
+    var cmdSnap = await tx.get(cmdRef);
+    var stockRef = db.collection("stocks").doc(allocData.typeBTC);
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementExistant(tx, { type: "SORTIE_LIVRAISON", numeroLot: allocData.numeroLot || null, sourceType: "livraison_reservation", sourceId: alloc.id + "_" + token });
+    if (chk.existe) return; // deja applique (double clic/retry)
+
+    if (allocData.statut !== "Reservee" && allocData.statut !== "PartiellementLivree") {
+      throw new Error("Cette réservation n'est plus livrable (statut : " + allocData.statut + ").");
+    }
+    var reste = (allocData.quantiteReservee || 0) - (allocData.quantiteLivree || 0);
+    if (qte > reste) throw new Error("Quantité demandée (" + qte + " u) supérieure au reliquat réservé (" + reste + " u).");
+
+    ecrireMouvementStock(tx, chk.id, { type: "SORTIE_LIVRAISON", numeroLot: allocData.numeroLot || null, typeBTC: allocData.typeBTC, quantite: -qte, sourceType: "livraison_reservation", sourceId: alloc.id + "_" + token, utilisateur: auteur, commentaire: "" });
+
+    var nouveauLivre = (allocData.quantiteLivree || 0) + qte;
+    var nouveauStatut = nouveauLivre >= (allocData.quantiteReservee || 0) ? "Livree" : "PartiellementLivree";
+    tx.update(allocRef, { quantiteLivree: nouveauLivre, statut: nouveauStatut, utilisateurLivraison: auteur, dateLivraison: firebase.firestore.FieldValue.serverTimestamp() });
+
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    var updStock = { sec: Math.max(0, (s.sec || 0) - qte), sechage: s.sechage || 0 };
+    if (!allocData.numeroLot) { updStock.historiqueReserve = Math.max(0, (s.historiqueReserve || 0) - qte); }
+    tx.set(stockRef, updStock, { merge: true });
+
+    if (cmdSnap.exists) {
+      var cmdData = cmdSnap.data();
+      var nouveauLivreCmd = (cmdData.quantiteLivree || 0) + qte;
+      var nouveauReserveCmd = Math.max(0, (cmdData.quantiteReservee || 0) - qte);
+      var newStatus = nouveauLivreCmd >= (cmdData.quantite || 0) ? "Livree" : "Validee";
+      tx.update(cmdRef, { quantiteLivree: nouveauLivreCmd, quantiteReservee: nouveauReserveCmd, status: newStatus, livrePar: auteur, livreAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
+  });
+
+  try {
+    await db.collection("evenements").add({
+      numBC: alloc.numBC || alloc.commandeId, chantier: alloc.chantierNom || "", action: "Livraison effectuée", acteur: auteur, role: "resp_stock",
+      details: "Lot: " + (alloc.numeroLot || "stock historique") + " | Qté livrée: " + qte,
       statut: "Livraison enregistrée", timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
   } catch (e) {}
 }
 
-// Annule une livraison deja enregistree (une allocation au statut "Livree") : cree un mouvement
-// inverse (ANNULATION_LIVRAISON, jamais de suppression du mouvement d'origine, point 14), remet la
-// quantite disponible sur le lot, et retire la quantite de la commande.
-async function annulerLivraisonAllocation(allocationId, user, userData) {
+// Libere tout ou partie du reliquat NON LIVRE d'une reservation (point 11/12) : jamais de
+// suppression, l'allocation garde son historique (quantiteReservee/quantiteLivree restent visibles),
+// seuls son reliquat et son statut changent. Idempotent par nature : reappliquer sur une allocation
+// deja completement liberee est un no-op (le reliquat est deja a zero). "quantiteALiberer" est
+// optionnel : omis, libere tout le reliquat (annulation complete) ; fourni, libere une partie
+// seulement (utilise par reajusterReservationCommande, point 12).
+async function annulerReservation(alloc, quantiteALiberer, motif, user, userData) {
   var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
-  var allocRef = db.collection("stock_allocations").doc(allocationId);
+  var allocRef = db.collection("stock_allocations").doc(alloc.id);
   await db.runTransaction(async function (tx) {
     var allocSnap = await tx.get(allocRef);
-    if (!allocSnap.exists) throw new Error("Allocation introuvable.");
-    var alloc = allocSnap.data();
-    if (alloc.statut !== "Livree") throw new Error("Seule une allocation livrée peut être annulée.");
-    var cmdRef = db.collection("commandes").doc(alloc.commandeId);
-    var cmdSnap = await tx.get(cmdRef);
-    var stockRef = db.collection("stocks").doc(alloc.typeBTC);
-    var stockSnap = await tx.get(stockRef);
-    var lotRef = alloc.numeroLot ? db.collection("qse_lots").doc(alloc.numeroLot) : null;
-    var lotSnap = lotRef ? await tx.get(lotRef) : null;
-    var mvt = { type: "ANNULATION_LIVRAISON", numeroLot: alloc.numeroLot || null, typeBTC: alloc.typeBTC, quantite: alloc.quantite, sourceType: "annulation_livraison", sourceId: allocationId, utilisateur: auteur, commentaire: "" };
-    var chk = await verifierMouvementExistant(tx, mvt);
+    if (!allocSnap.exists) throw new Error("Réservation introuvable.");
+    var allocData = allocSnap.data();
+    var resteAvant = (allocData.quantiteReservee || 0) - (allocData.quantiteLivree || 0);
+    var aLiberer = quantiteALiberer != null ? Math.min(quantiteALiberer, resteAvant) : resteAvant;
+    if (aLiberer <= 0) return; // deja entierement livree/annulee : aucun effet (idempotent)
 
-    if (!chk.existe) ecrireMouvementStock(tx, chk.id, mvt);
-    tx.update(allocRef, { statut: "Annulee", utilisateurAnnulation: auteur, dateAnnulation: firebase.firestore.FieldValue.serverTimestamp() });
+    var cmdRef = db.collection("commandes").doc(allocData.commandeId);
+    var cmdSnap = await tx.get(cmdRef);
+    var lotRef = allocData.numeroLot ? db.collection("qse_lots").doc(allocData.numeroLot) : null;
+    var lotSnap = lotRef ? await tx.get(lotRef) : null;
+    var stockRef = allocData.numeroLot ? null : db.collection("stocks").doc(allocData.typeBTC);
+    var stockSnap = stockRef ? await tx.get(stockRef) : null;
+
+    var nouvelleQuantiteReservee = (allocData.quantiteReservee || 0) - aLiberer;
+    var nouveauStatut = (allocData.quantiteLivree || 0) > 0
+      ? ((allocData.quantiteLivree || 0) >= nouvelleQuantiteReservee ? "Livree" : "PartiellementLivree")
+      : "Annulee";
+    tx.update(allocRef, { quantiteReservee: nouvelleQuantiteReservee, statut: nouveauStatut, utilisateurAnnulation: auteur, dateAnnulation: firebase.firestore.FieldValue.serverTimestamp(), motifAnnulation: motif || "" });
+
     if (lotRef && lotSnap && lotSnap.exists) {
       var lot = lotSnap.data();
       var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
-      tx.update(lotRef, { disponibleCache: dispo + alloc.quantite });
+      tx.update(lotRef, { disponibleCache: dispo + aLiberer });
+    } else if (stockRef && stockSnap) {
+      var s = stockSnap.exists ? stockSnap.data() : {};
+      tx.set(stockRef, { historiqueReserve: Math.max(0, (s.historiqueReserve || 0) - aLiberer) }, { merge: true });
     }
     if (cmdSnap.exists) {
       var cmdData = cmdSnap.data();
-      tx.update(cmdRef, { quantiteLivree: Math.max(0, (cmdData.quantiteLivree || 0) - alloc.quantite), status: "Validee" });
+      tx.update(cmdRef, { quantiteReservee: Math.max(0, (cmdData.quantiteReservee || 0) - aLiberer) });
     }
+  });
+}
+
+// Annule une livraison DEJA EFFECTUEE (physique) sur une reservation (point 14/31) : cree un
+// mouvement inverse ANNULATION_LIVRAISON (jamais de suppression du mouvement d'origine), diminue
+// quantiteLivree sur l'allocation (le reliquat redevient livrable), et retire la quantite de la
+// commande. Distincte d'annulerReservation, qui ne touche que la partie PAS ENCORE livree. Ne
+// touche PAS disponibleCache : symetrique de livrerReservation — le stock physique et le reserve
+// remontent tous les deux de la meme quantite, la difference (donc disponibleCache) ne bouge pas.
+// "token" = identifiant stable de ce geste d'annulation (idempotence, double clic/retry).
+async function annulerLivraisonPhysique(alloc, quantiteAAnnuler, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var qte = parseInt(quantiteAAnnuler, 10);
+  if (!(qte > 0)) throw new Error("Quantité invalide.");
+  var allocRef = db.collection("stock_allocations").doc(alloc.id);
+
+  await db.runTransaction(async function (tx) {
+    var allocSnap = await tx.get(allocRef);
+    if (!allocSnap.exists) throw new Error("Réservation introuvable.");
+    var allocData = allocSnap.data();
+    var cmdRef = db.collection("commandes").doc(allocData.commandeId);
+    var cmdSnap = await tx.get(cmdRef);
+    var stockRef = db.collection("stocks").doc(allocData.typeBTC);
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementExistant(tx, { type: "ANNULATION_LIVRAISON", numeroLot: allocData.numeroLot || null, sourceType: "annulation_livraison_reservation", sourceId: alloc.id + "_" + token });
+    if (chk.existe) return; // deja applique (double clic/retry)
+
+    if ((allocData.quantiteLivree || 0) <= 0) throw new Error("Aucune livraison à annuler sur cette réservation.");
+    if (qte > (allocData.quantiteLivree || 0)) throw new Error("Quantité à annuler (" + qte + ") supérieure à la quantité livrée (" + (allocData.quantiteLivree || 0) + ").");
+
+    ecrireMouvementStock(tx, chk.id, { type: "ANNULATION_LIVRAISON", numeroLot: allocData.numeroLot || null, typeBTC: allocData.typeBTC, quantite: qte, sourceType: "annulation_livraison_reservation", sourceId: alloc.id + "_" + token, utilisateur: auteur, commentaire: "" });
+
+    var nouveauLivre = (allocData.quantiteLivree || 0) - qte;
+    var nouveauStatut = nouveauLivre <= 0 ? "Reservee" : "PartiellementLivree";
+    tx.update(allocRef, { quantiteLivree: Math.max(0, nouveauLivre), statut: nouveauStatut, utilisateurAnnulationLivraison: auteur, dateAnnulationLivraison: firebase.firestore.FieldValue.serverTimestamp() });
+
     var s = stockSnap.exists ? stockSnap.data() : {};
-    tx.set(stockRef, { sec: (s.sec || 0) + alloc.quantite, sechage: s.sechage || 0 }, { merge: true });
+    var updStock = { sec: (s.sec || 0) + qte, sechage: s.sechage || 0 };
+    if (!allocData.numeroLot) { updStock.historiqueReserve = (s.historiqueReserve || 0) + qte; }
+    tx.set(stockRef, updStock, { merge: true });
+
+    if (cmdSnap.exists) {
+      var cmdData = cmdSnap.data();
+      tx.update(cmdRef, { quantiteLivree: Math.max(0, (cmdData.quantiteLivree || 0) - qte), quantiteReservee: (cmdData.quantiteReservee || 0) + qte, status: "Validee" });
+    }
+  });
+}
+
+// Point 12 : quand la quantite d'une commande diminue en dessous de ce qui est deja reserve, libere
+// l'exces en liberant les reservations les plus RECENTES en premier (LIFO) — cela preserve la
+// propriete FIFO des lots deja engages (les plus anciens restent reserves en priorite). Chaque
+// reservation touchee passe par annulerReservation (jamais de suppression silencieuse). N'est
+// appelee qu'apres une confirmation explicite de l'utilisateur cote UI (point 12), jamais
+// automatiquement lors d'une simple modification de quantite.
+async function reajusterReservationCommande(cmd, allocationsActives, nouvelleQuantiteCommande, user, userData) {
+  var reserveTotal = allocationsActives.reduce(function (a, al) { return a + Math.max(0, (al.quantiteReservee || 0) - (al.quantiteLivree || 0)); }, 0);
+  var resteACouvrir = Math.max(0, nouvelleQuantiteCommande - (cmd.quantiteLivree || 0));
+  var excedent = reserveTotal - resteACouvrir;
+  if (excedent <= 0) return { liberes: 0 };
+  var tries = allocationsActives.slice().sort(function (a, b) { return qseTsMs(b.dateReservation) - qseTsMs(a.dateReservation); }); // plus recentes d'abord
+  var reste = excedent;
+  for (var i = 0; i < tries.length && reste > 0; i++) {
+    var al = tries[i];
+    var dispoAl = (al.quantiteReservee || 0) - (al.quantiteLivree || 0);
+    if (dispoAl <= 0) continue;
+    var aLiberer = Math.min(dispoAl, reste);
+    await annulerReservation(al, aLiberer, "Réajustement suite à la réduction de la commande (" + cmd.quantite + " → " + nouvelleQuantiteCommande + " u)", user, userData);
+    reste -= aLiberer;
+  }
+  return { liberes: excedent - reste };
+}
+
+// Modifie la quantite/le type/le chantier d'une commande deja validee (points 12/13/32). Bloque tout
+// changement de TYPE de BTC si des reservations ou livraisons actives existent (jamais
+// commande=typeA avec une allocation=typeB, point 13). Ne reajuste JAMAIS automatiquement une
+// reservation en exces : c'est un geste explicite separe (reajusterReservationCommande), propose a
+// l'utilisateur mais jamais declenche silencieusement par cette fonction.
+async function modifierCommandeStock(cmd, nouveauType, nouvelleQuantite, nouveauChantierId, nouveauChantierNom, allocationsActives, user, userData) {
+  var qte = parseInt(nouvelleQuantite, 10);
+  if (!(qte > 0)) throw new Error("Quantité invalide.");
+  var aDesAllocations = (allocationsActives || []).some(function (a) { return (a.quantiteReservee || 0) > 0; });
+  if (nouveauType !== cmd.type && aDesAllocations) {
+    throw new Error("Impossible de changer le type de BTC : cette commande a déjà des réservations ou livraisons associées à " + getProduit(cmd.type).nom + ". Annulez d'abord les réservations concernées.");
+  }
+  await db.collection("commandes").doc(cmd.id).update({
+    type: nouveauType, quantite: qte, chantierId: nouveauChantierId || null, chantierNom: nouveauChantierNom || ""
   });
 }
 
@@ -5799,7 +6482,7 @@ function FicheLot(props) {
         setOrigines(originesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
         setStockType(stockSnap.exists ? stockSnap.data() : null);
         setMouvements(mouvementsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
-        setAllocations(allocationsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+        setAllocations(allocationsSnap.docs.map((d) => Object.assign({ id: d.id, _annulToken: d.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) }, d.data())));
         const cmdSnap = await db.collection("commandes").where("type", "==", lotData.type).get();
         if (!annule) setCommandesType(cmdSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
       } catch (e) {
@@ -5846,6 +6529,10 @@ function FicheLot(props) {
   const stockLot = tracable ? calculerStockLot(numeroLot, mouvements) : null;
   const pertesDocumenteesNC = ncs.reduce(function (a, nc) { return a + (nc.quantiteConcernee || 0); }, 0);
   const quantiteEstimeeRestante = Math.max(0, (lot.quantite || 0) - pertesDocumenteesNC);
+  // Phase 6 (point 21) : "physique restant" (grand livre) et "disponible a reserver" (cache) sont
+  // deux notions distinctes des lors qu'une reservation existe — jamais confondues a l'affichage.
+  const reserveLot = tracable ? allocations.filter(function (a) { return a.statut === "Reservee" || a.statut === "PartiellementLivree"; }).reduce(function (a, al) { return a + Math.max(0, (al.quantiteReservee || 0) - (al.quantiteLivree || 0)); }, 0) : 0;
+  const disponibleAReserver = tracable ? (lot.disponibleCache != null ? lot.disponibleCache : 0) : 0;
 
   const marquerControle = async (resultat) => {
     if (!controleATraiter) return;
@@ -5883,18 +6570,23 @@ function FicheLot(props) {
   };
 
   const annulerAllocation = async (alloc) => {
-    if (!window.confirm("Annuler cette livraison de " + alloc.quantite + " u ? La quantité redeviendra disponible sur ce lot.")) return;
+    var resteNonLivre = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
+    var dejaLivre = alloc.quantiteLivree || 0;
+    var msg = "Annuler cette affectation (" + (alloc.quantiteReservee || 0).toLocaleString() + " u) ?";
+    if (dejaLivre > 0) { msg += " La partie déjà livrée (" + dejaLivre.toLocaleString() + " u) sera également annulée (retour physique en stock)."; }
+    if (!window.confirm(msg)) return;
     try {
-      await annulerLivraisonAllocation(alloc.id, user, userData);
+      if (resteNonLivre > 0) { await annulerReservation(alloc, null, "Annulation depuis la fiche du lot", user, userData); }
+      if (dejaLivre > 0) { await annulerLivraisonPhysique(alloc, dejaLivre, alloc._annulToken, user, userData); }
       const [allocSnap2, mvtSnap2, lotSnap3] = await Promise.all([
         db.collection("stock_allocations").where("numeroLot", "==", numeroLot).get(),
         db.collection("stock_mouvements").where("numeroLot", "==", numeroLot).get(),
         db.collection("qse_lots").doc(numeroLot).get()
       ]);
-      setAllocations(allocSnap2.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+      setAllocations(allocSnap2.docs.map(function (d) { return Object.assign({ id: d.id, _annulToken: d.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) }, d.data()); }));
       setMouvements(mvtSnap2.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
       if (lotSnap3.exists) setLot(Object.assign({ id: lotSnap3.id }, lotSnap3.data()));
-      setMsgAction("Livraison annulée, stock restitué.");
+      setMsgAction("Affectation annulée, stock restitué.");
     } catch (e) {
       setMsgAction("Erreur : " + e.message);
     }
@@ -5910,7 +6602,7 @@ function FicheLot(props) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span className={"fichelot-statut " + statut.classe}>{statut.icone} {statut.label}</span>
-            {tracable && stockLot.disponible > 0 && (
+            {tracable && disponibleAReserver > 0 && (
               <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte({ quantite: "", motif: "", token: numeroLot + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) })}>📉 Déclarer une perte</button>
             )}
             <button className="btn btn-sm btn-ghost" onClick={onClose}>✕ Fermer</button>
@@ -5919,11 +6611,11 @@ function FicheLot(props) {
 
         {formPerte && (
           <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-red)", flexDirection: "column", alignItems: "stretch" }}>
-            <strong style={{ marginBottom: 6 }}>📉 Déclarer une perte sur ce lot (max {stockLot ? stockLot.disponible.toLocaleString() : 0} u disponibles)</strong>
+            <strong style={{ marginBottom: 6 }}>📉 Déclarer une perte sur ce lot (max {disponibleAReserver.toLocaleString()} u disponibles à réserver)</strong>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
               <div>
                 <label className="btp-label">Quantité perdue</label>
-                <input type="number" min="1" max={stockLot ? stockLot.disponible : undefined} className="btp-input" style={{ width: 120 }}
+                <input type="number" min="1" max={disponibleAReserver} className="btp-input" style={{ width: 120 }}
                   value={formPerte.quantite} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { quantite: e.target.value }))} />
               </div>
               <div style={{ flex: 1, minWidth: 180 }}>
@@ -5960,6 +6652,12 @@ function FicheLot(props) {
           {msgAction && <div style={{ width: "100%", fontSize: 12, color: "var(--btp-green)", marginTop: 6 }}>{msgAction}</div>}
         </div>
 
+        {lot.annule && (
+          <div className="fichelot-anomalies">
+            <h4>🚫 Production annulée le {lot.annuleAt && qseTsMs(lot.annuleAt) ? new Date(qseTsMs(lot.annuleAt)).toLocaleDateString("fr-FR") : "—"} par {lot.annulePar || "—"}</h4>
+          </div>
+        )}
+
         {anomalies.length > 0 && (
           <div className="fichelot-anomalies">
             <h4>⚠️ Incohérences détectées (signalées, rien n'a été corrigé automatiquement)</h4>
@@ -5978,7 +6676,9 @@ function FicheLot(props) {
             <React.Fragment>
               <div className="fichelot-fait"><div className="fichelot-fait-label">Perdu</div><div className="fichelot-fait-valeur">{stockLot.perdu.toLocaleString()} u</div></div>
               <div className="fichelot-fait"><div className="fichelot-fait-label">Livré</div><div className="fichelot-fait-valeur">{stockLot.livre.toLocaleString()} u</div></div>
-              <div className="fichelot-fait"><div className="fichelot-fait-label">Disponible</div><div className="fichelot-fait-valeur" style={{ color: "#2ecc71" }}>{stockLot.disponible.toLocaleString()} u</div></div>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Stock physique restant</div><div className="fichelot-fait-valeur">{stockLot.disponible.toLocaleString()} u</div></div>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Réservé</div><div className="fichelot-fait-valeur" style={{ color: "#5DADE2" }}>{reserveLot.toLocaleString()} u</div></div>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Disponible à réserver</div><div className="fichelot-fait-valeur" style={{ color: "#2ecc71" }}>{disponibleAReserver.toLocaleString()} u</div></div>
             </React.Fragment>
           ) : (
             <React.Fragment>
@@ -6087,15 +6787,17 @@ function FicheLot(props) {
           </p>
           {tracable && allocations.length > 0 && (
             <table className="btp-table">
-              <thead><tr><th>Chantier</th><th>Quantité</th><th>Statut</th><th></th></tr></thead>
+              <thead><tr><th>Chantier</th><th>Réservé</th><th>Livré</th><th>Statut</th><th></th></tr></thead>
               <tbody>
                 {allocations.map(function (a) {
+                  var libelles = { Reservee: "📌 Réservée", PartiellementLivree: "🚚 Partiellement livrée", Livree: "✅ Livrée", Annulee: "↩️ Annulée" };
                   return (
                     <tr key={a.id}>
                       <td>{a.chantierNom || "—"}</td>
-                      <td>{(a.quantite || 0).toLocaleString()} u</td>
-                      <td>{a.statut === "Livree" ? "✅ Livrée" : a.statut === "Annulee" ? "↩️ Annulée" : a.statut}</td>
-                      <td>{a.statut === "Livree" && <button className="btn btn-sm btn-ghost" onClick={() => annulerAllocation(a)}>Annuler</button>}</td>
+                      <td>{(a.quantiteReservee || 0).toLocaleString()} u</td>
+                      <td>{(a.quantiteLivree || 0).toLocaleString()} u</td>
+                      <td>{libelles[a.statut] || a.statut}</td>
+                      <td>{a.statut !== "Annulee" && <button className="btn btn-sm btn-ghost" onClick={() => annulerAllocation(a)}>Annuler</button>}</td>
                     </tr>
                   );
                 })}
