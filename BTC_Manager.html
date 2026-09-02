@@ -1297,6 +1297,76 @@ function GlobalSearch(props) {
   );
 }
 
+// Panneau de diagnostic Phase 5 (Direction uniquement) : compare le compteur agrege existant au
+// grand livre de mouvements, et permet d'initialiser le suivi par lot pour les lots anciens.
+// Requetes a la demande (bouton), pas d'ecouteur permanent — c'est un outil de transition, pas un
+// ecran consulte en continu (point 22).
+function DiagnosticStockPhase5({ stocks, user, userData }) {
+  const [ecarts, setEcarts] = React.useState(null);
+  const [chargement, setChargement] = React.useState(false);
+  const [msgMigration, setMsgMigration] = React.useState("");
+  const [migrationEnCours, setMigrationEnCours] = React.useState(false);
+
+  const calculerDiagnostic = async () => {
+    setChargement(true);
+    try {
+      const mvtSnap = await db.collection("stock_mouvements").limit(2000).get();
+      const mouvements = mvtSnap.docs.map((d) => d.data());
+      const res = CATALOGUE.map((prod) => reconcilierStockType(prod.id, stocks, mouvements)).filter((r) => r.ancien > 0 || r.calculeDepuisMouvements !== 0);
+      setEcarts(res);
+    } catch (e) {
+      setEcarts([]);
+    } finally {
+      setChargement(false);
+    }
+  };
+
+  const lancerMigration = async () => {
+    setMigrationEnCours(true);
+    setMsgMigration("");
+    try {
+      const res = await initialiserDisponibleCachePourLotsExistants(user, userData);
+      setMsgMigration("✅ " + res.traites + " lot(s) initialisé(s), " + res.ignores + " déjà à jour.");
+    } catch (e) {
+      setMsgMigration("❌ Erreur : " + e.message);
+    } finally {
+      setMigrationEnCours(false);
+    }
+  };
+
+  return (
+    <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginTop: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
+      <h4 style={{ marginBottom: 6, color: "var(--btp-gold)" }}>🔎 Diagnostic stock (Phase 5 — grand livre de traçabilité par lot)</h4>
+      <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 12 }}>
+        Outil de transition, réservé à la Direction. Un écart n'est pas forcément une anomalie : il correspond souvent au stock antérieur à l'activation du suivi par lot, jamais individuellement journalisé.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <button className="btn btn-sm btn-gold" onClick={calculerDiagnostic} disabled={chargement}>{chargement ? "Calcul…" : "Calculer l'écart compteur / grand livre"}</button>
+        <button className="btn btn-sm btn-ghost" onClick={lancerMigration} disabled={migrationEnCours}>{migrationEnCours ? "Initialisation…" : "Initialiser le suivi par lot (lots existants)"}</button>
+      </div>
+      {msgMigration && <div style={{ fontSize: 12, marginBottom: 12, color: msgMigration.indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgMigration}</div>}
+      <p style={{ fontSize: 11, color: "var(--btp-text2)", marginBottom: 12, fontStyle: "italic" }}>
+        "Initialiser le suivi par lot" fixe, pour chaque lot QSE déjà existant qui n'a pas encore de suivi précis, sa disponibilité de départ = sa quantité produite. Aucun mouvement n'a jamais pu réduire un lot avant cette fonctionnalité, donc cette valeur est fiable. Action idempotente : cliquer plusieurs fois ne modifie pas les lots déjà initialisés, et ne touche à aucune donnée de production ou de qualité.
+      </p>
+      {ecarts && ecarts.length === 0 && <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucun écart notable détecté.</p>}
+      {ecarts && ecarts.length > 0 && (
+        <table className="btp-table">
+          <thead><tr><th>Type BTC</th><th>Compteur actuel</th><th>Calculé depuis le grand livre</th><th>Écart</th></tr></thead>
+          <tbody>
+            {ecarts.map((r) => (
+              <tr key={r.type}>
+                <td>{getProduit(r.type).nom}</td>
+                <td>{r.ancien.toLocaleString()} u</td>
+                <td>{r.calculeDepuisMouvements.toLocaleString()} u</td>
+                <td style={{ fontWeight: 700, color: r.ecart === 0 ? "#2ecc71" : "var(--btp-gold)" }}>{r.ecart > 0 ? "+" : ""}{r.ecart.toLocaleString()} u</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 function Login() {
   const [email, setEmail] = React.useState("");
@@ -1701,7 +1771,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
   return (
     <div className="btp-app">
-      {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} />}
+      {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} onOuvrirLot={setLotOuvertProd} />}
       {lotOuvertProd && <FicheLot numeroLot={lotOuvertProd} user={user} userData={userData} onClose={()=>setLotOuvertProd(null)} />}
       
       {/* RESET DEMO MODAL */}
@@ -2171,18 +2241,39 @@ style={{width:85,padding:"6px 8px",borderRadius:6,border:"1px solid var(--btp-bo
 <button onClick={async function(){
 setInvMsg("");
 try{
-var batch=db.batch();
-CATALOGUE.forEach(function(prod){
+var auteurInv=(userData&&(userData.nom||userData.email))||(user&&user.email)||"inconnu";
+var lignesInv=CATALOGUE.map(function(prod){
 var ns=invSec[prod.id]!==undefined?parseInt(invSec[prod.id])||0:(stocks[prod.id]||{}).sec||0;
 var ng=invSechage[prod.id]!==undefined?parseInt(invSechage[prod.id])||0:(stocks[prod.id]||{}).sechage||0;
-batch.set(db.collection("stocks").doc(prod.id),{sec:ns,sechage:ng},{merge:true});
+var ancien=(stocks[prod.id]||{}).sec||0;var ancienTotal=ancien+((stocks[prod.id]||{}).sechage||0);var nouveauTotal=ns+ng;
+return {prod:prod,ns:ns,ng:ng,ecart:nouveauTotal-ancienTotal};
 });
-await batch.commit();
+// Ecart d'inventaire journalise au niveau du TYPE (numeroLot: null) : un comptage physique en
+// entrepot ne peut pas etre attribue de maniere fiable a un lot precis sans casser les autres
+// lots consultes (voir rapport de Phase 5) — jamais de fausse precision.
+await db.runTransaction(async function(tx){
+// --- LECTURES ---
+var checks=[];
+for(var i=0;i<lignesInv.length;i++){
+var l=lignesInv[i];
+if(l.ecart===0){checks.push(null);continue;}
+var mvt={type:"AJUSTEMENT_INVENTAIRE",numeroLot:null,typeBTC:l.prod.id,quantite:l.ecart,sourceType:"inventaire",sourceId:l.prod.id+"_"+Date.now(),utilisateur:auteurInv,commentaire:"Inventaire physique"};
+checks.push(await verifierMouvementExistant(tx,mvt));
+}
+// --- ECRITURES ---
+lignesInv.forEach(function(l,i){
+tx.set(db.collection("stocks").doc(l.prod.id),{sec:l.ns,sechage:l.ng},{merge:true});
+if(l.ecart!==0&&checks[i]&&!checks[i].existe){
+ecrireMouvementStock(tx,checks[i].id,{type:"AJUSTEMENT_INVENTAIRE",numeroLot:null,typeBTC:l.prod.id,quantite:l.ecart,sourceType:"inventaire",sourceId:l.prod.id+"_"+Date.now(),utilisateur:auteurInv,commentaire:"Inventaire physique"});
+}
+});
+});
 setInvMsg("Stock mis a jour avec succes ! Le "+new Date().toLocaleDateString("fr-FR")+" a "+new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}));
 setInvSec({});setInvSechage({});
 }catch(e){setInvMsg("Erreur: "+e.message);}
 }} style={{padding:"11px 24px",background:"#8B1A10",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Enregistrer l'inventaire et mettre a jour le stock</button>
-<p style={{fontSize:11,color:"#aaa",marginTop:8}}>Cette action remplace immediatement toutes les quantites en stock par les valeurs saisies.</p>
+<p style={{fontSize:11,color:"#aaa",marginTop:8}}>Cette action remplace immediatement toutes les quantites en stock par les valeurs saisies. Un écart est journalisé dans le grand livre de stock (Phase 5) pour audit.</p>
+<DiagnosticStockPhase5 stocks={stocks} userData={userData} user={user} />
 </div>
 )}
 
@@ -2663,8 +2754,17 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   );
 }
 
-function FicheChantierDirection({ chantier, commandes, onClose }) {
+function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot }) {
   const [tabFiche, setTabFiche] = useState("suivi");
+  const [lotsUtilises, setLotsUtilises] = React.useState(null); // null = pas encore charge
+
+  React.useEffect(() => {
+    let annule = false;
+    db.collection("stock_allocations").where("chantierId", "==", chantier.id).get().then(function (snap) {
+      if (!annule) setLotsUtilises(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    }).catch(function () { if (!annule) setLotsUtilises([]); });
+    return () => { annule = true; };
+  }, [chantier.id]);
   var cmdCh = commandes.filter(function(c){ return c.chantierId === chantier.id; });
   var besoins = chantier.besoins || {};
   var typesChantier = CATALOGUE.filter(function(p){ return (besoins[p.id]||0) > 0; });
@@ -2728,6 +2828,7 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
           <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>Suivi livraisons</button>
           <button style={ts("finance")} onClick={()=>setTabFiche("finance")}>💶 Fiche financiere</button>
           <button style={ts("commandes")} onClick={()=>setTabFiche("commandes")}>Historique commandes</button>
+          <button style={ts("lots")} onClick={()=>setTabFiche("lots")}>🏷️ Lots livrés {lotsUtilises && lotsUtilises.length>0 ? "("+lotsUtilises.length+")" : ""}</button>
         </div>
 
         <div style={{padding:20}}>
@@ -2880,6 +2981,33 @@ function FicheChantierDirection({ chantier, commandes, onClose }) {
                   );
                 })
               }
+            </div>
+          )}
+
+          {tabFiche==="lots"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:6,color:"var(--btp-orange)"}}>Traçabilité inverse : lots livrés sur ce chantier</h4>
+              <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Uniquement les livraisons enregistrées depuis l'activation du suivi de stock par lot (Phase 5) — les livraisons antérieures ne sont pas listées ici.</p>
+              {lotsUtilises===null && <p style={{color:"var(--btp-text2)"}}>Chargement…</p>}
+              {lotsUtilises!==null && lotsUtilises.length===0 && <p style={{color:"var(--btp-text2)"}}>Aucun lot tracé livré sur ce chantier pour l'instant.</p>}
+              {lotsUtilises && lotsUtilises.length>0 && (
+                <table className="btp-table">
+                  <thead><tr><th>Lot</th><th>Type BTC</th><th>Quantité</th><th>Statut</th><th></th></tr></thead>
+                  <tbody>
+                    {lotsUtilises.map(function(a){
+                      return (
+                        <tr key={a.id}>
+                          <td>{a.numeroLot || "Stock historique non traçable"}</td>
+                          <td>{getProduit(a.typeBTC).nom}</td>
+                          <td>{(a.quantite||0).toLocaleString()} u</td>
+                          <td>{a.statut==="Livree"?"✅ Livrée":a.statut==="Annulee"?"↩️ Annulée":a.statut}</td>
+                          <td>{a.numeroLot && onOuvrirLot && <button className="btn btn-sm btn-ghost" onClick={()=>onOuvrirLot(a.numeroLot)}>Voir le lot</button>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
         </div>
@@ -3570,6 +3698,8 @@ function DashboardStock({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [qteEnvoi, setQteEnvoi] = useState({}); // par cmdId
   const [productions, setProductions] = React.useState([]);
+  const [fifoParCmd, setFifoParCmd] = React.useState({}); // cmdId -> { chargement, lignes, deficit, utiliseHistorique, erreur }
+  const [msgLivraison, setMsgLivraison] = React.useState({}); // cmdId -> message
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -3584,31 +3714,48 @@ function DashboardStock({ user, userData }) {
     return () => { u1(); u2(); u3(); };
   }, []);
 
-  const enregistrerLivraison = async (cmd) => {
-    var qte = parseInt(qteEnvoi[cmd.id]||0);
-    if (!qte || qte <= 0) return;
-    var resteMax = Math.max(0, (cmd.quantite||0) - (cmd.quantiteLivree||0));
-    if (qte > resteMax) { qte = resteMax; if(qte<=0) return; }
-    var dejaLivre = cmd.quantiteLivree || 0;
-    var totalApres = dejaLivre + qte;
-    var cmdQte = cmd.quantite || 0;
-    var newStatus = totalApres >= cmdQte ? "Livree" : "Validee";
+  // Calcule la proposition FIFO pour une commande des que l'utilisateur saisit une quantite.
+  // Requetes ciblees a la demande (pas d'ecouteur permanent) : coherent avec la discipline de
+  // performance des phases precedentes.
+  const calculerPropositionFIFO = async (cmd, qte) => {
+    setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: { chargement: true } }); });
+    try {
+      var lotsEligibles = await chargerLotsDisponiblesPourType(cmd.type);
+      var totalTracable = lotsEligibles.reduce(function (a, l) { return a + l.disponible; }, 0);
+      var s = stocks[cmd.type] || {};
+      var stockHistorique = Math.max(0, (s.sec || 0) - totalTracable);
+      var proposition = proposerAllocationFIFO(lotsEligibles, qte, stockHistorique);
+      setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: Object.assign({ chargement: false }, proposition) }); });
+    } catch (e) {
+      setFifoParCmd(function (prev) { return Object.assign({}, prev, { [cmd.id]: { chargement: false, erreur: e.message } }); });
+    }
+  };
 
-    // Soustraire du stock
-    var s = stocks[cmd.type]||{};
-    var newSec = Math.max(0, (s.sec||0) - qte);
-    await db.collection("commandes").doc(cmd.id).update({
-      quantiteLivree: totalApres,
-      status: newStatus,
-      livrePar: userData.nom||user.email,
-      livreAt: firebase.firestore.FieldValue.serverTimestamp()
+  const modifierLigneFIFO = (cmdId, idx, nouvelleQte) => {
+    setFifoParCmd(function (prev) {
+      var etat = prev[cmdId];
+      if (!etat || !etat.lignes) return prev;
+      var lignes = etat.lignes.slice();
+      var max = lignes[idx].historique ? Infinity : lignes[idx].disponibleMax;
+      var v = Math.max(0, Math.min(nouvelleQte, max != null ? max : nouvelleQte));
+      lignes[idx] = Object.assign({}, lignes[idx], { quantite: v });
+      var couvert = lignes.reduce(function (a, l) { return a + l.quantite; }, 0);
+      return Object.assign({}, prev, { [cmdId]: Object.assign({}, etat, { lignes: lignes, couvert: couvert }) });
     });
-    try { await db.collection("evenements").add({ numBC: cmd.numBC||cmd.id, chantier: cmd.chantierNom||"", action: "Livraison effectuée", acteur: userData.nom||user.email, role: "resp_stock", details: "N°"+(cmd.numBC||cmd.id)+" | Qté envoyée: "+qteEnvoi+" sur "+cmd.quantite+" | Statut: "+newStatus, statut: newStatus, timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
-    await db.collection("stocks").doc(cmd.type).set({ sec: newSec, sechage: s.sechage||0 }, { merge:true });
-    // Reset champ
-    var newQte = Object.assign({}, qteEnvoi);
-    delete newQte[cmd.id];
-    setQteEnvoi(newQte);
+  };
+
+  const enregistrerLivraison = async (cmd) => {
+    var etat = fifoParCmd[cmd.id];
+    if (!etat || !etat.lignes || etat.lignes.length === 0) return;
+    setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "Enregistrement..." }); });
+    try {
+      await enregistrerLivraisonAvecAllocation(cmd, etat.lignes, user, userData);
+      var newQte = Object.assign({}, qteEnvoi); delete newQte[cmd.id]; setQteEnvoi(newQte);
+      var newFifo = Object.assign({}, fifoParCmd); delete newFifo[cmd.id]; setFifoParCmd(newFifo);
+      setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "✅ Livraison enregistrée." }); });
+    } catch (e) {
+      setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "❌ Erreur : " + e.message }); });
+    }
   };
 
   return (
@@ -3684,17 +3831,49 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
                 </div>
                 <div style={{fontSize:11,color:"var(--btp-text2)",marginBottom:12}}>{pct}% livre ({livree.toLocaleString()} / {total.toLocaleString()})</div>
                 {resteCmd > 0 && (
-                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <div style={{flex:1}}>
-                      <label style={{fontSize:12,fontWeight:600,color:"#145A32",display:"block",marginBottom:4}}>Quantite effective livree maintenant :</label>
-                      <input type="number" min="1" max={resteCmd} placeholder={"Max "+resteCmd.toLocaleString()}
-                        value={qteEnvoi[cmd.id]||""}
-                        onChange={e=>{ var v=parseInt(e.target.value)||0; var mx=Math.max(0,(cmd.quantite||0)-(cmd.quantiteLivree||0)); setQteEnvoi(Object.assign({},qteEnvoi,{[cmd.id]:v>mx?mx:(v||"")})); }}
-                        style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"2px solid #1E8449",fontSize:14}} />
+                  <div>
+                    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                      <div style={{flex:1}}>
+                        <label style={{fontSize:12,fontWeight:600,color:"#145A32",display:"block",marginBottom:4}}>Quantite a livrer :</label>
+                        <input type="number" min="1" max={resteCmd} placeholder={"Max "+resteCmd.toLocaleString()}
+                          value={qteEnvoi[cmd.id]||""}
+                          onChange={e=>{ var v=parseInt(e.target.value)||0; var mx=Math.max(0,(cmd.quantite||0)-(cmd.quantiteLivree||0)); setQteEnvoi(Object.assign({},qteEnvoi,{[cmd.id]:v>mx?mx:(v||"")})); }}
+                          style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"2px solid #1E8449",fontSize:14}} />
+                      </div>
+                      <button onClick={()=>calculerPropositionFIFO(cmd, parseInt(qteEnvoi[cmd.id])||0)}
+                        disabled={!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0}
+                        style={{background:"#2980B9",color:"white",border:"none",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,marginTop:20,opacity:(!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0)?0.5:1}}>🔍 Préparer la livraison</button>
                     </div>
-                    <button onClick={()=>enregistrerLivraison(cmd)}
-                      disabled={!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0}
-                      style={{background:"#1E8449",color:"white",border:"none",padding:"10px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,marginTop:20,opacity:(!qteEnvoi[cmd.id]||parseInt(qteEnvoi[cmd.id])<=0)?0.5:1}}>Enregistrer livraison ✓</button>
+
+                    {fifoParCmd[cmd.id] && fifoParCmd[cmd.id].chargement && <div style={{marginTop:10,fontSize:12,color:"var(--btp-text2)"}}>Calcul de la proposition…</div>}
+                    {fifoParCmd[cmd.id] && fifoParCmd[cmd.id].erreur && <div style={{marginTop:10,fontSize:12,color:"#EC7063"}}>⚠️ {fifoParCmd[cmd.id].erreur}</div>}
+                    {fifoParCmd[cmd.id] && fifoParCmd[cmd.id].lignes && (
+                      <div style={{marginTop:12,background:"var(--btp-card2)",borderRadius:8,padding:12}}>
+                        <div style={{fontSize:12,fontWeight:700,color:"var(--btp-text2)",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Allocation proposée (FIFO)</div>
+                        {fifoParCmd[cmd.id].lignes.map(function(l,idx){
+                          return (
+                            <div key={idx} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,fontSize:13}}>
+                              <span style={{flex:1}}>{l.historique ? "📦 Stock historique non traçable" : ("🏷️ "+l.numeroLot+" (produit le "+l.date+")")}</span>
+                              <input type="number" min="0" max={l.disponibleMax} value={l.quantite}
+                                onChange={e=>modifierLigneFIFO(cmd.id, idx, parseInt(e.target.value)||0)}
+                                style={{width:90,padding:"4px 8px",borderRadius:6,border:"1px solid var(--btp-border)",textAlign:"right"}} />
+                              <span style={{color:"var(--btp-text2)"}}>u</span>
+                            </div>
+                          );
+                        })}
+                        {fifoParCmd[cmd.id].utiliseHistorique > 0 && (
+                          <div style={{fontSize:12,color:"var(--btp-gold)",fontWeight:700,marginTop:4}}>⚠️ Cette livraison utilise {fifoParCmd[cmd.id].utiliseHistorique.toLocaleString()} unités de stock historique non traçable.</div>
+                        )}
+                        {fifoParCmd[cmd.id].deficit > 0 && (
+                          <div style={{fontSize:12,color:"#EC7063",fontWeight:700,marginTop:4}}>🔴 Déficit : {fifoParCmd[cmd.id].deficit.toLocaleString()} u non couvertes par le stock disponible.</div>
+                        )}
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
+                          <span style={{fontSize:12,color:"var(--btp-text2)"}}>Total : <strong style={{color:"white"}}>{fifoParCmd[cmd.id].lignes.reduce(function(a,l){return a+l.quantite;},0).toLocaleString()} u</strong></span>
+                          <button onClick={()=>enregistrerLivraison(cmd)} disabled={msgLivraison[cmd.id]==="Enregistrement..."} style={{background:"#1E8449",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,opacity:msgLivraison[cmd.id]==="Enregistrement..."?0.6:1}}>{msgLivraison[cmd.id]==="Enregistrement..."?"Enregistrement…":"✅ Confirmer la livraison"}</button>
+                        </div>
+                      </div>
+                    )}
+                    {msgLivraison[cmd.id] && <div style={{marginTop:8,fontSize:12,color:msgLivraison[cmd.id].indexOf("Erreur")>=0?"#EC7063":"#2ECC71"}}>{msgLivraison[cmd.id]}</div>}
                   </div>
                 )}
                 {resteCmd === 0 && (
@@ -4705,6 +4884,336 @@ async function qseProchainNumeroLot(mois) {
   });
 }
 
+// ============================================================================================
+// GRAND LIVRE DE STOCK (Phase 5) — tracabilite reelle par lot, en parallele du compteur agrege
+// existant, sans rien casser.
+//
+// Principes directeurs :
+//  - stock_mouvements est la SEULE source de verite des quantites physiques (entree production,
+//    sortie livraison, perte, ajustement d'inventaire, annulation). Chaque ligne est SIGNEE
+//    (positif = entree, negatif = sortie) : la situation d'un lot se calcule en sommant simplement
+//    ses mouvements (calculerStockLot), jamais via un second compteur qui pourrait diverger.
+//  - stocks/{type} reste le compteur agrege existant, ecrit exactement comme avant par les memes
+//    fonctions (compatibilite totale avec les ecrans deja en place). reconcilierStockType() permet
+//    de detecter un ecart pendant la periode de transition, sans jamais le corriger seul.
+//  - qse_lots/{numeroLot}.disponibleCache est un CACHE, mais un cache qui compte : c'est le seul
+//    champ directement adressable par tx.get()/tx.update() (donc protege par les transactions
+//    Firestore contre les acces concurrents) utilise pour DECIDER si une allocation est possible.
+//    Une requete filtree (where().get()) a l'interieur d'une transaction ne protege PAS contre les
+//    "phantom reads" (un document cree par une autre transaction pendant la nôtre) ; un tx.get()
+//    direct sur un document precis, si. C'est pourquoi ce cache existe et doit toujours etre tenu a
+//    jour dans la MEME transaction que le mouvement correspondant. calculerStockLot() (a partir du
+//    grand livre) reste la source d'audit/affichage ; reconcilierStockType() peut aussi detecter un
+//    ecart entre ce cache et le grand livre.
+//  - stock_allocations est un INDEX de tracabilite ("quelle commande/quel chantier a consomme quel
+//    lot"), jamais une source de quantites : chaque livraison ecrit a la fois un mouvement (compte)
+//    et une allocation (qui/quoi), dans la meme transaction.
+//  - Idempotence : l'id d'un mouvement est derive deterministiquement de sa source
+//    (sourceType_sourceId_numeroLot_type). Un double clic/retry ne cree donc jamais deux fois le
+//    meme mouvement (verifierMouvementExistant/ecrireMouvementStock).
+//  - Contrainte Firestore stricte respectee partout ci-dessous : dans une transaction, TOUTES les
+//    lectures (tx.get) precedent TOUTES les ecritures (tx.set/update). Ne jamais intercaler.
+//  - Le stock historique non trace (anterieur a cette phase) n'est JAMAIS rattache a un faux
+//    numero de lot : un mouvement qui le concerne porte numeroLot: null et reste signale comme tel
+//    a l'utilisateur (voir proposerAllocationFIFO/DashboardStock).
+// ============================================================================================
+
+function idMouvementStock(sourceType, sourceId, numeroLot, type) {
+  var lot = numeroLot || "NA";
+  return (sourceType + "_" + sourceId + "_" + lot + "_" + type).replace(/[\/\s]/g, "-").slice(0, 400);
+}
+// Lecture seule (a appeler pendant la phase "lecture" d'une transaction) : ce mouvement existe-t-il deja ?
+async function verifierMouvementExistant(tx, mouvement) {
+  var id = idMouvementStock(mouvement.sourceType, mouvement.sourceId, mouvement.numeroLot, mouvement.type);
+  var snap = await tx.get(db.collection("stock_mouvements").doc(id));
+  return { id: id, existe: snap.exists };
+}
+// Ecriture pure, aucune lecture : a appeler uniquement apres verifierMouvementExistant()===false,
+// et uniquement pendant la phase "ecriture" (apres toutes les lectures de la transaction).
+function ecrireMouvementStock(tx, id, mouvement) {
+  tx.set(db.collection("stock_mouvements").doc(id), {
+    type: mouvement.type,
+    numeroLot: mouvement.numeroLot || null,
+    typeBTC: mouvement.typeBTC || "",
+    quantite: mouvement.quantite,
+    date: mouvement.date || new Date().toLocaleDateString("fr-FR"),
+    sourceType: mouvement.sourceType,
+    sourceId: mouvement.sourceId,
+    utilisateur: mouvement.utilisateur || "inconnu",
+    commentaire: mouvement.commentaire || "",
+    dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+// Calcule la situation d'un lot a partir d'une liste de mouvements DEJA CHARGEE (aucune lecture
+// Firestore ici). Convention de signe : ENTREE_PRODUCTION et ANNULATION_LIVRAISON sont positifs ;
+// PERTE et SORTIE_LIVRAISON sont negatifs ; AJUSTEMENT_INVENTAIRE/CORRECTION portent leur propre
+// signe. "disponible" = somme signee brute de tous les mouvements du lot : aucune ambiguite.
+function calculerStockLot(numeroLot, mouvements) {
+  var mvts = (mouvements || []).filter(function (m) { return m.numeroLot === numeroLot; });
+  var produit = 0, perdu = 0, livre = 0, ajustements = 0;
+  mvts.forEach(function (m) {
+    if (m.type === "ENTREE_PRODUCTION") produit += m.quantite;
+    else if (m.type === "PERTE") perdu += -m.quantite;
+    else if (m.type === "SORTIE_LIVRAISON" || m.type === "ANNULATION_LIVRAISON") livre += -m.quantite; // SORTIE (negatif) ajoute au livre affiche, ANNULATION (positif) le retranche
+    else if (m.type === "AJUSTEMENT_INVENTAIRE" || m.type === "CORRECTION") ajustements += m.quantite;
+  });
+  var disponible = mvts.reduce(function (a, m) { return a + m.quantite; }, 0);
+  mvts.sort(function (a, b) { return qseTsMs(a.dateCreation) - qseTsMs(b.dateCreation); });
+  return { produit: produit, perdu: perdu, livre: livre, ajustements: ajustements, disponible: Math.max(0, disponible), mouvements: mvts };
+}
+
+// Propose une allocation FIFO (lots les plus anciens d'abord) parmi des lots DEJA FILTRES comme
+// eligibles par chargerLotsDisponiblesPourType (conformes, disponibilite reelle > 0). Fonction
+// pure, aucun acces Firestore. Si les lots traçables ne suffisent pas, complete avec le stock
+// historique non traçable (stockHistoriqueDisponible) en le signalant explicitement — jamais de
+// faux numero de lot invente.
+function proposerAllocationFIFO(lotsEligibles, besoin, stockHistoriqueDisponible) {
+  var tries = (lotsEligibles || []).slice().sort(function (a, b) { return dateProductionMs(a) - dateProductionMs(b); });
+  var lignes = [];
+  var reste = besoin;
+  tries.forEach(function (l) {
+    if (reste <= 0) return;
+    var pris = Math.min(l.disponible, reste);
+    if (pris <= 0) return;
+    lignes.push({ numeroLot: l.numeroLot, quantite: pris, date: l.date, historique: false, disponibleMax: l.disponible });
+    reste -= pris;
+  });
+  var utiliseHistorique = 0;
+  if (reste > 0 && stockHistoriqueDisponible > 0) {
+    utiliseHistorique = Math.min(reste, stockHistoriqueDisponible);
+    if (utiliseHistorique > 0) {
+      lignes.push({ numeroLot: null, quantite: utiliseHistorique, date: null, historique: true, disponibleMax: stockHistoriqueDisponible });
+      reste -= utiliseHistorique;
+    }
+  }
+  return { lignes: lignes, couvert: besoin - reste, deficit: Math.max(0, reste), utiliseHistorique: utiliseHistorique };
+}
+
+// Charge, pour un type BTC donne, les lots eligibles a une allocation (conformes — donc ni en
+// sechage, ni bloques par une NC, cf. qseStatutLot — et disponibilite reelle > 0 via le cache
+// transactionnel). Requetes CIBLEES (pas d'ecouteur permanent), appelees uniquement au moment de
+// preparer une livraison — coherent avec la discipline de performance des phases precedentes.
+async function chargerLotsDisponiblesPourType(typeBTC) {
+  var [lotsSnap, controlesSnap, ncSnap] = await Promise.all([
+    db.collection("qse_lots").where("type", "==", typeBTC).limit(500).get(),
+    db.collection("qse_controles").where("type", "==", typeBTC).limit(500).get(),
+    db.collection("qse_nc").limit(500).get()
+  ]);
+  var lots = lotsSnap.docs.map(function (d) { return d.data(); });
+  var controles = controlesSnap.docs.map(function (d) { return d.data(); });
+  var ncs = ncSnap.docs.map(function (d) { return d.data(); });
+  var ncParLot = {};
+  ncs.forEach(function (nc) { if (nc.numeroLot) (ncParLot[nc.numeroLot] = ncParLot[nc.numeroLot] || []).push(nc); });
+  var controlesParLot = {};
+  controles.forEach(function (c) { if (c.numeroLot) (controlesParLot[c.numeroLot] = controlesParLot[c.numeroLot] || []).push(c); });
+
+  var eligibles = [];
+  lots.forEach(function (lot) {
+    var statut = qseStatutLot(lot, controlesParLot[lot.numeroLot] || [], ncParLot[lot.numeroLot] || []);
+    if (statut.code !== "conforme") return; // exclut sechage / pret_controle / non_conforme / bloque (point 25)
+    var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0; // lot non encore initialise (cf. migration) -> 0, jamais devine
+    if (dispo <= 0) return;
+    eligibles.push(Object.assign({}, lot, { disponible: dispo }));
+  });
+  return eligibles;
+}
+
+// Migration explicite, idempotente et sans risque (point 30) : initialise disponibleCache = quantite
+// produite pour les lots crees AVANT la Phase 5 (qui n'ont pas encore ce champ). Aucun mouvement
+// n'a jamais pu decrementer un lot avant l'existence de cette fonctionnalite, donc quantite produite
+// = disponibilite reelle actuelle avec une tres haute confiance. Ne touche jamais un lot deja
+// initialise (safe a relancer plusieurs fois). Ecrit egalement le mouvement ENTREE_PRODUCTION
+// correspondant s'il n'existait pas encore (lots crees avant l'introduction du grand livre).
+async function initialiserDisponibleCachePourLotsExistants(user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var tousLesLots = (await db.collection("qse_lots").limit(1000).get()).docs;
+  var aTraiter = tousLesLots.filter(function (d) { return d.data().disponibleCache === undefined; });
+  var traites = 0, ignores = 0;
+  for (var i = 0; i < aTraiter.length; i++) {
+    var lotDoc = aTraiter[i];
+    var lot = lotDoc.data();
+    if (lot.disponibleCache !== undefined && lot.disponibleCache !== null) { ignores++; continue; }
+    var lotRef = db.collection("qse_lots").doc(lotDoc.id);
+    var mvt = { type: "ENTREE_PRODUCTION", numeroLot: lot.numeroLot, typeBTC: lot.type || "", quantite: lot.quantite || 0, date: lot.date || "", sourceType: "migration_phase5", sourceId: lotDoc.id, utilisateur: auteur, commentaire: "Initialisation retroactive (Phase 5)" };
+    await db.runTransaction(async function (tx) {
+      var freshSnap = await tx.get(lotRef);
+      var chk = await verifierMouvementExistant(tx, mvt);
+      if (!freshSnap.exists) return;
+      var freshLot = freshSnap.data();
+      if (freshLot.disponibleCache !== undefined && freshLot.disponibleCache !== null) return; // deja migre entre-temps
+      if (!chk.existe) ecrireMouvementStock(tx, chk.id, mvt);
+      tx.update(lotRef, { disponibleCache: lot.quantite || 0 });
+    });
+    traites++;
+  }
+  return { traites: traites, ignores: ignores };
+}
+
+// Compare le compteur agrege existant (stocks/{type}) a la somme des mouvements du grand livre
+// pour ce type. Un ecart n'est pas forcement une anomalie : il correspond notamment au stock
+// historique anterieur a la Phase 5, jamais individuellement journalise. Fonction pure et
+// diagnostique uniquement — ne corrige jamais rien automatiquement (point 21).
+function reconcilierStockType(typeBTC, stocksCache, mouvements) {
+  var s = (stocksCache || {})[typeBTC] || {};
+  var ancien = (s.sec || 0) + (s.sechage || 0);
+  var mvtsType = (mouvements || []).filter(function (m) { return m.typeBTC === typeBTC; });
+  var calculeDepuisMouvements = mvtsType.reduce(function (a, m) { return a + m.quantite; }, 0);
+  return { type: typeBTC, ancien: ancien, calculeDepuisMouvements: calculeDepuisMouvements, ecart: ancien - calculeDepuisMouvements };
+}
+
+// Declare une perte rattachee a un lot precis (depuis FicheLot). Refuse toute quantite superieure
+// a la disponibilite reelle du lot (point 12/25). Transaction unique, lectures puis ecritures.
+// "token" est un identifiant STABLE genere une seule fois par l'appelant au moment ou l'utilisateur
+// ouvre le formulaire (jamais recalcule a chaque clic) : c'est ce qui rend un double clic sur
+// "Confirmer" idempotent (meme token -> meme mouvement -> la deuxieme tentative est detectee comme
+// deja appliquee et n'a AUCUN effet, ni sur le mouvement ni sur le cache/stock — voir dejaApplique).
+async function declarerPerteLot(numeroLot, typeBTC, quantite, motif, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  if (!(quantite > 0)) throw new Error("Quantité invalide.");
+  var lotRef = db.collection("qse_lots").doc(numeroLot);
+  var stockRef = db.collection("stocks").doc(typeBTC);
+  var mvt = { type: "PERTE", numeroLot: numeroLot, typeBTC: typeBTC, quantite: -quantite, sourceType: "perte_lot", sourceId: token, utilisateur: auteur, commentaire: motif || "" };
+  await db.runTransaction(async function (tx) {
+    var lotSnap = await tx.get(lotRef);
+    if (!lotSnap.exists) throw new Error("Lot introuvable.");
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementExistant(tx, mvt);
+    if (chk.existe) return; // deja applique (double clic/retry) : aucun effet une deuxieme fois
+
+    var lot = lotSnap.data();
+    var dispo = lot.disponibleCache != null ? lot.disponibleCache : (lot.quantite || 0);
+    if (quantite > dispo) throw new Error("Quantité perdue (" + quantite + " u) supérieure à la disponibilité du lot (" + dispo + " u).");
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    var newSec = Math.max(0, (s.sec || 0) - quantite);
+
+    ecrireMouvementStock(tx, chk.id, mvt);
+    tx.update(lotRef, { disponibleCache: dispo - quantite });
+    tx.set(stockRef, { sec: newSec, sechage: s.sechage || 0 }, { merge: true });
+  });
+}
+
+// Fonction metier CENTRALE et UNIQUE pour enregistrer une livraison (point 9) : toute sortie
+// physique de stock vers une commande doit passer par ici, jamais par une decrementation directe
+// ailleurs. Prend une liste de lignes {numeroLot|null, quantite} (proposition FIFO, eventuellement
+// corrigee manuellement par l'utilisateur), verifie tout, puis ecrit mouvements + allocations +
+// mise a jour de la commande + mise a jour du cache agrege stocks/{type}, en une seule transaction.
+async function enregistrerLivraisonAvecAllocation(cmd, lignes, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var lignesValides = (lignes || []).filter(function (l) { return l.quantite > 0; });
+  var totalDemande = lignesValides.reduce(function (a, l) { return a + l.quantite; }, 0);
+  if (totalDemande <= 0) throw new Error("Quantité invalide.");
+
+  var cmdRef = db.collection("commandes").doc(cmd.id);
+  var stockRef = db.collection("stocks").doc(cmd.type);
+  var lotsAvecNumero = lignesValides.filter(function (l) { return l.numeroLot; });
+  var mouvementsAEcrire = lignesValides.map(function (l) {
+    return { ligne: l, mvt: { type: "SORTIE_LIVRAISON", numeroLot: l.numeroLot || null, typeBTC: cmd.type, quantite: -l.quantite, sourceType: "livraison", sourceId: cmd.id + "_" + (l.numeroLot || "HIST"), utilisateur: auteur, commentaire: "" } };
+  });
+
+  await db.runTransaction(async function (tx) {
+    // --- LECTURES (toutes avant toute ecriture) ---
+    var cmdSnap = await tx.get(cmdRef);
+    if (!cmdSnap.exists) throw new Error("Commande introuvable.");
+    var cmdData = cmdSnap.data();
+    var stockSnap = await tx.get(stockRef);
+
+    var lotsLus = [];
+    for (var i = 0; i < lotsAvecNumero.length; i++) {
+      var lref = db.collection("qse_lots").doc(lotsAvecNumero[i].numeroLot);
+      var lsnap = await tx.get(lref);
+      lotsLus.push({ ligne: lotsAvecNumero[i], ref: lref, snap: lsnap });
+    }
+    var checks = [];
+    for (var j = 0; j < mouvementsAEcrire.length; j++) {
+      checks.push(await verifierMouvementExistant(tx, mouvementsAEcrire[j].mvt));
+    }
+
+    // Idempotence complete (point 11) : si CES mouvements existent deja (double clic, retry
+    // reseau), toute cette livraison a deja ete appliquee — on ne reapplique RIEN (ni mouvement,
+    // ni cache lot, ni allocation, ni commande, ni compteur agrege), pas seulement le mouvement.
+    var dejaApplique = checks.some(function (chk) { return chk.existe; });
+    if (dejaApplique) return;
+
+    // --- VALIDATION (aucun acces Firestore, uniquement des verifications) ---
+    var dejaLivre = cmdData.quantiteLivree || 0;
+    var resteReel = Math.max(0, (cmdData.quantite || 0) - dejaLivre);
+    if (totalDemande > resteReel) throw new Error("La commande a évolué entre-temps (reste réel : " + resteReel + " u). Rechargez et réessayez.");
+    lotsLus.forEach(function (x) {
+      if (!x.snap.exists) throw new Error("Lot " + x.ligne.numeroLot + " introuvable.");
+      var lot = x.snap.data();
+      var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
+      if (x.ligne.quantite > dispo) throw new Error("Lot " + x.ligne.numeroLot + " : quantité demandée (" + x.ligne.quantite + ") supérieure à sa disponibilité (" + dispo + " u).");
+    });
+
+    // --- ECRITURES (toutes apres toutes les lectures) ---
+    checks.forEach(function (chk, idx) { ecrireMouvementStock(tx, chk.id, mouvementsAEcrire[idx].mvt); });
+    lotsLus.forEach(function (x) {
+      var lot = x.snap.data();
+      var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
+      tx.update(x.ref, { disponibleCache: dispo - x.ligne.quantite });
+    });
+    lignesValides.forEach(function (l) {
+      tx.set(db.collection("stock_allocations").doc(), {
+        commandeId: cmd.id, chantierId: cmd.chantierId || null, chantierNom: cmd.chantierNom || cmd.client || "",
+        numeroLot: l.numeroLot || null, typeBTC: cmd.type, quantite: l.quantite, statut: "Livree",
+        dateAllocation: firebase.firestore.FieldValue.serverTimestamp(),
+        dateLivraison: firebase.firestore.FieldValue.serverTimestamp(),
+        utilisateurAllocation: auteur, utilisateurLivraison: auteur
+      });
+    });
+    var totalApres = dejaLivre + totalDemande;
+    var newStatus = totalApres >= (cmdData.quantite || 0) ? "Livree" : "Validee";
+    tx.update(cmdRef, { quantiteLivree: totalApres, status: newStatus, livrePar: auteur, livreAt: firebase.firestore.FieldValue.serverTimestamp() });
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    tx.set(stockRef, { sec: Math.max(0, (s.sec || 0) - totalDemande), sechage: s.sechage || 0 }, { merge: true });
+  });
+
+  try {
+    await db.collection("evenements").add({
+      numBC: cmd.numBC || cmd.id, chantier: cmd.chantierNom || "", action: "Livraison effectuée", acteur: auteur, role: "resp_stock",
+      details: "N°" + (cmd.numBC || cmd.id) + " | Qté: " + totalDemande + " | Lots: " + lignesValides.map(function (l) { return (l.numeroLot || "stock historique") + ":" + l.quantite; }).join(", "),
+      statut: "Livraison enregistrée", timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {}
+}
+
+// Annule une livraison deja enregistree (une allocation au statut "Livree") : cree un mouvement
+// inverse (ANNULATION_LIVRAISON, jamais de suppression du mouvement d'origine, point 14), remet la
+// quantite disponible sur le lot, et retire la quantite de la commande.
+async function annulerLivraisonAllocation(allocationId, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var allocRef = db.collection("stock_allocations").doc(allocationId);
+  await db.runTransaction(async function (tx) {
+    var allocSnap = await tx.get(allocRef);
+    if (!allocSnap.exists) throw new Error("Allocation introuvable.");
+    var alloc = allocSnap.data();
+    if (alloc.statut !== "Livree") throw new Error("Seule une allocation livrée peut être annulée.");
+    var cmdRef = db.collection("commandes").doc(alloc.commandeId);
+    var cmdSnap = await tx.get(cmdRef);
+    var stockRef = db.collection("stocks").doc(alloc.typeBTC);
+    var stockSnap = await tx.get(stockRef);
+    var lotRef = alloc.numeroLot ? db.collection("qse_lots").doc(alloc.numeroLot) : null;
+    var lotSnap = lotRef ? await tx.get(lotRef) : null;
+    var mvt = { type: "ANNULATION_LIVRAISON", numeroLot: alloc.numeroLot || null, typeBTC: alloc.typeBTC, quantite: alloc.quantite, sourceType: "annulation_livraison", sourceId: allocationId, utilisateur: auteur, commentaire: "" };
+    var chk = await verifierMouvementExistant(tx, mvt);
+
+    if (!chk.existe) ecrireMouvementStock(tx, chk.id, mvt);
+    tx.update(allocRef, { statut: "Annulee", utilisateurAnnulation: auteur, dateAnnulation: firebase.firestore.FieldValue.serverTimestamp() });
+    if (lotRef && lotSnap && lotSnap.exists) {
+      var lot = lotSnap.data();
+      var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
+      tx.update(lotRef, { disponibleCache: dispo + alloc.quantite });
+    }
+    if (cmdSnap.exists) {
+      var cmdData = cmdSnap.data();
+      tx.update(cmdRef, { quantiteLivree: Math.max(0, (cmdData.quantiteLivree || 0) - alloc.quantite), status: "Validee" });
+    }
+    var s = stockSnap.exists ? stockSnap.data() : {};
+    tx.set(stockRef, { sec: (s.sec || 0) + alloc.quantite, sechage: s.sechage || 0 }, { merge: true });
+  });
+}
+
 async function qseCreerLotEtControlePourProduction(productionId, production, user, userData) {
   const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
   const now = firebase.firestore.FieldValue.serverTimestamp();
@@ -4714,9 +5223,13 @@ async function qseCreerLotEtControlePourProduction(productionId, production, use
   const d = new Date();
   const mois = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
   const numeroLot = await qseProchainNumeroLot(mois);
+  const mvtEntree = { type: "ENTREE_PRODUCTION", numeroLot: numeroLot, typeBTC: production.type || "", quantite: production.quantite || 0, date: production.date || "", sourceType: "production", sourceId: productionId, utilisateur: auteur, commentaire: "" };
   await db.runTransaction(async (tx) => {
+    // --- LECTURES ---
     const indexSnap = await tx.get(indexRef);
     if (indexSnap.exists) return;
+    const chkMvt = await verifierMouvementExistant(tx, mvtEntree);
+    // --- ECRITURES ---
     const lotRef = db.collection("qse_lots").doc(numeroLot);
     tx.set(lotRef, {
       numeroLot: numeroLot,
@@ -4726,7 +5239,8 @@ async function qseCreerLotEtControlePourProduction(productionId, production, use
       phase: production.phase || "",
       date: production.date || "",
       dateCreation: now,
-      creePar: auteur
+      creePar: auteur,
+      disponibleCache: production.quantite || 0 // Phase 5 : source de verite operationnelle pour les allocations, tenue a jour transactionnellement
     });
     tx.set(indexRef, { numeroLot: numeroLot, dateCreation: now });
     const controleRef = db.collection("qse_controles").doc();
@@ -4739,6 +5253,7 @@ async function qseCreerLotEtControlePourProduction(productionId, production, use
       dateCreation: now,
       creePar: auteur
     });
+    if (!chkMvt.existe) ecrireMouvementStock(tx, chkMvt.id, mvtEntree);
   });
 }
 
@@ -4758,6 +5273,8 @@ async function qseReparerProductionSansLot(production, user, userData) {
     const dernier = (compteurSnap.exists && compteurSnap.data().dernier) || 0;
     const suivant = dernier + 1;
     const numeroLot = "BTC-" + mois + "-" + String(suivant).padStart(3, "0");
+    // --- derniere LECTURE avant d'entrer en phase ECRITURE (contrainte Firestore) ---
+    const chkMvt = await verifierMouvementExistant(tx, { type: "ENTREE_PRODUCTION", numeroLot: numeroLot, sourceType: "production", sourceId: production.id });
     tx.set(compteurRef, { dernier: suivant });
     const lotRef = db.collection("qse_lots").doc(numeroLot);
     tx.set(lotRef, {
@@ -4769,7 +5286,8 @@ async function qseReparerProductionSansLot(production, user, userData) {
       date: production.date || "",
       dateCreation: now,
       creePar: auteur,
-      reparation: true
+      reparation: true,
+      disponibleCache: production.quantite || 0
     });
     tx.set(indexRef, { numeroLot: numeroLot, dateCreation: now });
     // Fix (Phase 4) : la reparation d'un lot manquant doit aussi creer le controle qualite
@@ -4786,6 +5304,7 @@ async function qseReparerProductionSansLot(production, user, userData) {
       dateCreation: now,
       creePar: auteur
     });
+    if (!chkMvt.existe) ecrireMouvementStock(tx, chkMvt.id, { type: "ENTREE_PRODUCTION", numeroLot: numeroLot, typeBTC: production.type || "", quantite: production.quantite || 0, date: production.date || "", sourceType: "production", sourceId: production.id, utilisateur: auteur, commentaire: "Réparation lot manquant" });
     return numeroLot;
   });
 }
@@ -5245,9 +5764,12 @@ function FicheLot(props) {
   const [origines, setOrigines] = React.useState([]);
   const [commandesType, setCommandesType] = React.useState([]);
   const [stockType, setStockType] = React.useState(null);
+  const [mouvements, setMouvements] = React.useState([]);
+  const [allocations, setAllocations] = React.useState([]);
   const [charge, setCharge] = React.useState(true);
   const [erreur, setErreur] = React.useState("");
   const [msgAction, setMsgAction] = React.useState("");
+  const [formPerte, setFormPerte] = React.useState(null); // { quantite, motif } quand ouvert
 
   React.useEffect(() => {
     let annule = false;
@@ -5260,12 +5782,14 @@ function FicheLot(props) {
           return;
         }
         const lotData = Object.assign({ id: lotSnap.id }, lotSnap.data());
-        const [prod, controlesSnap, ncSnap, originesSnap, stockSnap] = await Promise.all([
+        const [prod, controlesSnap, ncSnap, originesSnap, stockSnap, mouvementsSnap, allocationsSnap] = await Promise.all([
           qseRecupererProductionDuLot(lotData),
           db.collection("qse_controles").where("numeroLot", "==", numeroLot).get(),
           db.collection("qse_nc").where("numeroLot", "==", numeroLot).get(),
           db.collection("qse_origines_terre").where("numeroLot", "==", numeroLot).get(),
-          db.collection("stocks").doc(lotData.type).get()
+          db.collection("stocks").doc(lotData.type).get(),
+          db.collection("stock_mouvements").where("numeroLot", "==", numeroLot).get(),
+          db.collection("stock_allocations").where("numeroLot", "==", numeroLot).get()
         ]);
         if (annule) return;
         setLot(lotData);
@@ -5274,6 +5798,8 @@ function FicheLot(props) {
         setNcs(ncSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
         setOrigines(originesSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
         setStockType(stockSnap.exists ? stockSnap.data() : null);
+        setMouvements(mouvementsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+        setAllocations(allocationsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
         const cmdSnap = await db.collection("commandes").where("type", "==", lotData.type).get();
         if (!annule) setCommandesType(cmdSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
       } catch (e) {
@@ -5311,9 +5837,15 @@ function FicheLot(props) {
   const dateFinSechageMs = (function () { var ms = dateProductionMs(lot); return ms ? ms + DUREE_SECHAGE * MS_PAR_JOUR : null; })();
   const valeurLot = (lot.quantite || 0) * produit.prix;
   const ncOuvertes = ncs.filter(function (nc) { return nc.statut !== "Cloturee"; });
-  const pertesDocumentees = ncs.reduce(function (a, nc) { return a + (nc.quantiteConcernee || 0); }, 0);
-  const quantiteEstimeeRestante = Math.max(0, (lot.quantite || 0) - pertesDocumentees);
   const controleATraiter = controles.find(function (c) { return !c.resultat || c.resultat === "Non mesuré"; });
+
+  // Phase 5 : si ce lot a ete cree (ou migre) avec le grand livre, sa disponibilite est reelle et
+  // auditable (calculerStockLot). Sinon (lot anterieur, jamais initialise), on retombe sur
+  // l'ancienne estimation via les NC — jamais de fausse precision affichee comme certaine.
+  const tracable = lot.disponibleCache != null;
+  const stockLot = tracable ? calculerStockLot(numeroLot, mouvements) : null;
+  const pertesDocumenteesNC = ncs.reduce(function (a, nc) { return a + (nc.quantiteConcernee || 0); }, 0);
+  const quantiteEstimeeRestante = Math.max(0, (lot.quantite || 0) - pertesDocumenteesNC);
 
   const marquerControle = async (resultat) => {
     if (!controleATraiter) return;
@@ -5330,6 +5862,44 @@ function FicheLot(props) {
     else { setMsgAction("Ouvrez QSE > Non-conformités et saisissez le lot " + lot.numeroLot + " (autocomplétion disponible)."); }
   };
 
+  const soumettrePerte = async () => {
+    if (!formPerte || formPerte.envoi) return;
+    var qte = parseInt(formPerte.quantite, 10);
+    if (!qte || qte <= 0) { setFormPerte(Object.assign({}, formPerte, { erreur: "Quantité invalide." })); return; }
+    setFormPerte(Object.assign({}, formPerte, { envoi: true, erreur: "" }));
+    try {
+      await declarerPerteLot(lot.numeroLot, lot.type, qte, formPerte.motif || "", formPerte.token, user, userData);
+      const [mvtSnap, lotSnap2] = await Promise.all([
+        db.collection("stock_mouvements").where("numeroLot", "==", numeroLot).get(),
+        db.collection("qse_lots").doc(numeroLot).get()
+      ]);
+      setMouvements(mvtSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+      if (lotSnap2.exists) setLot(Object.assign({ id: lotSnap2.id }, lotSnap2.data()));
+      setFormPerte(null);
+      setMsgAction("Perte de " + qte + " u enregistrée.");
+    } catch (e) {
+      setFormPerte(Object.assign({}, formPerte, { envoi: false, erreur: e.message }));
+    }
+  };
+
+  const annulerAllocation = async (alloc) => {
+    if (!window.confirm("Annuler cette livraison de " + alloc.quantite + " u ? La quantité redeviendra disponible sur ce lot.")) return;
+    try {
+      await annulerLivraisonAllocation(alloc.id, user, userData);
+      const [allocSnap2, mvtSnap2, lotSnap3] = await Promise.all([
+        db.collection("stock_allocations").where("numeroLot", "==", numeroLot).get(),
+        db.collection("stock_mouvements").where("numeroLot", "==", numeroLot).get(),
+        db.collection("qse_lots").doc(numeroLot).get()
+      ]);
+      setAllocations(allocSnap2.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+      setMouvements(mvtSnap2.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+      if (lotSnap3.exists) setLot(Object.assign({ id: lotSnap3.id }, lotSnap3.data()));
+      setMsgAction("Livraison annulée, stock restitué.");
+    } catch (e) {
+      setMsgAction("Erreur : " + e.message);
+    }
+  };
+
   return (
     <div className="btp-modal-overlay" onClick={onClose}>
       <div className="btp-modal" style={{ maxWidth: 820, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
@@ -5340,9 +5910,32 @@ function FicheLot(props) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span className={"fichelot-statut " + statut.classe}>{statut.icone} {statut.label}</span>
+            {tracable && stockLot.disponible > 0 && (
+              <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte({ quantite: "", motif: "", token: numeroLot + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) })}>📉 Déclarer une perte</button>
+            )}
             <button className="btn btn-sm btn-ghost" onClick={onClose}>✕ Fermer</button>
           </div>
         </div>
+
+        {formPerte && (
+          <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-red)", flexDirection: "column", alignItems: "stretch" }}>
+            <strong style={{ marginBottom: 6 }}>📉 Déclarer une perte sur ce lot (max {stockLot ? stockLot.disponible.toLocaleString() : 0} u disponibles)</strong>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div>
+                <label className="btp-label">Quantité perdue</label>
+                <input type="number" min="1" max={stockLot ? stockLot.disponible : undefined} className="btp-input" style={{ width: 120 }}
+                  value={formPerte.quantite} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { quantite: e.target.value }))} />
+              </div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label className="btp-label">Motif</label>
+                <input className="btp-input" placeholder="Ex: casse au déchargement" value={formPerte.motif} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { motif: e.target.value }))} />
+              </div>
+              <button className="btn btn-sm btn-danger" onClick={soumettrePerte} disabled={formPerte.envoi}>{formPerte.envoi ? "Enregistrement…" : "Confirmer la perte"}</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte(null)}>Annuler</button>
+            </div>
+            {formPerte.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formPerte.erreur}</div>}
+          </div>
+        )}
 
         {/* Action necessaire : une seule mise en avant, pas dix boutons en permanence */}
         <div className="fichelot-action">
@@ -5381,11 +5974,23 @@ function FicheLot(props) {
           <div className="fichelot-fait"><div className="fichelot-fait-label">Fin de séchage théorique</div><div className="fichelot-fait-valeur">{dateFinSechageMs ? new Date(dateFinSechageMs).toLocaleDateString("fr-FR") : "—"}</div></div>
           <div className="fichelot-fait"><div className="fichelot-fait-label">Opérateur</div><div className="fichelot-fait-valeur">{production ? (production.responsable || "—") : "—"}</div></div>
           <div className="fichelot-fait"><div className="fichelot-fait-label">Origine de la terre</div><div className="fichelot-fait-valeur">{origines.length > 0 ? origines.map(function (o) { return o.origine; }).join(", ") : "Non renseignée"}</div></div>
-          <div className="fichelot-fait"><div className="fichelot-fait-label">Pertes documentées (NC)</div><div className="fichelot-fait-valeur">{pertesDocumentees.toLocaleString()} u</div></div>
-          <div className="fichelot-fait"><div className="fichelot-fait-label">Quantité restante estimée*</div><div className="fichelot-fait-valeur">{quantiteEstimeeRestante.toLocaleString()} u</div></div>
+          {tracable ? (
+            <React.Fragment>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Perdu</div><div className="fichelot-fait-valeur">{stockLot.perdu.toLocaleString()} u</div></div>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Livré</div><div className="fichelot-fait-valeur">{stockLot.livre.toLocaleString()} u</div></div>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Disponible</div><div className="fichelot-fait-valeur" style={{ color: "#2ecc71" }}>{stockLot.disponible.toLocaleString()} u</div></div>
+            </React.Fragment>
+          ) : (
+            <React.Fragment>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Pertes documentées (NC)*</div><div className="fichelot-fait-valeur">{pertesDocumenteesNC.toLocaleString()} u</div></div>
+              <div className="fichelot-fait"><div className="fichelot-fait-label">Quantité restante estimée*</div><div className="fichelot-fait-valeur">{quantiteEstimeeRestante.toLocaleString()} u</div></div>
+            </React.Fragment>
+          )}
           <div className="fichelot-fait"><div className="fichelot-fait-label">Valeur estimée du lot</div><div className="fichelot-fait-valeur">{valeurLot.toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €</div></div>
         </div>
-        <div className="fichelot-caveat">* Estimation = quantité produite − pertes documentées via NC. Les livraisons ne sont pas décomptées lot par lot (stock géré globalement par type de BTC).</div>
+        {tracable
+          ? <div className="fichelot-caveat">Quantités calculées à partir du grand livre de mouvements de stock (traçabilité par lot active pour ce lot).</div>
+          : <div className="fichelot-caveat">* Lot créé avant l'activation du suivi de stock par lot — estimation basée sur les NC uniquement. Utilisez "Initialiser le suivi par lot" (Direction &gt; Inventaire) pour activer le suivi précis de ce lot.</div>}
 
         <div className="fichelot-section">
           <h4>Historique du lot</h4>
@@ -5476,25 +6081,69 @@ function FicheLot(props) {
         </div>
 
         <div className="fichelot-section">
-          <h4>Stock &amp; livraisons</h4>
+          <h4>Affectations {tracable ? "(" + allocations.length + ")" : ""}</h4>
           <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>
             Stock global actuel du type <strong>{produit.nom}</strong> : {stockType ? (((stockType.sec || 0) + (stockType.sechage || 0)).toLocaleString() + " u") : "0 u"}.
           </p>
-          <p className="fichelot-caveat">⚠️ Le stock est suivi globalement par type de BTC, pas lot par lot : ce chiffre concerne l'ensemble du type, pas uniquement ce lot précis.</p>
-          {commandesType.length > 0 && (
+          {tracable && allocations.length > 0 && (
+            <table className="btp-table">
+              <thead><tr><th>Chantier</th><th>Quantité</th><th>Statut</th><th></th></tr></thead>
+              <tbody>
+                {allocations.map(function (a) {
+                  return (
+                    <tr key={a.id}>
+                      <td>{a.chantierNom || "—"}</td>
+                      <td>{(a.quantite || 0).toLocaleString()} u</td>
+                      <td>{a.statut === "Livree" ? "✅ Livrée" : a.statut === "Annulee" ? "↩️ Annulée" : a.statut}</td>
+                      <td>{a.statut === "Livree" && <button className="btn btn-sm btn-ghost" onClick={() => annulerAllocation(a)}>Annuler</button>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          {tracable && allocations.length === 0 && <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucune livraison enregistrée pour ce lot pour l'instant.</p>}
+          {!tracable && (
             <React.Fragment>
-              <p style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 8 }}>Commandes existantes pour ce type de BTC (non attribuables individuellement à ce lot) :</p>
-              <table className="btp-table">
-                <thead><tr><th>N° BC</th><th>Chantier</th><th>Quantité</th><th>Statut</th></tr></thead>
-                <tbody>
-                  {commandesType.slice(0, 10).map(function (c) {
-                    return (<tr key={c.id}><td>{c.numBC || "—"}</td><td>{c.chantierNom || "—"}</td><td>{(c.quantite || 0).toLocaleString()} u</td><td>{c.status || "—"}</td></tr>);
-                  })}
-                </tbody>
-              </table>
+              <p className="fichelot-caveat">⚠️ Ce lot n'est pas encore suivi par le grand livre de stock : les livraisons ne sont pas individuellement rattachées à ce lot précis.</p>
+              {commandesType.length > 0 && (
+                <React.Fragment>
+                  <p style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 8 }}>Commandes existantes pour ce type de BTC (non attribuables individuellement à ce lot) :</p>
+                  <table className="btp-table">
+                    <thead><tr><th>N° BC</th><th>Chantier</th><th>Quantité</th><th>Statut</th></tr></thead>
+                    <tbody>
+                      {commandesType.slice(0, 10).map(function (c) {
+                        return (<tr key={c.id}><td>{c.numBC || "—"}</td><td>{c.chantierNom || "—"}</td><td>{(c.quantite || 0).toLocaleString()} u</td><td>{c.status || "—"}</td></tr>);
+                      })}
+                    </tbody>
+                  </table>
+                </React.Fragment>
+              )}
             </React.Fragment>
           )}
         </div>
+
+        {tracable && (
+          <div className="fichelot-section">
+            <h4>Historique stock ({stockLot.mouvements.length})</h4>
+            {stockLot.mouvements.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucun mouvement enregistré.</p> : (
+              <div className="fichelot-timeline">
+                {stockLot.mouvements.map(function (m) {
+                  var cls = m.quantite >= 0 ? "tl-ok" : "tl-bad";
+                  var libelles = { ENTREE_PRODUCTION: "⚙️ Production", SORTIE_LIVRAISON: "🚚 Livraison", PERTE: "📉 Perte", AJUSTEMENT_INVENTAIRE: "🔧 Ajustement inventaire", ANNULATION_LIVRAISON: "↩️ Annulation livraison", CORRECTION: "✏️ Correction" };
+                  return (
+                    <div key={m.id} className={"fichelot-tl-item " + cls}>
+                      <div>
+                        <div className="fichelot-tl-titre">{libelles[m.type] || m.type} — {m.quantite > 0 ? "+" : ""}{m.quantite.toLocaleString()} u</div>
+                        <div className="fichelot-tl-detail">{qseTsMs(m.dateCreation) ? new Date(qseTsMs(m.dateCreation)).toLocaleDateString("fr-FR") : "—"} · {m.utilisateur || "—"}{m.commentaire ? (" · " + m.commentaire) : ""}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
