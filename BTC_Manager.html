@@ -520,6 +520,51 @@ input,select,textarea,button{font-family:inherit;}
 .btp-badge-compteur{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;
   padding:0 6px;border-radius:11px;background:var(--btp-red);color:#fff;font-size:12px;font-weight:800;}
 
+/* ============ PHASE 9 — Cockpit "Pilotage" (points 24/26/39/40) ============ */
+.pilotage-barre-periode{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:6px;}
+.pilotage-selecteur-periode{display:flex;flex-wrap:wrap;gap:6px;}
+.pilotage-periode-btn{background:var(--btp-card2);border:1px solid var(--btp-border);color:var(--btp-text2);
+  padding:6px 12px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;}
+.pilotage-periode-btn.active{background:var(--btp-orange);border-color:var(--btp-orange);color:#1a1200;}
+.pilotage-qualite-donnees{background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);color:#F0A500;
+  border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;margin-bottom:16px;cursor:pointer;}
+.pilotage-grid{display:grid;gap:12px;margin-bottom:22px;}
+.pilotage-grid-4{grid-template-columns:repeat(4,1fr);}
+@media (max-width:900px){.pilotage-grid-4{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:480px){.pilotage-grid-4{grid-template-columns:1fr;}}
+.pilotage-tile{background:var(--btp-card);border:1px solid var(--btp-border);border-left:4px solid var(--btp-border);
+  border-radius:10px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.pilotage-tile.cliquable{cursor:pointer;transition:transform .15s;}
+.pilotage-tile.cliquable:hover{transform:translateY(-2px);}
+.pilotage-tile-label{font-size:11px;color:var(--btp-text2);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px;}
+.pilotage-tile-valeur{font-size:24px;font-weight:800;color:var(--btp-text);}
+.pilotage-tile-sousligne{font-size:11px;color:var(--btp-text2);margin-top:4px;}
+.pilotage-tile-var{font-size:12px;font-weight:800;margin-top:6px;}
+.pilotage-tile-var.hausse{color:#2ECC71;}
+.pilotage-tile-var.baisse{color:#EC7063;}
+.pilotage-section{background:var(--btp-card);border:1px solid var(--btp-border);border-radius:12px;
+  padding:16px 18px;margin-bottom:20px;}
+.pilotage-section-titre{font-size:13px;font-weight:800;color:var(--btp-gold);text-transform:uppercase;
+  letter-spacing:.5px;margin-bottom:14px;}
+.pilotage-souscadre-titre{font-size:12px;font-weight:700;color:var(--btp-text2);margin-bottom:8px;}
+.pilotage-2col{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+@media (max-width:760px){.pilotage-2col{grid-template-columns:1fr;}}
+.pilotage-barres{display:flex;align-items:flex-end;gap:8px;padding-top:8px;}
+.pilotage-barre-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+.pilotage-barre-col.cliquable{cursor:pointer;}
+.pilotage-barre{width:70%;border-radius:4px 4px 0 0;min-height:2px;}
+.pilotage-barre-label{font-size:10px;color:var(--btp-text2);margin-top:6px;text-align:center;word-break:break-word;}
+.pilotage-ligne{width:100%;height:90px;}
+.pilotage-mini-stats{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--btp-text2);margin-top:14px;}
+.pilotage-table-scroll{overflow-x:auto;}
+.pilotage-vide{color:var(--btp-text2);font-size:12px;padding:20px 0;text-align:center;}
+.pilotage tr.cliquable{cursor:pointer;}
+.pilotage tr.cliquable:hover{background:rgba(255,255,255,.04);}
+@media (max-width:640px){
+  .pilotage-tile-valeur{font-size:20px;}
+  .pilotage-barre-periode{flex-direction:column;align-items:stretch;}
+}
+
 /* ============ MODULE QSE (homogeneisation visuelle avec le reste de l'appli) ============ */
 .qse-module{display:flex;flex-direction:column;gap:18px;}
 .qse-nav{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--btp-border);padding-bottom:10px;}
@@ -1037,7 +1082,7 @@ var PRIORITES_PAR_ROLE = {
   chef_chantier: ["commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe", "commande_a_valider", "commande_a_valider_groupe"],
   // Phase 8 (point 21) : le Responsable Stock voit son propre perimetre operationnel — l'etat du
   // stock et les commandes a reserver/livrer — jamais les alertes QSE/production qui ne le concernent pas.
-  resp_stock: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe"]
+  resp_stock: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe", "rupture_probable"]
 };
 function filtrerPrioritesParRole(liste, role) {
   var autorises = PRIORITES_PAR_ROLE[role];
@@ -1353,6 +1398,28 @@ function calculerPrioritesOperationnelles(donnees) {
     }
   });
 
+  // --- Phase 9 (point 36) : rupture probable a court terme, alimentee par le MEME calcul que le
+  // cockpit industriel (calculerCouvertureStock/calculerDeficitReservationParType) — jamais une
+  // deuxieme logique de detection. Optionnel : n'agit que si "mouvements" est fourni (uniquement le
+  // cockpit Direction en a besoin ; les autres appelants de calculerPrioritesOperationnelles ne
+  // passent pas ce champ et ne sont donc pas impactes par cette extension, zero regression). Seuil
+  // volontairement resserre (<3 jours) pour eviter une alerte sur une variation mineure (point 35).
+  if (donnees.mouvements) {
+    var periodeRecenteRupture = calculerPeriode("7j", maintenant);
+    CATALOGUE.forEach(function (prod) {
+      var deficitProd = calculerDeficitReservationParType(prod.id, stocks, commandes);
+      var couvertureProd = calculerCouvertureStock(prod.id, deficitProd.disponibleAReserverType, donnees.mouvements, periodeRecenteRupture);
+      if (couvertureProd.calculable && couvertureProd.couvertureJours != null && couvertureProd.couvertureJours < 3) {
+        priorites.push({
+          type: "rupture_probable", niveau: "critique",
+          titre: getProduit(prod.id).nom + " : risque de rupture dans ~" + Math.round(couvertureProd.couvertureJours) + " jour(s)",
+          explication: "Projection sur la consommation moyenne des 7 derniers jours (" + Math.round(couvertureProd.consommationMoyenneJour).toLocaleString() + " u/j).",
+          urgence: -80 - (3 - couvertureProd.couvertureJours), objet: { type: "tab", id: "pilotage" }, action: "Voir le pilotage"
+        });
+      }
+    });
+  }
+
   return trierPriorites(priorites);
 }
 
@@ -1439,6 +1506,503 @@ function ModeAujourdhui({ donnees, ouvrirObjet, role }) {
       {toutes.length > MAX_TOTAL && <div className="mode-aujourdhui-plus">+ {toutes.length - MAX_TOTAL} autre{toutes.length - MAX_TOTAL > 1 ? "s" : ""} à consulter dans "À faire"</div>}
     </div>
   );
+}
+
+// ============================================================================================
+// PHASE 9 — MOTEUR CENTRAL D'INDICATEURS INDUSTRIELS.
+//
+// Principe directeur (cf. cahier des charges) : chaque fonction ci-dessous repond a UNE question
+// metier precise, avec une formule explicite et deterministe (jamais d'IA, jamais de constante
+// cachee). Aucune fonction ne fabrique de donnee manquante : quand le calcul n'est pas fiable, elle
+// retourne calculable:false / une valeur null plutot qu'un chiffre invente. Toute la logique vit ICI
+// (jamais dispersee dans un composant React) pour rester testable independamment de l'UI.
+//
+// Sources de donnees retenues (voir audit complet en tete de session) :
+//  - Production  -> collection "productions" (champ timestamp, reel, fiable pour les periodes).
+//  - Pertes      -> stock_mouvements ou type==="PERTE" (SEULE source complete : la collection
+//    "pertes" est incomplete — elle ne capture pas les pertes declarees par lot/palette depuis
+//    FicheLot/FichePalette — et melange par ailleurs des non-conformites de reception chantier qui
+//    ne sont pas des pertes physiques. Jamais utilisee ici pour ne pas fausser le taux de pertes.
+//  - Cout NC     -> collection "qse_nc" (quantiteConcernee x prix catalogue), jamais melange aux pertes.
+//  - Stock       -> "stocks" (compteur agrege, non historise : pas de vraie "rotation sur stock
+//    moyen" possible, cf. point 14 du cahier des charges -> on utilise la "couverture" a la place).
+// ============================================================================================
+
+// --- A. Parametres industriels centralises (point 33) : jamais de constante eparpillee dans le
+// code. Reutilise les constantes globales deja existantes (STOCK_CIBLE/STOCK_ALERTE/DUREE_SECHAGE)
+// comme valeurs par defaut plutot que d'en dupliquer de nouvelles. Persistes dans un document
+// Firestore unique (parametres_industriels/global) que Direction peut modifier (point 34) — la
+// collection qse_objectifs existante a ete examinee mais ecartee ici : ses champs objectif/realise
+// sont du texte libre, non exploitables pour une comparaison chiffree automatique.
+const PARAMETRES_INDUSTRIELS_DEFAUT = {
+  stockCibleDefaut: STOCK_CIBLE,
+  stockMinimumDefaut: STOCK_ALERTE,
+  dureeSechageJours: DUREE_SECHAGE,
+  fenetreMaturiteProcheJours: 3,   // "devient mature sous X jours" (point 20)
+  fenetrePrevisionJours: 30,       // fenetre de la moyenne glissante (point 31)
+  cadenceCibleParJour: null,       // pas de constante cachee : reste explicitement absent tant que Direction ne l'a pas saisie (point 5)
+  objectifProductionMensuelle: null,
+  objectifTauxPertesMaxPct: null,
+  objectifTauxConformiteMinPct: null
+};
+async function chargerParametresIndustriels() {
+  try {
+    var snap = await db.collection("parametres_industriels").doc("global").get();
+    return snap.exists ? Object.assign({}, PARAMETRES_INDUSTRIELS_DEFAUT, snap.data()) : Object.assign({}, PARAMETRES_INDUSTRIELS_DEFAUT);
+  } catch (e) { return Object.assign({}, PARAMETRES_INDUSTRIELS_DEFAUT); }
+}
+async function enregistrerParametresIndustriels(champs, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.collection("parametres_industriels").doc("global").set(Object.assign({}, champs, {
+    modifiePar: auteur, dateModification: firebase.firestore.FieldValue.serverTimestamp()
+  }), { merge: true });
+}
+
+// --- B. Periodes (point 3) : DEFINITION UNIQUE, reutilisee partout — jamais de calcul de date
+// concurrent ailleurs. Bornes en heure LOCALE (minuit local), coherent avec dateProductionMs/
+// joursRestants deja utilises dans le reste de l'application (Mayotte n'observe pas de changement
+// d'heure, donc "local" est stable ; point 45).
+function calculerPeriode(cle, referenceMs, custom) {
+  var ref = referenceMs || Date.now();
+  var d = new Date(ref);
+  var debutJour = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+  var finJour = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  if (cle === "aujourdhui") return { cle: cle, debut: debutJour, fin: finJour, label: "Aujourd'hui", jours: 1 };
+  if (cle === "7j") return { cle: cle, debut: debutJour - 6 * MS_PAR_JOUR, fin: finJour, label: "7 derniers jours", jours: 7 };
+  if (cle === "30j") return { cle: cle, debut: debutJour - 29 * MS_PAR_JOUR, fin: finJour, label: "30 derniers jours", jours: 30 };
+  if (cle === "mois") {
+    var debutMois = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0).getTime();
+    var joursDansMois = Math.round((finJour - debutMois) / MS_PAR_JOUR);
+    return { cle: cle, debut: debutMois, fin: finJour, label: "Mois en cours", jours: joursDansMois };
+  }
+  if (cle === "custom" && custom && custom.debut && custom.fin) {
+    var db1 = new Date(custom.debut), df1 = new Date(custom.fin);
+    var debutC = new Date(db1.getFullYear(), db1.getMonth(), db1.getDate(), 0, 0, 0, 0).getTime();
+    var finC = new Date(df1.getFullYear(), df1.getMonth(), df1.getDate(), 23, 59, 59, 999).getTime();
+    var joursC = Math.max(1, Math.round((finC - debutC) / MS_PAR_JOUR));
+    return { cle: "custom", debut: debutC, fin: finC, label: "Période personnalisée", jours: joursC };
+  }
+  return calculerPeriode("30j", referenceMs);
+}
+// Periode precedente de MEME DUREE, pour les comparaisons (point 6/27) — jamais une definition
+// concurrente ("mois precedent" a une duree differente du mois courant, volontairement evite ici).
+function periodePrecedente(periode) {
+  var duree = periode.fin - periode.debut + 1;
+  return { cle: periode.cle, debut: periode.debut - duree, fin: periode.debut - 1, label: "Période précédente", jours: periode.jours };
+}
+function dansPeriode(tsMs, periode) { return !!tsMs && tsMs >= periode.debut && tsMs <= periode.fin; }
+
+// --- C. Comparaison generique de deux periodes (point 6/27) : UNE seule fonction, reutilisee pour
+// production/pertes/NC/etc. Ne decide jamais si une hausse est "bonne" ou "mauvaise" (point 27 :
+// une baisse de pertes est positive) — se contente de renvoyer le chiffre, l'appelant colore.
+function calculerComparaisonPeriodes(valeurActuelle, valeurPrecedente) {
+  if (!valeurPrecedente) {
+    return { actuel: valeurActuelle, precedent: valeurPrecedente || 0, variationPct: (valeurActuelle === 0) ? 0 : null, calculable: valeurActuelle === 0 };
+  }
+  var variationPct = ((valeurActuelle - valeurPrecedente) / valeurPrecedente) * 100;
+  return { actuel: valeurActuelle, precedent: valeurPrecedente, variationPct: variationPct, calculable: true };
+}
+
+// --- D. Production (points 4/5/6) ---------------------------------------------------------------
+function calculerProductionPeriode(productions, periode) {
+  var enPeriode = productions.filter(function (p) { return dansPeriode(qseTsMs(p.timestamp), periode); });
+  var total = enPeriode.reduce(function (a, p) { return a + (p.quantite || 0); }, 0);
+  var parType = {};
+  enPeriode.forEach(function (p) { parType[p.type] = (parType[p.type] || 0) + (p.quantite || 0); });
+  var parJour = {};
+  enPeriode.forEach(function (p) {
+    var ms = qseTsMs(p.timestamp); var d = new Date(ms);
+    var cle = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    parJour[cle] = (parJour[cle] || 0) + (p.quantite || 0);
+  });
+  var joursObserves = Object.keys(parJour).length;
+  var moyenneQuotidienne = joursObserves > 0 ? total / joursObserves : 0;
+  var meilleureJournee = null;
+  Object.keys(parJour).forEach(function (cle) {
+    if (!meilleureJournee || parJour[cle] > meilleureJournee.quantite) meilleureJournee = { date: cle, quantite: parJour[cle] };
+  });
+  // "Jours sans production" n'a de sens que pour une periode entierement passee (jamais projetee
+  // dans le futur) : periode.fin <= maintenant est garanti par construction de calculerPeriode.
+  var joursSansProduction = Math.max(0, periode.jours - joursObserves);
+  return { total: total, parType: parType, joursObserves: joursObserves, moyenneQuotidienne: moyenneQuotidienne, meilleureJournee: meilleureJournee, joursSansProduction: joursSansProduction, nbEnregistrements: enPeriode.length };
+}
+// Point 5 : cadence reelle. Les seules dates disponibles sont des JOURS (pas d'heure de debut/fin
+// de production) -> jamais d'unites/heure inventees. A defaut, unites/jour, compare a une cible
+// EXPLICITE (jamais une constante cachee — reste null tant qu'aucun parametre n'a ete saisi).
+function calculerCadenceProduction(productionPeriode, cadenceCibleParJour) {
+  var cadenceActuelle = productionPeriode.moyenneQuotidienne;
+  var calculable = productionPeriode.joursObserves > 0;
+  var ecart = (cadenceCibleParJour != null) ? cadenceActuelle - cadenceCibleParJour : null;
+  var ecartPct = (cadenceCibleParJour) ? (ecart / cadenceCibleParJour) * 100 : null;
+  return { unite: "unités/jour", cadenceActuelle: cadenceActuelle, cadenceCible: cadenceCibleParJour != null ? cadenceCibleParJour : null, ecart: ecart, ecartPct: ecartPct, calculable: calculable };
+}
+
+// --- E. Pertes physiques (point 7) — stock_mouvements type=PERTE, jamais la collection "pertes"
+// (incomplete, voir audit). Distinct du cout NC (section F) : jamais melange.
+function calculerTauxPertes(mouvements, productionTotalePeriode, periode) {
+  var pertes = mouvements.filter(function (m) { return m.type === "PERTE" && dansPeriode(qseTsMs(m.dateCreation), periode); });
+  var quantitePerdue = pertes.reduce(function (a, m) { return a + Math.abs(m.quantite || 0); }, 0);
+  var parType = {}, parLot = {}, parMotif = {};
+  pertes.forEach(function (m) {
+    var q = Math.abs(m.quantite || 0);
+    parType[m.typeBTC] = (parType[m.typeBTC] || 0) + q;
+    if (m.numeroLot) parLot[m.numeroLot] = (parLot[m.numeroLot] || 0) + q;
+    var motif = m.commentaire || "(motif non renseigné)";
+    parMotif[motif] = (parMotif[motif] || 0) + q;
+  });
+  var valeurEstimee = 0;
+  Object.keys(parType).forEach(function (t) { valeurEstimee += parType[t] * getProduit(t).prix; });
+  var tauxPertes = productionTotalePeriode > 0 ? (quantitePerdue / productionTotalePeriode) * 100 : null;
+  return { quantitePerdue: quantitePerdue, valeurEstimee: valeurEstimee, tauxPertes: tauxPertes, parType: parType, parLot: parLot, parMotif: parMotif, calculable: productionTotalePeriode > 0, nbMouvements: pertes.length };
+}
+
+// --- F. Qualite : cout NC, taux de NC, recurrence, performance controle, delai controle ----------
+// Point 8 : reutilise EXACTEMENT la notion de "quantite concernee" introduite en Phase 2. Precise
+// toujours qu'il s'agit d'une valeur PRODUIT estimee, pas du cout comptable complet (main d'oeuvre,
+// retard chantier, etc. non captures par l'application).
+function calculerCoutNC(ncs, lotsParNumero, periode) {
+  var enPeriode = ncs.filter(function (n) { return dansPeriode(qseTsMs(n.dateCreation), periode); });
+  var ouvertes = enPeriode.filter(function (n) { return n.statut !== "Cloturee"; }).length;
+  var cloturees = enPeriode.filter(function (n) { return n.statut === "Cloturee"; }).length;
+  var quantiteConcernee = 0, valeurTotale = 0, nbChiffrables = 0;
+  enPeriode.forEach(function (n) {
+    if (n.quantiteConcernee == null) return;
+    quantiteConcernee += n.quantiteConcernee;
+    var lot = n.numeroLot ? lotsParNumero[n.numeroLot] : null;
+    var prix = lot ? getProduit(lot.type).prix : 0;
+    valeurTotale += n.quantiteConcernee * prix;
+    nbChiffrables++;
+  });
+  var coutMoyenParNC = nbChiffrables > 0 ? valeurTotale / nbChiffrables : null;
+  return { nombreNC: enPeriode.length, ouvertes: ouvertes, cloturees: cloturees, quantiteConcernee: quantiteConcernee, valeurTotale: valeurTotale, coutMoyenParNC: coutMoyenParNC, nbChiffrables: nbChiffrables, nbSansQuantite: enPeriode.length - nbChiffrables };
+}
+// Point 9 : DEUX indicateurs distincts, jamais melanges (noms explicites imposes par le cahier des charges).
+function calculerTauxNC(controles, ncs, lotsParNumero, productionTotalePeriode, periode) {
+  var mesuresPeriode = controles.filter(function (c) { return c.resultat && c.resultat !== "Non mesuré" && dansPeriode(qseTsMs(c.dateControle || c.dateCreation), periode); });
+  var lotsNC = mesuresPeriode.filter(function (c) { return c.resultat === "Non conforme"; }).length;
+  var tauxLotsNonConformes = mesuresPeriode.length > 0 ? (lotsNC / mesuresPeriode.length) * 100 : null;
+
+  var ncsPeriode = ncs.filter(function (n) { return dansPeriode(qseTsMs(n.dateCreation), periode); });
+  var quantiteConcernee = ncsPeriode.reduce(function (a, n) { return a + (n.quantiteConcernee || 0); }, 0);
+  var partProductionConcernee = productionTotalePeriode > 0 ? (quantiteConcernee / productionTotalePeriode) * 100 : null;
+
+  return {
+    tauxLotsNonConformes: tauxLotsNonConformes, lotsControles: mesuresPeriode.length, lotsNC: lotsNC,
+    partProductionConcernee: partProductionConcernee, quantiteConcernee: quantiteConcernee, productionTotale: productionTotalePeriode
+  };
+}
+// Point 10 : NC recurrentes en indicateur HISTORIQUE (vs Phase 4 qui ne fait qu'alerter). Les motifs
+// (causeProbable/description) sont du texte libre : jamais regroupes automatiquement (ce serait de
+// l'IA/du texte-mining deguise) — signale honnetement motifsIndisponibles plutot que d'inventer un
+// classement. "Type le plus touche" reste un simple comptage, jamais qualifie de "cause racine".
+function calculerNCRecurrentes(ncs, lotsParNumero, periode, periodePrec) {
+  function compte(p) {
+    var enP = ncs.filter(function (n) { return dansPeriode(qseTsMs(n.dateCreation), p); });
+    var parType = {};
+    enP.forEach(function (n) {
+      var lot = n.numeroLot ? lotsParNumero[n.numeroLot] : null;
+      var t = lot ? lot.type : "(lot inconnu)";
+      parType[t] = (parType[t] || 0) + 1;
+    });
+    return { total: enP.length, parType: parType };
+  }
+  var actuel = compte(periode), precedent = compte(periodePrec);
+  var typeLePlusTouche = null, maxN = 0;
+  Object.keys(actuel.parType).forEach(function (t) { if (actuel.parType[t] > maxN) { maxN = actuel.parType[t]; typeLePlusTouche = t; } });
+  return {
+    total: actuel.total, parType: actuel.parType, typeLePlusTouche: typeLePlusTouche, nbTypeLePlusTouche: maxN,
+    motifsRecurrents: null, motifsIndisponibles: true,
+    evolution: calculerComparaisonPeriodes(actuel.total, precedent.total)
+  };
+}
+// Point 11 : synthese qualite globale (pas bornee a une periode : "etat actuel" du parc de lots).
+function calculerPerformanceQualite(controles, lotsParNumero, maintenant) {
+  maintenant = maintenant || Date.now();
+  var mesures = controles.filter(function (c) { return c.resultat && c.resultat !== "Non mesuré"; });
+  var conformes = mesures.filter(function (c) { return c.resultat === "Conforme"; }).length;
+  var nonConformes = mesures.filter(function (c) { return c.resultat === "Non conforme"; }).length;
+  var enAttente = controles.filter(function (c) { return !c.resultat || c.resultat === "Non mesuré"; });
+  var enRetard = enAttente.filter(function (c) {
+    var lot = lotsParNumero[c.numeroLot];
+    var dateProd = lot ? dateProductionMs(lot) : 0;
+    return dateProd && maintenant > dateProd + DUREE_SECHAGE * MS_PAR_JOUR;
+  }).length;
+  var tauxConformite = mesures.length > 0 ? (conformes / mesures.length) * 100 : null;
+  return { lotsControles: mesures.length, lotsConformes: conformes, lotsNonConformes: nonConformes, lotsEnAttente: enAttente.length, controlesEnRetard: enRetard, tauxConformite: tauxConformite };
+}
+// Point 12 : delai = date controle - date maturite theorique (dateProduction + DUREE_SECHAGE). Un
+// delai NEGATIF = controle effectue AVANT maturite theorique -> anomalie potentielle signalee
+// explicitement (controlesAvantMaturite), jamais silencieusement moyennee avec les autres.
+function calculerDelaiControle(controles, lotsParNumero) {
+  var delais = [], avantMaturite = 0, apresMaturite = 0;
+  controles.forEach(function (c) {
+    if (!c.resultat || c.resultat === "Non mesuré" || !c.dateControle) return;
+    var lot = lotsParNumero[c.numeroLot];
+    var dateProd = lot ? dateProductionMs(lot) : 0;
+    var dateCtrl = qseTsMs(c.dateControle);
+    if (!dateProd || !dateCtrl) return;
+    var dateMaturite = dateProd + DUREE_SECHAGE * MS_PAR_JOUR;
+    var delaiJours = (dateCtrl - dateMaturite) / MS_PAR_JOUR;
+    delais.push(delaiJours);
+    if (delaiJours < 0) avantMaturite++; else apresMaturite++;
+  });
+  delais.sort(function (a, b) { return a - b; });
+  var moyenneJours = delais.length ? delais.reduce(function (a, d) { return a + d; }, 0) / delais.length : null;
+  var medianeJours = delais.length ? (delais.length % 2 === 1 ? delais[(delais.length - 1) / 2] : (delais[delais.length / 2 - 1] + delais[delais.length / 2]) / 2) : null;
+  var retards = delais.filter(function (d) { return d > 0; });
+  var retardMoyenJours = retards.length ? retards.reduce(function (a, d) { return a + d; }, 0) / retards.length : null;
+  return { nombreLots: delais.length, moyenneJours: moyenneJours, medianeJours: medianeJours, retardMoyenJours: retardMoyenJours, controlesATemps: apresMaturite, controlesAvantMaturite: avantMaturite };
+}
+// Lots deja matures (date de maturite theorique passee) mais sans controle renseigne — reutilise
+// TEL QUEL par calculerPerformanceQualite.controlesEnRetard (comptage) et calculerStockSechage
+// (quantite), pour ne jamais avoir deux definitions differentes du meme retard (point 20).
+function calculerLotsMaturesNonControles(lots, controles, maintenant) {
+  maintenant = maintenant || Date.now();
+  var controlesParLot = {};
+  controles.forEach(function (c) { if (!controlesParLot[c.numeroLot]) controlesParLot[c.numeroLot] = c; });
+  return lots.filter(function (l) {
+    var dateProd = dateProductionMs(l);
+    if (!dateProd || maintenant < dateProd + DUREE_SECHAGE * MS_PAR_JOUR) return false;
+    var ctrl = controlesParLot[l.numeroLot];
+    return !ctrl || !ctrl.resultat || ctrl.resultat === "Non mesuré";
+  });
+}
+
+// --- G. Delai production -> livraison (point 13) : UNIQUEMENT les lots traces (disponibleCache
+// non null, Phase 5+) — le stock historique non tracable est explicitement exclu, jamais estime.
+function calculerDelaiLotLivraison(lots, allocations) {
+  var allocParLot = {};
+  allocations.forEach(function (a) {
+    if (!a.numeroLot || !a.dateLivraison) return;
+    (allocParLot[a.numeroLot] = allocParLot[a.numeroLot] || []).push(a);
+  });
+  var delaisParType = {};
+  lots.forEach(function (l) {
+    if (l.disponibleCache == null) return; // non trace -> exclu (point 13)
+    var dateProd = dateProductionMs(l);
+    var allocs = allocParLot[l.numeroLot];
+    if (!dateProd || !allocs || allocs.length === 0) return;
+    var datesLivraison = allocs.map(function (a) { return qseTsMs(a.dateLivraison); }).filter(Boolean);
+    if (datesLivraison.length === 0) return;
+    var premiere = Math.min.apply(null, datesLivraison);
+    var delaiPremiere = (premiere - dateProd) / MS_PAR_JOUR;
+    if (delaiPremiere < 0) return; // incoherent (horloge/donnee) -> exclu plutot que fausse
+    (delaisParType[l.type] = delaisParType[l.type] || []).push(delaiPremiere);
+  });
+  var resultat = {};
+  Object.keys(delaisParType).forEach(function (t) {
+    var arr = delaisParType[t];
+    resultat[t] = { delaiMoyenJours: arr.reduce(function (a, d) { return a + d; }, 0) / arr.length, nombreLots: arr.length };
+  });
+  return resultat;
+}
+
+// --- H. Stock : sechage, couverture, rupture, besoin de production, plan suggere -----------------
+// Point 20 : "en sechage" recalcule DIRECTEMENT depuis productions (pas depuis stocks.sechage, qui
+// est un compteur agrege ne "promouvant" jamais automatiquement une entree devenue mature — cet
+// ecart entre le compteur agrege et la realite est documente dans la qualite des donnees).
+function calculerStockSechage(productions, lots, controles, maintenant, fenetreProcheJours) {
+  maintenant = maintenant || Date.now();
+  fenetreProcheJours = fenetreProcheJours != null ? fenetreProcheJours : 3;
+  var actifNonMature = 0, matureProche = 0, matureSous7j = 0, totalDeclare = 0;
+  var parType = {};
+  productions.forEach(function (p) {
+    if (p.phase !== "sechage") return;
+    var d = dateProductionMs(p);
+    if (!d) return;
+    var qte = p.quantite || 0;
+    totalDeclare += qte;
+    var joursAvantMaturite = DUREE_SECHAGE - (maintenant - d) / MS_PAR_JOUR;
+    if (joursAvantMaturite > 0) {
+      actifNonMature += qte;
+      if (joursAvantMaturite <= fenetreProcheJours) matureProche += qte;
+      if (joursAvantMaturite <= 7) matureSous7j += qte;
+      parType[p.type] = (parType[p.type] || 0) + qte;
+    }
+  });
+  var lotsMaturesNonControles = calculerLotsMaturesNonControles(lots, controles, maintenant);
+  var quantiteMatureNonControlee = lotsMaturesNonControles.reduce(function (a, l) { return a + (l.disponibleCache != null ? l.disponibleCache : (l.quantite || 0)); }, 0);
+  return {
+    actifNonMature: actifNonMature, matureSousNJours: matureProche, fenetreProcheJours: fenetreProcheJours,
+    matureSous7Jours: matureSous7j, quantiteMatureNonControlee: quantiteMatureNonControlee,
+    nombreLotsMaturesNonControles: lotsMaturesNonControles.length, parType: parType
+  };
+}
+// Point 21 : ne plus jamais presenter un "stock" unique — decomposer explicitement.
+function calculerStockUtilisable(typeBTC, stocks, lotsDuType, controlesParLot, ncsParLot, reserveType) {
+  var s = stocks[typeBTC] || {};
+  var physique = (s.sec || 0) + (s.sechage || 0);
+  var historiqueNonTracable = s.historiqueReserve || 0;
+  var bloqueQualite = 0;
+  lotsDuType.forEach(function (l) {
+    var statut = qseStatutLot(l, controlesParLot[l.numeroLot] || [], ncsParLot[l.numeroLot] || []);
+    if (l.annule || statut.code === "bloque") bloqueQualite += Math.max(0, l.disponibleCache != null ? l.disponibleCache : 0);
+  });
+  var disponible = Math.max(0, (s.sec || 0) - reserveType);
+  return { physique: physique, reserve: reserveType, disponible: disponible, bloqueQualite: bloqueQualite, enSechage: s.sechage || 0, historiqueNonTracable: historiqueNonTracable };
+}
+// Point 14/15 : la "rotation sur stock moyen" (point 14) N'EST PAS calculee — elle demanderait un
+// historique de niveau de stock quotidien que l'application ne conserve pas (stocks est un compteur
+// ponctuel, jamais historise). Indicateur retenu a la place, plus lisible et honnete : la couverture.
+function calculerCouvertureStock(typeBTC, disponible, mouvements, periodeRecente) {
+  var sorties = mouvements.filter(function (m) {
+    return m.typeBTC === typeBTC && (m.type === "SORTIE_LIVRAISON" || m.type === "PERTE") && dansPeriode(qseTsMs(m.dateCreation), periodeRecente);
+  });
+  var totalSorties = sorties.reduce(function (a, m) { return a + Math.abs(m.quantite || 0); }, 0);
+  var consommationMoyenneJour = periodeRecente.jours > 0 ? totalSorties / periodeRecente.jours : 0;
+  var couvertureJours = consommationMoyenneJour > 0 ? disponible / consommationMoyenneJour : null;
+  return { disponible: disponible, consommationMoyenneJour: consommationMoyenneJour, couvertureJours: couvertureJours, calculable: consommationMoyenneJour > 0, sortiesTotalPeriode: totalSorties, fenetreJours: periodeRecente.jours };
+}
+// Point 16 : previsions DETERMINISTES, jamais opaques. "certain" = les commandes validees depassent
+// deja le disponible (aucune projection necessaire) ; "projection" = extrapolation lineaire sur la
+// consommation recente (couverture). Jamais les deux melanges dans le meme message.
+function calculerPrevisionRupture(typeBTC, disponibleAReserver, deficitEngagements, couverture) {
+  if (deficitEngagements > 0) {
+    return { etat: "certain", message: "Stock déjà insuffisant pour les commandes validées (déficit " + Math.round(deficitEngagements).toLocaleString() + " u).", joursAvantRupture: 0 };
+  }
+  if (!couverture.calculable || couverture.couvertureJours == null) {
+    return { etat: "indetermine", message: "Consommation récente insuffisante pour projeter une échéance de rupture.", joursAvantRupture: null };
+  }
+  return { etat: "projection", message: "Risque de rupture dans ~" + Math.round(couverture.couvertureJours) + " jour(s) au rythme actuel de consommation (" + Math.round(couverture.consommationMoyenneJour).toLocaleString() + " u/j).", joursAvantRupture: couverture.couvertureJours };
+}
+// Point 17 — L'INDICATEUR CLE : besoin = (engagements + stock cible) - (disponible + sechage
+// bientot mature). Exemple du cahier des charges verifie : 4000 dispo + 3000 sechage, 8000
+// engagements, 5000 cible -> (8000+5000)-(4000+3000) = 6000. "engagements" = somme, sur les
+// commandes VALIDEES de ce type, de (quantite - quantiteLivree) : inclut la part deja reservee (le
+// disponible utilise ici est le stock PHYSIQUE brut, pas encore net de reservation — pas de double
+// comptage).
+function calculerBesoinProduction(typeBTC, stocks, sechageBientotMatureParType, commandes, parametres) {
+  var s = stocks[typeBTC] || {};
+  var disponible = s.sec || 0;
+  var sechageBientotMature = sechageBientotMatureParType[typeBTC] || 0;
+  var engagements = commandes.filter(function (c) { return c.type === typeBTC && normTxt(c.status) === normTxt("Validee"); })
+    .reduce(function (a, c) { return a + Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0)); }, 0);
+  var stockCible = (parametres.stockCibleParType && parametres.stockCibleParType[typeBTC] != null) ? parametres.stockCibleParType[typeBTC] : parametres.stockCibleDefaut;
+  var besoin = Math.max(0, (engagements + stockCible) - (disponible + sechageBientotMature));
+  return {
+    typeBTC: typeBTC, disponible: disponible, sechageBientotMature: sechageBientotMature, engagements: engagements,
+    stockCible: stockCible, besoin: besoin,
+    formule: "(engagements " + engagements.toLocaleString() + " + cible " + stockCible.toLocaleString() + ") − (disponible " + disponible.toLocaleString() + " + séchage proche " + sechageBientotMature.toLocaleString() + ") = " + besoin.toLocaleString()
+  };
+}
+// Point 18 : PROPOSITION, jamais un ordre automatique — trie simplement les besoins reels par ordre
+// decroissant. Point 19 : date de besoin uniquement si la commande porte une echeance FIABLE (aucun
+// champ de date d'echeance n'existe aujourd'hui sur "commandes" -> jamais d'urgence temporelle inventee).
+function calculerPlanProductionSuggere(besoinsParType) {
+  return besoinsParType.slice().sort(function (a, b) { return b.besoin - a.besoin; })
+    .map(function (b, i) { return Object.assign({ rang: i + 1, suffisant: b.besoin === 0 }, b); });
+}
+
+// --- I. Qualite des donnees (point 42) : jamais un faux score scientifique — une liste de
+// limitations concretes, chacune cliquable vers son detail.
+function calculerQualiteDonnees(lots, productions, commandes) {
+  var problemes = [];
+  var lotsSansPrix = lots.filter(function (l) { return getProduit(l.type).prix === 0; });
+  if (lotsSansPrix.length > 0) problemes.push({ code: "lot_sans_prix", n: lotsSansPrix.length, libelle: lotsSansPrix.length + " lot(s) dont le type ne correspond à aucun prix catalogue", refs: lotsSansPrix.map(function (l) { return l.numeroLot; }) });
+  var productionsSansDate = productions.filter(function (p) { return !dateProductionMs(p); });
+  if (productionsSansDate.length > 0) problemes.push({ code: "production_sans_date", n: productionsSansDate.length, libelle: productionsSansDate.length + " production(s) sans date exploitable" });
+  var commandesSansDate = commandes.filter(function (c) { return !qseTsMs(c.timestamp); });
+  if (commandesSansDate.length > 0) problemes.push({ code: "commande_sans_date", n: commandesSansDate.length, libelle: commandesSansDate.length + " commande(s) sans date de création exploitable" });
+  var lotsNonInitialises = lots.filter(function (l) { return l.disponibleCache == null; });
+  if (lotsNonInitialises.length > 0) problemes.push({ code: "lot_non_initialise", n: lotsNonInitialises.length, libelle: lotsNonInitialises.length + " lot(s) sans suivi de stock initialisé (antérieurs à l'activation du grand livre)" });
+  return { nombreLimitations: problemes.length, problemes: problemes };
+}
+
+// --- J. Prevision simple par moyenne glissante (points 31/32) : fenetre TOUJOURS visible, jamais
+// un modele opaque. Confiance signalee explicitement si l'historique disponible est court.
+function calculerPrevisionSimple(mouvements, typeBTC, fenetreJours, maintenant) {
+  maintenant = maintenant || Date.now();
+  var periode = calculerPeriode("custom", maintenant, { debut: maintenant - (fenetreJours - 1) * MS_PAR_JOUR, fin: maintenant });
+  var sorties = mouvements.filter(function (m) { return m.typeBTC === typeBTC && (m.type === "SORTIE_LIVRAISON" || m.type === "PERTE") && dansPeriode(qseTsMs(m.dateCreation), periode); });
+  var joursAvecDonnees = {};
+  sorties.forEach(function (m) { var t = qseTsMs(m.dateCreation); var d = new Date(t); joursAvecDonnees[d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate()] = true; });
+  var nbJoursAvecDonnees = Object.keys(joursAvecDonnees).length;
+  var totalSorties = sorties.reduce(function (a, m) { return a + Math.abs(m.quantite || 0); }, 0);
+  var moyenneJour = totalSorties / fenetreJours;
+  var SEUIL_FIABILITE = 0.5; // au moins la moitie des jours de la fenetre doivent porter un mouvement (documente, pas cache)
+  var fiable = nbJoursAvecDonnees >= fenetreJours * SEUIL_FIABILITE;
+  return {
+    moyenneJour: moyenneJour, fenetreJours: fenetreJours, joursAvecDonnees: nbJoursAvecDonnees, fiable: fiable,
+    messageConfiance: fiable ? null : ("Prévision peu fiable — seulement " + nbJoursAvecDonnees + " jour(s) de données sur " + fenetreJours + ".")
+  };
+}
+
+// --- K. Petits assembleurs de tables (evitent de reparcourir les tableaux a chaque sous-fonction).
+function indexerParNumeroLot(liste) { var m = {}; liste.forEach(function (x) { m[x.numeroLot] = x; }); return m; }
+function grouperParNumeroLot(liste) { var m = {}; liste.forEach(function (x) { (m[x.numeroLot] = m[x.numeroLot] || []).push(x); }); return m; }
+// Deficit "engagements vs disponible a reserver" par type — MEME calcul que celui deja utilise dans
+// calculerPrioritesOperationnelles (point 36 : une seule logique, jamais une deuxieme version qui
+// pourrait diverger). Isole ici pour etre appelable aussi bien depuis les priorites que le cockpit.
+function calculerDeficitReservationParType(typeBTC, stocks, commandes) {
+  var commandesValidees = commandes.filter(function (c) { return c.type === typeBTC && normTxt(c.status) === normTxt("Validee") && (c.quantite || 0) > (c.quantiteLivree || 0); });
+  var reserveType = commandesValidees.reduce(function (a, c) { return a + (c.quantiteReservee || 0); }, 0);
+  var disponibleAReserverType = Math.max(0, ((stocks[typeBTC] || {}).sec || 0) - reserveType);
+  var totalACouvrirType = commandesValidees.reduce(function (a, c) { return a + Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0)); }, 0);
+  return { disponibleAReserverType: disponibleAReserverType, totalACouvrirType: totalACouvrirType, deficit: Math.max(0, totalACouvrirType - disponibleAReserverType), reserveType: reserveType };
+}
+
+// --- L. ORCHESTRATEUR : calculerIndicateursIndustriels(donnees, periode, parametres). Point
+// d'entree UNIQUE du cockpit Direction — assemble tous les calculs ci-dessus, une fois par
+// changement de periode/donnees (memoization cote composant via React.useMemo, point 37).
+// "donnees" attend : { productions, lots, controles, ncs, mouvements, allocations, commandes, stocks }.
+function calculerIndicateursIndustriels(donnees, periode, parametres) {
+  var maintenant = donnees.maintenant || Date.now();
+  var productions = donnees.productions || [], lots = donnees.lots || [], controles = donnees.controles || [];
+  var ncs = donnees.ncs || [], mouvements = donnees.mouvements || [], allocations = donnees.allocations || [];
+  var commandes = donnees.commandes || [], stocks = donnees.stocks || {};
+  parametres = parametres || PARAMETRES_INDUSTRIELS_DEFAUT;
+
+  var lotsParNumero = indexerParNumeroLot(lots);
+  var controlesParLot = grouperParNumeroLot(controles);
+  var ncsParLot = grouperParNumeroLot(ncs);
+  var periodePrec = periodePrecedente(periode);
+
+  var productionPeriode = calculerProductionPeriode(productions, periode);
+  var productionPeriodePrec = calculerProductionPeriode(productions, periodePrec);
+  var cadence = calculerCadenceProduction(productionPeriode, parametres.cadenceCibleParJour);
+  var evolutionProduction = calculerComparaisonPeriodes(productionPeriode.total, productionPeriodePrec.total);
+
+  var pertes = calculerTauxPertes(mouvements, productionPeriode.total, periode);
+  var pertesPrec = calculerTauxPertes(mouvements, productionPeriodePrec.total, periodePrec);
+  var evolutionPertes = calculerComparaisonPeriodes(pertes.quantitePerdue, pertesPrec.quantitePerdue);
+
+  var coutNC = calculerCoutNC(ncs, lotsParNumero, periode);
+  var tauxNC = calculerTauxNC(controles, ncs, lotsParNumero, productionPeriode.total, periode);
+  var ncRecurrentes = calculerNCRecurrentes(ncs, lotsParNumero, periode, periodePrec);
+  var performanceQualite = calculerPerformanceQualite(controles, lotsParNumero, maintenant);
+  var delaiControle = calculerDelaiControle(controles, lotsParNumero);
+  var delaiLivraisonParType = calculerDelaiLotLivraison(lots, allocations);
+
+  var stockSechage = calculerStockSechage(productions, lots, controles, maintenant, parametres.fenetreMaturiteProcheJours);
+  var periodeRecenteCouverture = calculerPeriode("7j", maintenant);
+
+  var parType = CATALOGUE.map(function (prod) {
+    var lotsDuType = lots.filter(function (l) { return l.type === prod.id; });
+    var deficit = calculerDeficitReservationParType(prod.id, stocks, commandes);
+    var couverture = calculerCouvertureStock(prod.id, deficit.disponibleAReserverType, mouvements, periodeRecenteCouverture);
+    var rupture = calculerPrevisionRupture(prod.id, deficit.disponibleAReserverType, deficit.deficit, couverture);
+    var besoin = calculerBesoinProduction(prod.id, stocks, stockSechage.parType, commandes, parametres);
+    var utilisable = calculerStockUtilisable(prod.id, stocks, lotsDuType, controlesParLot, ncsParLot, deficit.reserveType);
+    var previsionConso = calculerPrevisionSimple(mouvements, prod.id, parametres.fenetrePrevisionJours, maintenant);
+    return {
+      produit: prod, production: productionPeriode.parType[prod.id] || 0, pertes: pertes.parType[prod.id] || 0,
+      valeurPertes: (pertes.parType[prod.id] || 0) * prod.prix, tauxNCType: null,
+      stockUtilisable: utilisable, couverture: couverture, rupture: rupture, besoin: besoin,
+      delaiLivraison: delaiLivraisonParType[prod.id] || null, previsionConso: previsionConso
+    };
+  });
+
+  var besoinsTriés = calculerPlanProductionSuggere(parType.map(function (x) { return x.besoin; }));
+  var qualiteDonnees = calculerQualiteDonnees(lots, productions, commandes);
+
+  return {
+    periode: periode, periodePrecedente: periodePrec, parametres: parametres,
+    production: productionPeriode, evolutionProduction: evolutionProduction, cadence: cadence,
+    pertes: pertes, evolutionPertes: evolutionPertes,
+    coutNC: coutNC, tauxNC: tauxNC, ncRecurrentes: ncRecurrentes, performanceQualite: performanceQualite,
+    delaiControle: delaiControle, stockSechage: stockSechage,
+    parType: parType, planProductionSuggere: besoinsTriés, qualiteDonnees: qualiteDonnees
+  };
 }
 
 // Navigation centrale : un seul point d'entree pour ouvrir n'importe quel objet metier depuis
@@ -2272,6 +2836,380 @@ function Login({ destinationEnAttente }) {
 }
 
 
+// ============================================================================================
+// PHASE 9 — Cockpit "Pilotage" (points 24-30, 39-41). Petits composants de presentation reutilises
+// par le cockpit : carte KPI cliquable, barres, courbe SVG legere (aucune dependance de graphique
+// ajoutee — point 26), export CSV generique.
+// ============================================================================================
+function StatTile({ label, valeur, sousLigne, comparaison, couleur, onClick, aide }) {
+  return (
+    <div className={"pilotage-tile" + (onClick ? " cliquable" : "")} onClick={onClick} style={couleur ? { borderLeftColor: couleur } : {}} title={aide || ""}>
+      <div className="pilotage-tile-label">{label}</div>
+      <div className="pilotage-tile-valeur">{valeur}</div>
+      {sousLigne && <div className="pilotage-tile-sousligne">{sousLigne}</div>}
+      {comparaison && comparaison.calculable && comparaison.variationPct != null && (
+        <div className={"pilotage-tile-var " + (comparaison.variationPct >= 0 ? "hausse" : "baisse")}>
+          {comparaison.variationPct >= 0 ? "+" : ""}{comparaison.variationPct.toFixed(1)}%
+        </div>
+      )}
+    </div>
+  );
+}
+// Barres verticales simples (CSS pur) — production/pertes par type (point 26).
+function GraphiqueBarres({ donnees, hauteur }) {
+  var max = Math.max.apply(null, donnees.map(function (d) { return d.valeur; }).concat([1]));
+  return (
+    <div className="pilotage-barres" style={{ height: (hauteur || 130) + "px" }}>
+      {donnees.map(function (d, i) {
+        return (
+          <div key={i} className={"pilotage-barre-col" + (d.onClick ? " cliquable" : "")} title={d.label + " : " + Math.round(d.valeur).toLocaleString()} onClick={d.onClick}>
+            <div className="pilotage-barre" style={{ height: Math.max(2, (d.valeur / max) * 100) + "%", background: d.couleur || "var(--btp-orange)" }}></div>
+            <div className="pilotage-barre-label">{d.labelCourt || d.label}</div>
+          </div>
+        );
+      })}
+      {donnees.length === 0 && <div className="pilotage-vide">Aucune donnée sur cette période.</div>}
+    </div>
+  );
+}
+// Courbe SVG minimaliste (aucune librairie) — production quotidienne / evolution NC (point 26).
+function GraphiqueLigne({ points, hauteur, couleur }) {
+  hauteur = hauteur || 90;
+  var largeur = 320;
+  if (!points || points.length === 0) return <div className="pilotage-vide">Aucune donnée sur cette période.</div>;
+  var max = Math.max.apply(null, points.map(function (p) { return p.y; }).concat([1]));
+  var n = points.length;
+  var coords = points.map(function (p, i) {
+    var x = n > 1 ? (i / (n - 1)) * largeur : largeur / 2;
+    var y = hauteur - (p.y / max) * (hauteur - 8) - 4;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+  return (
+    <svg viewBox={"0 0 " + largeur + " " + hauteur} className="pilotage-ligne" preserveAspectRatio="none">
+      <polyline points={coords} fill="none" stroke={couleur || "var(--btp-blue)"} strokeWidth="2" />
+    </svg>
+  );
+}
+// Export CSV generique (point 41) : liste d'objets -> fichier telecharge. Pas de generateur de
+// rapport complexe, juste les donnees detaillees derriere un indicateur.
+function exporterCSV(nomFichier, lignes, colonnes) {
+  var entete = colonnes.map(function (c) { return '"' + c.label.replace(/"/g, '""') + '"'; }).join(";");
+  var corps = lignes.map(function (l) {
+    return colonnes.map(function (c) {
+      var v = typeof c.valeur === "function" ? c.valeur(l) : l[c.champ];
+      return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+    }).join(";");
+  }).join("\n");
+  var blob = new Blob(["﻿" + entete + "\n" + corps], { type: "text/csv;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = nomFichier;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+// Panneau de detail generique derriere un KPI (point 25) : jamais une impasse. Simple tableau +
+// export CSV (point 41), reutilise pour toutes les listes du cockpit.
+function PilotageDetailModal({ titre, sousTitre, colonnes, lignes, onFermer, onLigneClick, nomExportCSV }) {
+  return (
+    <div className="btp-modal-overlay" onClick={onFermer}>
+      <div className="btp-modal" style={{ maxWidth: 760, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title" style={{ marginBottom: 4 }}>{titre}</div>
+        {sousTitre && <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 12 }}>{sousTitre}</div>}
+        <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+          {nomExportCSV && lignes.length > 0 && (
+            <button className="btn btn-sm btn-ghost" onClick={() => exporterCSV(nomExportCSV, lignes, colonnes)}>⬇️ Exporter en CSV</button>
+          )}
+          <button className="btn btn-sm btn-ghost" onClick={onFermer}>Fermer</button>
+        </div>
+        {lignes.length === 0 ? (
+          <div className="pilotage-vide">Rien à afficher.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="btp-table">
+              <thead><tr>{colonnes.map(function (c, i) { return <th key={i}>{c.label}</th>; })}</tr></thead>
+              <tbody>
+                {lignes.map(function (l, i) {
+                  return (
+                    <tr key={i} className={onLigneClick ? "cliquable" : ""} onClick={onLigneClick ? function () { onLigneClick(l); } : undefined}>
+                      {colonnes.map(function (c, j) { return <td key={j}>{typeof c.valeur === "function" ? c.valeur(l) : l[c.champ]}</td>; })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Le cockpit lui-meme. 5 lignes (point 24) : chiffres cles / production dans le temps / stock-
+// couverture-besoins / qualite-NC / priorites decisionnelles. Chaque donnee affichee provient du
+// moteur d'indicateurs (calculerIndicateursIndustriels) — aucun calcul propre au composant.
+function PilotageDirection({ user, userData, stocks, commandes, productions, lots, controles, ncs, chantiers, ouvrirObjet }) {
+  const [periodeCle, setPeriodeCle] = React.useState("30j");
+  const [customDebut, setCustomDebut] = React.useState("");
+  const [customFin, setCustomFin] = React.useState("");
+  const [mouvements, setMouvements] = React.useState([]);
+  const [allocations, setAllocations] = React.useState([]);
+  const [chargement, setChargement] = React.useState(true);
+  const [parametres, setParametres] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  const [showParametres, setShowParametres] = React.useState(false);
+  const [formParametres, setFormParametres] = React.useState(null);
+  const [msgParametres, setMsgParametres] = React.useState("");
+  const [detail, setDetail] = React.useState(null); // { titre, colonnes, lignes, onLigneClick?, nomExportCSV? }
+
+  // Instant de reference fige a l'ouverture de l'ecran : coherent pendant toute la session de
+  // consultation, evite qu'un recalcul de "maintenant" a chaque rendu ne fasse glisser les bornes.
+  const maintenant = React.useMemo(function () { return Date.now(); }, []);
+  const periode = React.useMemo(function () {
+    return calculerPeriode(periodeCle, maintenant, periodeCle === "custom" ? { debut: customDebut, fin: customFin } : null);
+  }, [periodeCle, maintenant, customDebut, customFin]);
+  const periodeAvant = React.useMemo(function () { return periodePrecedente(periode); }, [periode]);
+
+  React.useEffect(function () { chargerParametresIndustriels().then(setParametres); }, []);
+
+  // Point 37/38 : requetes filtrees par periode (une seule inegalite sur dateCreation, aucun index
+  // composite necessaire), rechargees uniquement quand la periode change — jamais tout l'historique.
+  React.useEffect(function () {
+    var annule = false;
+    setChargement(true);
+    (async function () {
+      var debutGlobal = Math.min(periode.debut, periodeAvant.debut);
+      try {
+        var mvtSnap = await db.collection("stock_mouvements").where("dateCreation", ">=", new Date(debutGlobal)).limit(3000).get();
+        var allocSnap = await db.collection("stock_allocations").limit(2000).get();
+        if (annule) return;
+        setMouvements(mvtSnap.docs.map(function (d) { return d.data(); }));
+        setAllocations(allocSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+      } catch (e) { if (!annule) { setMouvements([]); setAllocations([]); } }
+      finally { if (!annule) setChargement(false); }
+    })();
+    return function () { annule = true; };
+  }, [periode.debut, periodeAvant.debut]);
+
+  const indicateurs = React.useMemo(function () {
+    return calculerIndicateursIndustriels({
+      productions: productions, lots: lots, controles: controles, ncs: ncs,
+      mouvements: mouvements, allocations: allocations, commandes: commandes, stocks: stocks, maintenant: maintenant
+    }, periode, parametres);
+  }, [productions, lots, controles, ncs, mouvements, allocations, commandes, stocks, periode, parametres, maintenant]);
+
+  const lotsParNumero = React.useMemo(function () { return indexerParNumeroLot(lots); }, [lots]);
+  const prioriteDonneesPilotage = React.useMemo(function () {
+    return { stocks: stocks, commandes: commandes, lots: lots, controlesEnAttente: controles.filter(function (c) { return !c.resultat || c.resultat === "Non mesuré"; }), numerosAvecControleRecent: {}, ncs: ncs, mouvements: mouvements, maintenant: maintenant };
+  }, [stocks, commandes, lots, controles, ncs, mouvements, maintenant]);
+
+  const enregistrerParametres = async function () {
+    setMsgParametres("Enregistrement...");
+    try {
+      await enregistrerParametresIndustriels(formParametres, user, userData);
+      var frais = await chargerParametresIndustriels();
+      setParametres(frais); setMsgParametres("✓ Paramètres enregistrés."); setShowParametres(false);
+    } catch (e) { setMsgParametres("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")"); }
+  };
+
+  var couleurVar = function (variationPct, sensPositifSiHausse) {
+    if (variationPct == null) return "var(--btp-text2)";
+    var favorable = sensPositifSiHausse ? variationPct >= 0 : variationPct <= 0;
+    return favorable ? "#2ECC71" : "#EC7063";
+  };
+
+  var pointsProductionQuotidienne = React.useMemo(function () {
+    var parJour = {};
+    productions.forEach(function (p) {
+      var t = qseTsMs(p.timestamp);
+      if (!dansPeriode(t, periode)) return;
+      var d = new Date(t);
+      var cle = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+      parJour[cle] = (parJour[cle] || 0) + (p.quantite || 0);
+    });
+    return Object.keys(parJour).sort().map(function (k) { return { x: k, y: parJour[k] }; });
+  }, [productions, periode]);
+
+  var pointsEvolutionNC = React.useMemo(function () {
+    var parSemaine = {};
+    ncs.forEach(function (n) {
+      var t = qseTsMs(n.dateCreation);
+      if (!dansPeriode(t, periode)) return;
+      var d = new Date(t);
+      var semaine = Math.floor(t / (7 * MS_PAR_JOUR));
+      parSemaine[semaine] = (parSemaine[semaine] || 0) + 1;
+    });
+    return Object.keys(parSemaine).sort().map(function (k) { return { x: k, y: parSemaine[k] }; });
+  }, [ncs, periode]);
+
+  return (
+    <div className="fade-up pilotage">
+      {/* Barre de periode + parametres */}
+      <div className="pilotage-barre-periode">
+        <div className="pilotage-selecteur-periode">
+          {[{ c: "aujourdhui", l: "Aujourd'hui" }, { c: "7j", l: "7 jours" }, { c: "30j", l: "30 jours" }, { c: "mois", l: "Mois en cours" }, { c: "custom", l: "Personnalisée" }].map(function (o) {
+            return <button key={o.c} className={"pilotage-periode-btn" + (periodeCle === o.c ? " active" : "")} onClick={() => setPeriodeCle(o.c)}>{o.l}</button>;
+          })}
+        </div>
+        {periodeCle === "custom" && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="date" className="btp-input" style={{ width: 150 }} value={customDebut} onChange={(e) => setCustomDebut(e.target.value)} />
+            <span style={{ color: "var(--btp-text2)" }}>→</span>
+            <input type="date" className="btp-input" style={{ width: 150 }} value={customFin} onChange={(e) => setCustomFin(e.target.value)} />
+          </div>
+        )}
+        <button className="btn btn-sm btn-ghost" onClick={() => { setFormParametres(Object.assign({}, parametres)); setShowParametres(true); }}>⚙️ Paramètres & objectifs</button>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--btp-text2)", marginBottom: 16 }}>{periode.label} · du {new Date(periode.debut).toLocaleDateString("fr-FR")} au {new Date(periode.fin).toLocaleDateString("fr-FR")}{chargement ? " · chargement…" : ""}</div>
+
+      {indicateurs.qualiteDonnees.nombreLimitations > 0 && (
+        <div className="pilotage-qualite-donnees" onClick={() => setDetail({
+          titre: "Fiabilité des données", nomExportCSV: null,
+          colonnes: [{ label: "Limitation", champ: "libelle" }, { label: "Nombre", champ: "n" }],
+          lignes: indicateurs.qualiteDonnees.problemes
+        })}>
+          ℹ️ {indicateurs.qualiteDonnees.nombreLimitations} limitation{indicateurs.qualiteDonnees.nombreLimitations > 1 ? "s" : ""} affecte{indicateurs.qualiteDonnees.nombreLimitations > 1 ? "nt" : ""} certains indicateurs — cliquer pour le détail
+        </div>
+      )}
+
+      {/* LIGNE 1 — chiffres cles */}
+      <div className="pilotage-grid pilotage-grid-4">
+        <StatTile label={"Production — " + periode.label} valeur={indicateurs.production.total.toLocaleString() + " u"}
+          comparaison={indicateurs.evolutionProduction} couleur="var(--btp-orange)"
+          sousLigne={indicateurs.evolutionProduction.calculable ? (indicateurs.evolutionProduction.variationPct >= 0 ? "▲" : "▼") + " vs période précédente" : "période précédente non comparable"}
+          onClick={() => ouvrirObjet("tab", "production")} />
+        <StatTile label="Stock disponible (mature)" valeur={CATALOGUE.reduce(function (a, p) { return a + ((stocks[p.id] || {}).sec || 0); }, 0).toLocaleString() + " u"}
+          couleur="var(--btp-blue)" onClick={() => ouvrirObjet("tab", "stock")} />
+        <StatTile label={"Valeur pertes — " + periode.label} valeur={indicateurs.pertes.valeurEstimee.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €"}
+          comparaison={{ calculable: indicateurs.evolutionPertes.calculable, variationPct: indicateurs.evolutionPertes.variationPct }}
+          couleur="var(--btp-red)" sousLigne={indicateurs.pertes.quantitePerdue.toLocaleString() + " u perdues (valeur produit estimée)"}
+          onClick={() => setDetail({
+            titre: "Détail des pertes — " + periode.label, nomExportCSV: "pertes_" + periode.cle + ".csv",
+            colonnes: [{ label: "Type BTC", champ: "type" }, { label: "Quantité perdue", champ: "q" }],
+            lignes: Object.keys(indicateurs.pertes.parType).map(function (t) { return { type: getProduit(t).nom, q: indicateurs.pertes.parType[t].toLocaleString() }; })
+          })} />
+        <StatTile label="Taux de conformité" valeur={indicateurs.performanceQualite.tauxConformite != null ? indicateurs.performanceQualite.tauxConformite.toFixed(1) + " %" : "—"}
+          couleur="var(--btp-green)" sousLigne={indicateurs.performanceQualite.lotsControles + " lot(s) contrôlé(s)"}
+          onClick={() => ouvrirObjet("qse_onglet", "controles")} />
+      </div>
+
+      {/* LIGNE 2 — production dans le temps */}
+      <div className="pilotage-section">
+        <div className="pilotage-section-titre">Production dans le temps</div>
+        <div className="pilotage-2col">
+          <div>
+            <div className="pilotage-souscadre-titre">Production quotidienne</div>
+            <GraphiqueLigne points={pointsProductionQuotidienne} couleur="var(--btp-orange)" />
+          </div>
+          <div>
+            <div className="pilotage-souscadre-titre">Production par type BTC</div>
+            <GraphiqueBarres donnees={CATALOGUE.filter(function (p) { return indicateurs.production.parType[p.id]; }).map(function (p) {
+              return { label: p.nom, labelCourt: p.nom.replace("BTC ", "").slice(0, 10), valeur: indicateurs.production.parType[p.id] || 0, couleur: "var(--btp-orange)", onClick: () => ouvrirObjet("tab", "production") };
+            })} />
+          </div>
+        </div>
+        <div className="pilotage-mini-stats">
+          <span>Moyenne quotidienne : <strong>{Math.round(indicateurs.production.moyenneQuotidienne).toLocaleString()} u/j</strong></span>
+          {indicateurs.production.meilleureJournee && <span>Meilleure journée : <strong>{indicateurs.production.meilleureJournee.date}</strong> ({indicateurs.production.meilleureJournee.quantite.toLocaleString()} u)</span>}
+          <span>Jours sans production : <strong>{indicateurs.production.joursSansProduction}</strong> / {periode.jours}</span>
+          {indicateurs.cadence.cadenceCible != null && <span style={{ color: couleurVar(indicateurs.cadence.ecart, true) }}>Cadence : {Math.round(indicateurs.cadence.cadenceActuelle).toLocaleString()} u/j vs cible {indicateurs.cadence.cadenceCible.toLocaleString()} u/j</span>}
+        </div>
+      </div>
+
+      {/* LIGNE 3 — stock / couverture / besoins */}
+      <div className="pilotage-section">
+        <div className="pilotage-section-titre">Stock, couverture et besoins de production</div>
+        <div className="pilotage-table-scroll">
+          <table className="btp-table">
+            <thead><tr><th>Type BTC</th><th>Disponible</th><th>Séchage proche</th><th>Couverture</th><th>Rupture</th><th>Besoin de production</th></tr></thead>
+            <tbody>
+              {indicateurs.parType.filter(function (x) { return x.besoin.disponible > 0 || x.besoin.besoin > 0 || x.besoin.engagements > 0; }).map(function (x) {
+                return (
+                  <tr key={x.produit.id} className="cliquable" onClick={() => ouvrirObjet("tab", "stock")}>
+                    <td>{x.produit.nom}</td>
+                    <td>{x.besoin.disponible.toLocaleString()} u</td>
+                    <td>{x.besoin.sechageBientotMature.toLocaleString()} u</td>
+                    <td>{x.couverture.calculable ? Math.round(x.couverture.couvertureJours) + " j" : "—"}</td>
+                    <td style={{ color: x.rupture.etat === "certain" ? "#EC7063" : (x.rupture.etat === "projection" && x.rupture.joursAvantRupture < 5 ? "#F39C12" : "var(--btp-text2)") }}>{x.rupture.etat === "indetermine" ? "—" : x.rupture.message}</td>
+                    <td style={{ fontWeight: 800, color: x.besoin.besoin > 0 ? "#F39C12" : "#2ECC71" }}>{x.besoin.besoin > 0 ? x.besoin.besoin.toLocaleString() + " u" : "Suffisant"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <button className="btn btn-sm btn-gold" style={{ marginTop: 10 }} onClick={() => setDetail({
+          titre: "Plan de production suggéré", sousTitre: "Proposition déterministe, pas un ordre automatique — trie les besoins réels par ordre décroissant.",
+          nomExportCSV: "plan_production.csv",
+          colonnes: [{ label: "Rang", champ: "rang" }, { label: "Type BTC", valeur: (l) => getProduit(l.typeBTC).nom }, { label: "Besoin", valeur: (l) => l.besoin.toLocaleString() }, { label: "Formule", champ: "formule" }],
+          lignes: indicateurs.planProductionSuggere, onLigneClick: (l) => ouvrirObjet("tab", "production")
+        })}>📋 Voir le plan de production suggéré</button>
+      </div>
+
+      {/* LIGNE 4 — qualite / NC */}
+      <div className="pilotage-section">
+        <div className="pilotage-section-titre">Qualité et non-conformités</div>
+        <div className="pilotage-grid pilotage-grid-4">
+          <StatTile label="NC ouvertes" valeur={indicateurs.coutNC.ouvertes} couleur="#EC7063" onClick={() => ouvrirObjet("qse_onglet", "nc")} />
+          <StatTile label="Coût NC estimé" valeur={indicateurs.coutNC.valeurTotale.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €"}
+            sousLigne={"Valeur produit estimée, pas le coût comptable complet · " + indicateurs.coutNC.nbSansQuantite + " NC sans quantité chiffrée"} onClick={() => ouvrirObjet("qse_onglet", "nc")} />
+          <StatTile label="Taux de lots non conformes" valeur={indicateurs.tauxNC.tauxLotsNonConformes != null ? indicateurs.tauxNC.tauxLotsNonConformes.toFixed(1) + " %" : "—"}
+            sousLigne={indicateurs.tauxNC.lotsControles + " lot(s) contrôlé(s) sur la période"} />
+          <StatTile label="Part de production concernée" valeur={indicateurs.tauxNC.partProductionConcernee != null ? indicateurs.tauxNC.partProductionConcernee.toFixed(1) + " %" : "—"}
+            sousLigne="Quantité concernée / production totale" />
+        </div>
+        <div className="pilotage-2col" style={{ marginTop: 14 }}>
+          <div>
+            <div className="pilotage-souscadre-titre">Évolution des NC (par semaine)</div>
+            <GraphiqueLigne points={pointsEvolutionNC} couleur="#EC7063" />
+          </div>
+          <div style={{ fontSize: 13 }}>
+            <div className="pilotage-souscadre-titre">Signaux récurrents</div>
+            {indicateurs.ncRecurrentes.typeLePlusTouche ? (
+              <p>Type le plus touché : <strong>{getProduit(indicateurs.ncRecurrentes.typeLePlusTouche).nom}</strong> ({indicateurs.ncRecurrentes.nbTypeLePlusTouche} NC) — signal de répétition, pas une cause racine confirmée.</p>
+            ) : <p style={{ color: "var(--btp-text2)" }}>Aucun signal de répétition sur la période.</p>}
+            <p style={{ color: "var(--btp-text2)", fontSize: 12 }}>Motifs récurrents non disponibles : les champs cause/description sont en texte libre, jamais regroupés automatiquement.</p>
+            {indicateurs.delaiControle.controlesAvantMaturite > 0 && (
+              <p style={{ color: "#F39C12" }}>⚠️ {indicateurs.delaiControle.controlesAvantMaturite} contrôle(s) effectué(s) avant la maturité théorique du lot — anomalie potentielle à vérifier.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* LIGNE 5 — priorites decisionnelles : reutilise TEL QUEL le moteur de priorites (point 23/36),
+          jamais une deuxieme logique. */}
+      <div className="pilotage-section">
+        <div className="pilotage-section-titre">À surveiller — priorités décisionnelles</div>
+        <ModeAujourdhui donnees={prioriteDonneesPilotage} ouvrirObjet={ouvrirObjet} role="direction" />
+      </div>
+
+      {detail && <PilotageDetailModal {...detail} onFermer={() => setDetail(null)} />}
+
+      {showParametres && formParametres && (
+        <div className="btp-modal-overlay" onClick={() => setShowParametres(false)}>
+          <div className="btp-modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="btp-modal-title" style={{ marginBottom: 12 }}>⚙️ Paramètres industriels & objectifs</div>
+            <label className="btp-label">Stock cible par défaut (u)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.stockCibleDefaut} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { stockCibleDefaut: parseInt(e.target.value, 10) || 0 }))} />
+            <label className="btp-label">Cadence cible (u/jour) — laisser vide si non définie</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.cadenceCibleParJour || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { cadenceCibleParJour: e.target.value ? parseInt(e.target.value, 10) : null }))} />
+            <label className="btp-label">Objectif production mensuelle (u)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.objectifProductionMensuelle || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { objectifProductionMensuelle: e.target.value ? parseInt(e.target.value, 10) : null }))} />
+            <label className="btp-label">Taux de pertes maximum toléré (%)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.objectifTauxPertesMaxPct || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { objectifTauxPertesMaxPct: e.target.value ? parseFloat(e.target.value) : null }))} />
+            <label className="btp-label">Taux de conformité cible (%)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.objectifTauxConformiteMinPct || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { objectifTauxConformiteMinPct: e.target.value ? parseFloat(e.target.value) : null }))} />
+            {msgParametres && <div style={{ fontSize: 12, marginBottom: 10, color: msgParametres.indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgParametres}</div>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} onClick={enregistrerParametres}>Enregistrer</button>
+              <button className="btn btn-ghost btn-full" onClick={() => setShowParametres(false)}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashboardDirection({ user, userData }) {
   const [tab, setTab] = useState("stock");
   const [modeDemo, setModeDemo] = React.useState(true);
@@ -2315,6 +3253,7 @@ const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
   const [pertes, setPertes] = React.useState([]);
   const [controlesEnAttenteList, setControlesEnAttenteList] = React.useState([]); // controles "Non mesure" (source de verite maturite/retard)
+  const [controlesRecents, setControlesRecents] = React.useState([]); // Phase 9 : controles mesures+en attente (300 plus recents), pour le cockpit
   const [numerosAvecControleRecent, setNumerosAvecControleRecent] = React.useState({}); // best-effort : lots ayant au moins un controle parmi les 300 plus recents
   const [ncQSEList, setNcQSEList] = React.useState([]); // toutes les NC (ouvertes + cloturees)
   const [qseLotsList, setQseLotsList] = React.useState([]); // tous les lots charges (utilises par la recherche)
@@ -2376,9 +3315,12 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     // crees au meme rythme), pour ne pas transformer une requete filtree naturellement petite en
     // requete non filtree potentiellement lourde.
     var u10 = db.collection("qse_controles").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
-      var nums = {};
-      snap.docs.forEach(function(d){ var data = d.data(); if (data.numeroLot) nums[data.numeroLot] = true; });
+      var nums = {}; var liste = [];
+      snap.docs.forEach(function(d){ var data = d.data(); if (data.numeroLot) nums[data.numeroLot] = true; liste.push(Object.assign({ id: d.id }, data)); });
       setNumerosAvecControleRecent(nums);
+      // Phase 9 : meme requete bornee, reutilisee aussi comme jeu de controles "recents" (mesures ET
+      // en attente) pour le cockpit industriel — pas de deuxieme ecouteur.
+      setControlesRecents(liste);
     });
     var u11 = db.collection("stock_palettes").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
       setPalettesList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
@@ -2723,6 +3665,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       {/* NAV TABS */}
       <div className="btp-nav">
         {[
+          {key:"pilotage",icon:"🎛️",label:"Pilotage"},
           {key:"stock",icon:"📦",label:"Stock"},
           {key:"matieres",icon:"🧱",label:"Matières 1ères"},
           {key:"production",icon:"⚙️",label:"Production"},
@@ -2748,6 +3691,11 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       <div className="btp-content">
 
         <PrioriteDuJour donnees={prioriteDonnees} ouvrirObjet={ouvrirObjet} role="direction" />
+
+        {tab==="pilotage" && (
+          <PilotageDirection user={user} userData={userData} stocks={stocks} commandes={commandes} productions={productions}
+            lots={qseLotsList} controles={controlesRecents} ncs={ncQSEList} chantiers={chantiers} ouvrirObjet={ouvrirObjet} />
+        )}
 
         {tab==="stock"&&(
           <div className="fade-up">
