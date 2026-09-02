@@ -557,6 +557,46 @@ input,select,textarea,button{font-family:inherit;}
 .fichelot-anomalies h4{color:#F1948A;font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
 .fichelot-anomalies ul{list-style:none;display:flex;flex-direction:column;gap:4px;}
 .fichelot-anomalies li{font-size:12px;color:#F1948A;}
+
+/* ============ RECHERCHE GLOBALE (Ctrl+K) ============ */
+.gsearch-trigger{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.06);border:1px solid var(--btp-border);color:var(--btp-text2);
+  border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;
+}
+.gsearch-trigger:hover{background:rgba(255,255,255,.12);color:white;}
+.gsearch-kbd{background:rgba(0,0,0,.3);border:1px solid var(--btp-border);border-radius:5px;padding:1px 6px;font-size:11px;color:var(--btp-text2);}
+.gsearch-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;
+  display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px 16px;
+  backdrop-filter:blur(4px);
+}
+.gsearch-box{
+  background:var(--btp-card);border:1px solid var(--btp-border);border-radius:16px;
+  width:100%;max-width:640px;max-height:78vh;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 24px 80px rgba(0,0,0,.6);
+}
+.gsearch-input-row{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--btp-border);font-size:18px;}
+.gsearch-input{flex:1;background:none;border:none;outline:none;color:white;font-size:16px;}
+.gsearch-input::placeholder{color:rgba(189,195,199,.5);}
+.gsearch-close{background:rgba(255,255,255,.08);border:none;color:var(--btp-text2);width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:13px;}
+.gsearch-results{overflow-y:auto;padding:8px 8px 16px;}
+.gsearch-groupe{margin-top:10px;}
+.gsearch-groupe-titre{font-size:11px;font-weight:700;color:var(--btp-text2);text-transform:uppercase;letter-spacing:.6px;padding:6px 12px;}
+.gsearch-item{padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .15s;}
+.gsearch-item:hover{background:rgba(255,255,255,.06);}
+.gsearch-item-titre{font-size:14px;font-weight:700;color:white;}
+.gsearch-item-sub{font-size:12px;color:var(--btp-text2);margin-top:1px;}
+.gsearch-vide{padding:32px 16px;text-align:center;color:var(--btp-text2);font-size:14px;}
+.gsearch-vide-inline{padding:10px 12px;color:var(--btp-text2);font-size:13px;}
+.gsearch-suggestions{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
+@media(max-width:600px){
+  .gsearch-trigger-texte{display:none;}
+  .gsearch-overlay{padding:0;align-items:stretch;}
+  .gsearch-box{max-width:100%;max-height:100%;height:100%;border-radius:0;}
+  .gsearch-item{padding:14px 14px;}
+  .gsearch-item-titre{font-size:15px;}
+}
 </style>
 </head>
 <body>
@@ -659,24 +699,39 @@ function getProduit(id) {
   return CATALOGUE.find(function(p) { return p.id === id; }) || { nom: id, dim: "", prix: 0 };
 }
 
+// Normalisation centralisee (minuscules + sans accents + espaces superflus retires).
+// Utilisee pour comparer des statuts de facon fiable quelle que soit la casse saisie,
+// et pour la recherche globale (Phase 3) afin de tolerer casse/accents/saisie partielle.
+function normTxt(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
 // Bandeau "A faire aujourd'hui" : n'affiche que ce qui necessite reellement une action humaine.
-function PrioriteDuJour({ stocks, cmdAttenteCount, controlesQSE, ncOuvertesQSE, onNavigate }) {
+// Chaque alerte pointe vers l'objet precis quand il est identifiable sans ambiguite (un seul
+// element concerne), sinon vers le sous-onglet QSE pertinent plutot que la simple ouverture du
+// module. Ne fabrique jamais une precision qui n'existe pas dans les donnees.
+function PrioriteDuJour({ stocks, cmdAttenteCount, controlesQSE, ncOuvertesQSE, onNavigate, onOuvrirLot, onOuvrirQSEOnglet }) {
   var stocksCritiques = CATALOGUE.filter(function(p) {
     var s = stocks[p.id] || {};
     return ((s.sec || 0) + (s.sechage || 0)) < STOCK_ALERTE;
   });
   var items = [];
   if (stocksCritiques.length > 0) {
-    items.push({ niveau: "urgent", icone: "🔴", texte: stocksCritiques.length + " référence(s) en stock critique", cible: "stock" });
+    items.push({ niveau: "urgent", icone: "🔴", texte: stocksCritiques.length + " référence(s) en stock critique", action: function () { onNavigate("stock"); } });
   }
-  if (ncOuvertesQSE > 0) {
-    items.push({ niveau: "urgent", icone: "🔴", texte: ncOuvertesQSE + " non-conformité(s) QSE ouverte(s)", cible: "qse" });
+  if (ncOuvertesQSE.length === 1 && ncOuvertesQSE[0].numeroLot) {
+    items.push({ niveau: "urgent", icone: "🔴", texte: "Non-conformité ouverte sur le lot " + ncOuvertesQSE[0].numeroLot, action: function () { onOuvrirLot(ncOuvertesQSE[0].numeroLot); } });
+  } else if (ncOuvertesQSE.length > 0) {
+    items.push({ niveau: "urgent", icone: "🔴", texte: ncOuvertesQSE.length + " non-conformité(s) QSE ouverte(s)", action: function () { onOuvrirQSEOnglet("nc"); } });
   }
   if (cmdAttenteCount > 0) {
-    items.push({ niveau: "surveiller", icone: "🟠", texte: cmdAttenteCount + " commande(s) en attente de validation", cible: "commandes" });
+    items.push({ niveau: "surveiller", icone: "🟠", texte: cmdAttenteCount + " commande(s) en attente de validation", action: function () { onNavigate("commandes"); } });
   }
-  if (controlesQSE > 0) {
-    items.push({ niveau: "surveiller", icone: "🟠", texte: controlesQSE + " contrôle(s) qualité à réaliser", cible: "qse" });
+  if (controlesQSE.length === 1 && controlesQSE[0].numeroLot) {
+    items.push({ niveau: "surveiller", icone: "🟠", texte: "Lot " + controlesQSE[0].numeroLot + " prêt à contrôler", action: function () { onOuvrirLot(controlesQSE[0].numeroLot); } });
+  } else if (controlesQSE.length > 0) {
+    items.push({ niveau: "surveiller", icone: "🟠", texte: controlesQSE.length + " contrôle(s) qualité à réaliser", action: function () { onOuvrirQSEOnglet("controles"); } });
   }
   if (items.length === 0) {
     return <div className="priorite-jour-ok">🟢 Rien d'urgent — production, stock et qualité sont sous contrôle.</div>;
@@ -687,11 +742,227 @@ function PrioriteDuJour({ stocks, cmdAttenteCount, controlesQSE, ncOuvertesQSE, 
       <div className="priorite-jour-liste">
         {items.map(function(it, i) {
           return (
-            <button key={i} className={"priorite-jour-item priorite-jour-" + it.niveau} onClick={function(){ onNavigate(it.cible); }}>
+            <button key={i} className={"priorite-jour-item priorite-jour-" + it.niveau} onClick={it.action}>
               <span>{it.icone}</span> {it.texte}
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// Navigation centrale : un seul point d'entree pour ouvrir n'importe quel objet metier depuis
+// n'importe ou (recherche globale, bandeau "A faire", et plus tard alertes/notifications).
+// ouvrirObjet("lot", "BTC-2026-09-001") -> FicheLot ; ouvrirObjet("chantier", id) -> fiche chantier ; etc.
+// Reutilise les ecrans/etats existants, ne cree pas de nouvelles fiches en double.
+function creerOuvreurObjet({ setLotOuvert, setFicheChantierOuverte, setTab, setQseOnglet, chantiers, commandes }) {
+  return function ouvrirObjet(type, idOuObjet) {
+    if (type === "lot") { setLotOuvert(idOuObjet); return; }
+    if (type === "chantier") {
+      var ch = chantiers.find(function (c) { return c.id === idOuObjet; });
+      if (ch) { setFicheChantierOuverte(ch); setTab("chantiers"); }
+      return;
+    }
+    if (type === "commande") {
+      var cmd = commandes.find(function (c) { return c.id === idOuObjet; });
+      if (cmd && cmd.chantierId) {
+        var chC = chantiers.find(function (c) { return c.id === cmd.chantierId; });
+        if (chC) { setFicheChantierOuverte(chC); setTab("chantiers"); return; }
+      }
+      setTab("commandes");
+      return;
+    }
+    if (type === "nc") {
+      // idOuObjet est ici l'objet NC complet (fourni par la recherche) : on ouvre sa fiche lot
+      // si elle est connue, seule vue qui centralise deja tout le detail d'une NC (Phase 2).
+      var nc = idOuObjet;
+      if (nc && nc.numeroLot) { setLotOuvert(nc.numeroLot); }
+      else { setQseOnglet("nc"); setTab("qse"); }
+      return;
+    }
+    if (type === "produit") { setTab("catalogue"); return; }
+  };
+}
+
+// Recherche globale : filtre cote client les donnees deja chargees par l'application (aucune
+// lecture Firestore supplementaire declenchee par la frappe). Tolerante a la casse/aux accents/
+// a la saisie partielle via normTxt, avec une correspondance "tous les mots tapes doivent se
+// retrouver quelque part dans le texte de l'objet" (pas besoin de moteur de recherche externe).
+function GlobalSearch(props) {
+  const [ouverte, setOuverte] = React.useState(false);
+  const [requete, setRequete] = React.useState("");
+  const [recents, setRecents] = React.useState([]);
+  const inputRef = React.useRef(null);
+  const CLE_RECENTS = "btcmanager_recherche_recents";
+
+  React.useEffect(() => {
+    function onKeyDown(e) {
+      var k = e.key ? e.key.toLowerCase() : "";
+      if ((e.ctrlKey || e.metaKey) && k === "k") {
+        e.preventDefault();
+        setOuverte(true);
+      } else if (e.key === "Escape") {
+        setOuverte(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  React.useEffect(() => {
+    if (ouverte) {
+      try {
+        var raw = localStorage.getItem(CLE_RECENTS);
+        setRecents(raw ? JSON.parse(raw) : []);
+      } catch (e) { setRecents([]); }
+      setTimeout(function () { if (inputRef.current) inputRef.current.focus(); }, 30);
+    } else {
+      setRequete("");
+    }
+  }, [ouverte]);
+
+  function memoriserRecent(item) {
+    try {
+      var raw = localStorage.getItem(CLE_RECENTS);
+      var liste = raw ? JSON.parse(raw) : [];
+      liste = liste.filter(function (x) { return !(x.type === item.type && x.label === item.label); });
+      liste.unshift({ type: item.type, id: item.id, label: item.label, subtitle: item.subtitle });
+      localStorage.setItem(CLE_RECENTS, JSON.stringify(liste.slice(0, 6)));
+    } catch (e) { /* confort seulement : on ignore si localStorage est indisponible */ }
+  }
+
+  function ouvrir(item) {
+    memoriserRecent(item);
+    setOuverte(false);
+    props.ouvrirObjet(item.type, item.type === "nc" ? item.ncData : item.id);
+  }
+
+  var tokens = normTxt(requete).split(/\s+/).filter(Boolean);
+  function correspond(texte) {
+    if (tokens.length === 0) return false;
+    var n = normTxt(texte);
+    return tokens.every(function (t) { return n.indexOf(t) !== -1; });
+  }
+
+  var resLots = [], resCommandes = [], resChantiers = [], resNC = [], resProduits = [];
+  if (tokens.length > 0) {
+    resLots = (props.lots || []).filter(function (l) { return correspond((l.numeroLot || "") + " " + (l.type || "")); }).slice(0, 6);
+    resCommandes = (props.commandes || []).filter(function (c) { return correspond((c.numBC || "") + " " + (c.client || "") + " " + (c.chantierNom || "") + " " + (c.typNom || c.type || "")); }).slice(0, 6);
+    resChantiers = (props.chantiers || []).filter(function (ch) { return correspond((ch.nom || "") + " " + (ch.client || "")); }).slice(0, 6);
+    resNC = (props.ncs || []).filter(function (nc) { return correspond((nc.numeroLot || "") + " " + (nc.description || "") + " " + (nc.responsable || "")); }).slice(0, 6);
+    resProduits = CATALOGUE.filter(function (p) { return correspond(p.nom + " " + p.id + " " + p.dim); }).slice(0, 6);
+  }
+  var total = resLots.length + resCommandes.length + resChantiers.length + resNC.length + resProduits.length;
+
+  if (!ouverte) {
+    return (
+      <button className="gsearch-trigger" onClick={() => setOuverte(true)}>
+        🔍 <span className="gsearch-trigger-texte">Rechercher</span> <span className="gsearch-kbd">Ctrl+K</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="gsearch-overlay" onClick={() => setOuverte(false)}>
+      <div className="gsearch-box" onClick={(e) => e.stopPropagation()}>
+        <div className="gsearch-input-row">
+          <span>🔍</span>
+          <input ref={inputRef} className="gsearch-input"
+            placeholder="Lot, commande, chantier, non-conformité, produit…"
+            value={requete} onChange={(e) => setRequete(e.target.value)} />
+          <button className="gsearch-close" onClick={() => setOuverte(false)}>✕</button>
+        </div>
+        <div className="gsearch-results">
+          {tokens.length === 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Récents</div>
+              {recents.length === 0 && <div className="gsearch-vide-inline">Aucune recherche récente.</div>}
+              {recents.map(function (r, i) {
+                return (
+                  <div key={i} className="gsearch-item" onClick={() => ouvrir(r)}>
+                    <div className="gsearch-item-titre">{r.label}</div>
+                    <div className="gsearch-item-sub">{r.subtitle}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {tokens.length > 0 && total === 0 && (
+            <div className="gsearch-vide">
+              <div>Aucun résultat pour « {requete} »</div>
+              <div className="gsearch-suggestions">
+                <button className="btn btn-sm btn-ghost" onClick={() => { props.onNavigate("qse"); setOuverte(false); }}>Voir les lots</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => { props.onNavigate("chantiers"); setOuverte(false); }}>Voir les chantiers</button>
+              </div>
+            </div>
+          )}
+          {resLots.length > 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Lots</div>
+              {resLots.map(function (l) {
+                return (
+                  <div key={l.numeroLot} className="gsearch-item" onClick={() => ouvrir({ type: "lot", id: l.numeroLot, label: l.numeroLot, subtitle: getProduit(l.type).nom })}>
+                    <div className="gsearch-item-titre">🏷️ {l.numeroLot}</div>
+                    <div className="gsearch-item-sub">{getProduit(l.type).nom} · {(l.quantite || 0).toLocaleString()} u</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {resChantiers.length > 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Chantiers</div>
+              {resChantiers.map(function (ch) {
+                return (
+                  <div key={ch.id} className="gsearch-item" onClick={() => ouvrir({ type: "chantier", id: ch.id, label: ch.nom, subtitle: "Client : " + (ch.client || "-") })}>
+                    <div className="gsearch-item-titre">🏗️ {ch.nom}</div>
+                    <div className="gsearch-item-sub">Client : {ch.client || "-"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {resCommandes.length > 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Commandes</div>
+              {resCommandes.map(function (c) {
+                return (
+                  <div key={c.id} className="gsearch-item" onClick={() => ouvrir({ type: "commande", id: c.id, label: c.numBC || "(sans n°)", subtitle: c.chantierNom || c.client || "-" })}>
+                    <div className="gsearch-item-titre">📋 {c.numBC || "(sans n°)"}</div>
+                    <div className="gsearch-item-sub">{c.chantierNom || c.client || "-"} · {(c.quantite || 0).toLocaleString()} u</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {resNC.length > 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Non-conformités</div>
+              {resNC.map(function (nc) {
+                return (
+                  <div key={nc.id} className="gsearch-item" onClick={() => ouvrir({ type: "nc", id: nc.id, ncData: nc, label: nc.description, subtitle: (nc.numeroLot || "lot inconnu") + " · " + nc.statut })}>
+                    <div className="gsearch-item-titre">🚫 {nc.description}</div>
+                    <div className="gsearch-item-sub">{nc.numeroLot || "Lot inconnu"} · {nc.statut}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {resProduits.length > 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Produits</div>
+              {resProduits.map(function (p) {
+                return (
+                  <div key={p.id} className="gsearch-item" onClick={() => ouvrir({ type: "produit", id: p.id, label: p.nom, subtitle: p.dim })}>
+                    <div className="gsearch-item-titre">🧱 {p.nom}</div>
+                    <div className="gsearch-item-sub">{p.dim} · {p.prix.toFixed(2)} €</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -796,10 +1067,12 @@ const [editUserPwd, setEditUserPwd] = useState("");
 const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
   const [pertes, setPertes] = React.useState([]);
-  const [controlesQSEDir, setControlesQSEDir] = React.useState(0);
-  const [ncOuvertesQSEDir, setNcOuvertesQSEDir] = React.useState(0);
+  const [controlesQSEList, setControlesQSEList] = React.useState([]); // controles "Non mesure" (a faire)
+  const [ncQSEList, setNcQSEList] = React.useState([]); // toutes les NC (ouvertes + cloturees)
+  const [qseLotsList, setQseLotsList] = React.useState([]); // tous les lots charges (utilises par la recherche)
   const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
   const [lotOuvertProd, setLotOuvertProd] = React.useState(null);
+  const [qseOngletDemande, setQseOngletDemande] = React.useState(null);
 
   const [evenements, setEvenements] = React.useState([]); const [showNewChantier, setShowNewChantier] = React.useState(false); const [dirNomChantier, setDirNomChantier] = React.useState(""); const [dirClientChantier, setDirClientChantier] = React.useState(""); const [dirAdresseChantier, setDirAdresseChantier] = React.useState(""); const [dirMsgChantier, setDirMsgChantier] = React.useState(""); const creerChantierDirection = async () => { if(!dirNomChantier||!dirClientChantier){ setDirMsgChantier("Remplissez le nom et le client"); return; } try { await db.collection("chantiers").add({ nom:dirNomChantier, client:dirClientChantier, adresse:dirAdresseChantier, besoins:{}, chefUid:user.uid, chefNom:userData.nom||user.email, createdAt:firebase.firestore.FieldValue.serverTimestamp() }); setDirNomChantier(""); setDirClientChantier(""); setDirAdresseChantier(""); setDirMsgChantier("Chantier cree avec succes !"); setTimeout(()=>{setShowNewChantier(false); setDirMsgChantier("");},1200); } catch(e){ setDirMsgChantier("Erreur: "+e.message); } }; const supprimerChantierDirection = async (ch) => { if(window.confirm('Supprimer definitivement le chantier "'+ch.nom+'" ?')){ try { await db.collection("chantiers").doc(ch.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } }; const supprimerEvenement = async (ev) => { if(window.confirm("Supprimer cette action du journal de tracabilite ?")){ try { await db.collection("evenements").doc(ev.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } };
   useEffect(() => {
@@ -826,14 +1099,22 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
     const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
-    var u7 = db.collection("qse_controles").where("resultat","==","Non mesuré").onSnapshot(snap => setControlesQSEDir(snap.size));
+    var u7 = db.collection("qse_controles").where("resultat","==","Non mesuré").onSnapshot(snap => {
+      setControlesQSEList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
+    });
     var u8 = db.collection("qse_nc").onSnapshot(snap => {
-      setNcOuvertesQSEDir(snap.docs.filter(function(d){ return d.data().statut !== "Cloturee"; }).length);
+      setNcQSEList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
     });
     var u9 = db.collection("qse_lots").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
       var m = {};
-      snap.docs.forEach(function(d){ var data = d.data(); if (data.productionId) m[data.productionId] = data.numeroLot; });
+      var liste = [];
+      snap.docs.forEach(function(d){
+        var data = d.data();
+        if (data.productionId) m[data.productionId] = data.numeroLot;
+        liste.push(data);
+      });
       setQseLotsParProdId(m);
+      setQseLotsList(liste);
     });
 
   return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); uMat(); };
@@ -1048,6 +1329,15 @@ const [showPwdUid, setShowPwdUid] = useState(null);
   const cmdValidees = commandes.filter(c=>c.status==="Validee");
   const cmdLivrees = commandes.filter(c=>c.status==="Livree");
 
+  const ouvrirObjet = creerOuvreurObjet({
+    setLotOuvert: setLotOuvertProd,
+    setFicheChantierOuverte: setFicheOuverte,
+    setTab: setTab,
+    setQseOnglet: setQseOngletDemande,
+    chantiers: chantiers,
+    commandes: commandes
+  });
+
   const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
     background:tab===t?"#C0392B":"#F5E6D3", color:tab===t?"white":"#2C1810", fontWeight:tab===t?700:500, fontSize:13 });
 
@@ -1112,7 +1402,15 @@ const [showPwdUid, setShowPwdUid] = useState(null);
           </div>
         </div>
         <div className="btp-header-right">
-          <div 
+          <GlobalSearch
+            lots={qseLotsList}
+            commandes={commandes}
+            chantiers={chantiers}
+            ncs={ncQSEList}
+            ouvrirObjet={ouvrirObjet}
+            onNavigate={setTab}
+          />
+          <div
             className={"mode-badge " + (modeDemo ? "mode-badge-demo" : "mode-badge-real")}
             onClick={toggleModeDemo}
             title="Cliquer pour basculer le mode"
@@ -1169,7 +1467,15 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       {/* CONTENT */}
       <div className="btp-content">
 
-        <PrioriteDuJour stocks={stocks} cmdAttenteCount={cmdAttente.length} controlesQSE={controlesQSEDir} ncOuvertesQSE={ncOuvertesQSEDir} onNavigate={setTab} />
+        <PrioriteDuJour
+          stocks={stocks}
+          cmdAttenteCount={cmdAttente.length}
+          controlesQSE={controlesQSEList}
+          ncOuvertesQSE={ncQSEList.filter(function(nc){ return nc.statut !== "Cloturee"; })}
+          onNavigate={setTab}
+          onOuvrirLot={setLotOuvertProd}
+          onOuvrirQSEOnglet={function(onglet){ setQseOngletDemande(onglet); setTab("qse"); }}
+        />
 
         {tab==="stock"&&(
           <div className="fade-up">
@@ -1772,7 +2078,7 @@ return(
 )}
 
 {tab==="qse" && (
-<ModuleQSE user={user} userData={userData} />
+<ModuleQSE user={user} userData={userData} ongletDemande={qseOngletDemande} onOngletConsomme={()=>setQseOngletDemande(null)} />
 )}
 
       </div>
@@ -2276,7 +2582,22 @@ function DashboardComptable({ user, userData }) {
     setTimeout(() => setMsg(""), 3000);
   };
 
-  const cmdLivrees = commandes.filter(c => c.status === "livree" || c.status === "confirmee" || c.quantiteLivree > 0);
+  // Fix: les statuts reels stockes sont "EnAttente"/"Validee"/"Livree"/"Refusee" (voir DashboardStock/DashboardDirection),
+  // jamais "confirmee". "Confirme" cote comptabilite correspond en realite a quantiteConfirmeeChef > 0 (reception validee
+  // par le chef de chantier). Comparaison normalisee (normTxt) pour tolerer toute variation de casse/accent des statuts.
+  const statutCommandeAffichage = (cmd) => {
+    if ((cmd.quantiteConfirmeeChef || 0) > 0) return { bg: "#27ae60", label: "✅ Confirmé" };
+    const s = normTxt(cmd.status);
+    if (s === normTxt("Livree")) return { bg: "#f39c12", label: "🚚 Livré" };
+    if (s === normTxt("Validee")) return { bg: "#2980b9", label: "✔ Validé" };
+    if (s === normTxt("EnAttente")) return { bg: "#bbb", label: "⏳ En attente" };
+    if (s === normTxt("Refusee")) return { bg: "#c0392b", label: "❌ Refusée" };
+    return { bg: "#bbb", label: cmd.status || "-" };
+  };
+  const cmdLivrees = commandes.filter(c => {
+    const s = normTxt(c.status);
+    return s === normTxt("Livree") || s === normTxt("Validee") || (c.quantiteLivree > 0) || (c.quantiteConfirmeeChef > 0);
+  });
 
   const genererFacture = (cmdId) => {
     const cmd = commandes.find(c => c.id === cmdId);
@@ -2444,11 +2765,7 @@ function DashboardComptable({ user, userData }) {
                   React.createElement("td", { style: { padding: "7px" } }, cmd.typNom || cmd.type || "-"),
                   React.createElement("td", { style: { padding: "7px", textAlign: "center" } }, cmd.quantiteLivree || 0),
                   React.createElement("td", { style: { padding: "7px", textAlign: "center" } },
-                    React.createElement("span", { style: { padding: "2px 8px", borderRadius: "10px", fontSize: "12px",
-                      background: cmd.status==="confirmee"?"#27ae60":cmd.status==="livree"?"#f39c12":cmd.status==="validee"?"#2980b9":"#bbb",
-                      color: "#fff" } },
-                      cmd.status==="confirmee"?"✅ Confirmé":cmd.status==="livree"?"🚚 Livré":cmd.status==="validee"?"✔ Validé":cmd.status||"-"
-                    )
+                    (() => { const st = statutCommandeAffichage(cmd); return React.createElement("span", { style: { padding: "2px 8px", borderRadius: "10px", fontSize: "12px", background: st.bg, color: "#fff" } }, st.label); })()
                   ),
                   React.createElement("td", { style: { padding: "7px", textAlign: "center" } },
                     React.createElement("button", {
@@ -4872,6 +5189,15 @@ function ModuleQSE(props) {
     setPrefillNCLot(numeroLot);
     setOngletQSE("nc");
   };
+
+  // Permet a un appelant externe (bandeau "A faire", recherche globale) de deep-linker
+  // directement vers un sous-onglet QSE precis a l'ouverture du module.
+  React.useEffect(() => {
+    if (props.ongletDemande) {
+      setOngletQSE(props.ongletDemande);
+      if (props.onOngletConsomme) props.onOngletConsomme();
+    }
+  }, [props.ongletDemande]);
 
   const onglets = [
     { key: "tableau", label: "Tableau de bord" },
