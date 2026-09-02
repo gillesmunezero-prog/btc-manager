@@ -431,8 +431,11 @@ input,select,textarea,button{font-family:inherit;}
   border:1px solid var(--btp-border);background:rgba(255,255,255,.05);color:var(--btp-text);font-size:13px;font-weight:600;
   cursor:pointer;transition:all .2s;}
 .priorite-jour-item:hover{background:rgba(255,255,255,.1);transform:translateY(-1px);}
-.priorite-jour-urgent{border-color:rgba(231,76,60,.4);background:rgba(231,76,60,.1);}
-.priorite-jour-surveiller{border-color:rgba(240,165,0,.4);background:rgba(240,165,0,.1);}
+.priorite-jour-critique{border-color:rgba(231,76,60,.4);background:rgba(231,76,60,.1);}
+.priorite-jour-important{border-color:rgba(240,165,0,.4);background:rgba(240,165,0,.1);}
+.priorite-jour-info{border-color:rgba(240,200,0,.35);background:rgba(240,200,0,.08);}
+.priorite-jour-voirtout{margin-top:10px;background:none;border:none;color:var(--btp-blue);font-size:12px;font-weight:700;cursor:pointer;padding:4px 2px;}
+.priorite-jour-voirtout:hover{text-decoration:underline;}
 .priorite-jour-ok{display:flex;align-items:center;gap:8px;background:rgba(29,185,84,.1);
   border:1px solid rgba(29,185,84,.3);border-left:4px solid var(--btp-green);border-radius:var(--btp-radius);
   padding:14px 20px;margin-bottom:20px;color:#2ecc71;font-weight:700;font-size:13px;}
@@ -707,47 +710,371 @@ function normTxt(s) {
   return String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
 
-// Bandeau "A faire aujourd'hui" : n'affiche que ce qui necessite reellement une action humaine.
-// Chaque alerte pointe vers l'objet precis quand il est identifiable sans ambiguite (un seul
-// element concerne), sinon vers le sous-onglet QSE pertinent plutot que la simple ouverture du
-// module. Ne fabrique jamais une precision qui n'existe pas dans les donnees.
-function PrioriteDuJour({ stocks, cmdAttenteCount, controlesQSE, ncOuvertesQSE, onNavigate, onOuvrirLot, onOuvrirQSEOnglet }) {
-  var stocksCritiques = CATALOGUE.filter(function(p) {
-    var s = stocks[p.id] || {};
-    return ((s.sec || 0) + (s.sechage || 0)) < STOCK_ALERTE;
+// ============================================================================================
+// MOTEUR DE PRIORITES OPERATIONNELLES (Phase 4)
+// Fonction pure et deterministe : mêmes donnees en entree -> memes priorites en sortie, jamais
+// d'appel Firestore ici. Toutes les priorites disparaissent d'elles-memes des que leur condition
+// n'est plus vraie (la fonction est rappelee a chaque nouveau snapshot, rien n'est memorise "en
+// dur" cote etat), donc aucune priorite ne doit jamais etre fermee/masquee manuellement.
+//
+// Convention du champ "urgence" (usage interne, jamais affiche) : nombre de jours avant que la
+// situation devienne critique. Negatif = deja en retard / deficit immediat (plus negatif = plus
+// urgent). 0 = aujourd'hui. Positif = echeance a venir dans N jours. Sert uniquement au tri.
+//
+// Regle de regroupement (evite de noyer l'utilisateur, cf. point 10 de la demande) : quand une
+// categorie de probleme concerne un seul objet, la priorite pointe directement dessus (ouvrirObjet
+// precis). Des qu'elle en concerne plusieurs, on affiche UNE seule ligne de synthese qui renvoie
+// vers la liste pertinente plutot que N lignes individuelles.
+// ============================================================================================
+
+// Difference en jours entre deux dates ISO "yyyy-mm-dd" (dateA - dateB). Retourne null si l'une
+// des deux dates est absente ou invalide (jamais de fausse echeance calculee sur donnee manquante).
+function joursEntreDatesISO(dateA, dateB) {
+  if (!dateA || !dateB) return null;
+  var a = new Date(dateA + "T00:00:00");
+  var b = new Date(dateB + "T00:00:00");
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+  return Math.round((a.getTime() - b.getTime()) / MS_PAR_JOUR);
+}
+
+// Tri deterministe : 1) criticite (critique > important > info), 2) urgence (le plus urgent
+// d'abord), 3) anciennete (le plus ancien d'abord a egalite). Aucune ponderation aleatoire.
+function trierPriorites(liste) {
+  var poidsNiveau = { critique: 0, important: 1, info: 2 };
+  return liste.slice().sort(function (a, b) {
+    var pa = poidsNiveau[a.niveau] != null ? poidsNiveau[a.niveau] : 3;
+    var pb = poidsNiveau[b.niveau] != null ? poidsNiveau[b.niveau] : 3;
+    if (pa !== pb) return pa - pb;
+    if (a.urgence !== b.urgence) return a.urgence - b.urgence;
+    return (b.anciennete || 0) - (a.anciennete || 0);
   });
-  var items = [];
-  if (stocksCritiques.length > 0) {
-    items.push({ niveau: "urgent", icone: "🔴", texte: stocksCritiques.length + " référence(s) en stock critique", action: function () { onNavigate("stock"); } });
+}
+
+// Structure de filtrage par role (point 13) : permet a un futur dashboard Production/Qualite/Chef
+// de reutiliser le meme moteur sans le reecrire, en ne montrant que les types de priorite qui le
+// concernent. "direction" (et tout role absent de la table) voit tout, sans filtre.
+var PRIORITES_PAR_ROLE = {
+  resp_production: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "lot_pret", "lot_pret_groupe", "lot_bientot_mature", "controle_retard", "controle_retard_groupe", "lot_sans_controle", "lot_sans_controle_groupe"],
+  qualite: ["controle_retard", "controle_retard_groupe", "lot_pret", "lot_pret_groupe", "lot_sans_controle", "lot_sans_controle_groupe", "nc_bloquante", "nc_bloquante_groupe", "nc_echeance", "nc_echeance_groupe", "nc_recurrente"],
+  chef_chantier: ["commande_stock_insuffisant", "commande_stock_insuffisant_groupe", "commande_a_preparer", "commande_a_valider", "commande_a_valider_groupe"]
+};
+function filtrerPrioritesParRole(liste, role) {
+  var autorises = PRIORITES_PAR_ROLE[role];
+  if (!autorises) return liste;
+  return liste.filter(function (p) { return autorises.indexOf(p.type) !== -1; });
+}
+
+function calculerPrioritesOperationnelles(donnees) {
+  var stocks = donnees.stocks || {};
+  var commandes = donnees.commandes || [];
+  var lots = donnees.lots || [];
+  var controlesEnAttente = donnees.controlesEnAttente || []; // deja filtre "Non mesure" cote Firestore
+  var numerosAvecControleRecent = donnees.numerosAvecControleRecent || {}; // best-effort (voir commentaire au niveau de l'ecouteur)
+  var ncs = donnees.ncs || [];
+  var maintenant = donnees.maintenant || Date.now();
+  var priorites = [];
+
+  // --- STOCK : sous seuil, rupture, incoherence. Une classification max par produit (jamais
+  // plusieurs alertes empilees pour le meme produit). Si plus de 3 produits sont simultanement en
+  // alerte, on condense en une seule ligne de synthese plutot que d'empiler une ligne par produit
+  // (point 10 : eviter les alertes repetitives) ; en dessous de ce seuil, chaque ligne reste
+  // individuelle et actionnable, conformement a l'exemple donne dans la demande. ---
+  var stockAlertes = [], stockProchesSeuil = [];
+  CATALOGUE.forEach(function (prod) {
+    var s = stocks[prod.id] || {};
+    var total = (s.sec || 0) + (s.sechage || 0);
+    if (total < 0) {
+      priorites.push({
+        type: "stock_incoherent", niveau: "critique",
+        titre: prod.nom + " : quantité en stock négative (" + total + ")",
+        explication: "Incohérence de donnée détectée sur ce stock.",
+        urgence: -999, objet: { type: "tab", id: "stock" }, action: "Vérifier l'inventaire"
+      });
+      return;
+    }
+    if (total < STOCK_ALERTE) stockAlertes.push({ prod: prod, total: total });
+    else if (total < STOCK_ALERTE * 1.2) stockProchesSeuil.push({ prod: prod, total: total });
+  });
+  if (stockAlertes.length > 0 && stockAlertes.length <= 3) {
+    stockAlertes.forEach(function (a) {
+      priorites.push({
+        type: "stock_bas", niveau: a.total <= 0 ? "critique" : "important",
+        titre: a.prod.nom + " : " + a.total.toLocaleString() + " u disponibles — seuil minimum " + STOCK_ALERTE.toLocaleString(),
+        explication: "Stock sous le seuil d'alerte.",
+        urgence: a.total <= 0 ? -50 : -Math.round((STOCK_ALERTE - a.total) / 200),
+        objet: { type: "tab", id: "stock" }, action: "Planifier une production"
+      });
+    });
+  } else if (stockAlertes.length > 3) {
+    var nbRupture = stockAlertes.filter(function (a) { return a.total <= 0; }).length;
+    priorites.push({
+      type: "stock_bas_groupe", niveau: nbRupture > 0 ? "critique" : "important",
+      titre: stockAlertes.length + " références sous le seuil de stock minimum" + (nbRupture > 0 ? " (dont " + nbRupture + " en rupture)" : ""),
+      explication: "Plusieurs références nécessitent une production.",
+      urgence: nbRupture > 0 ? -50 : -10, objet: { type: "tab", id: "stock" }, action: "Voir le stock"
+    });
   }
-  if (ncOuvertesQSE.length === 1 && ncOuvertesQSE[0].numeroLot) {
-    items.push({ niveau: "urgent", icone: "🔴", texte: "Non-conformité ouverte sur le lot " + ncOuvertesQSE[0].numeroLot, action: function () { onOuvrirLot(ncOuvertesQSE[0].numeroLot); } });
-  } else if (ncOuvertesQSE.length > 0) {
-    items.push({ niveau: "urgent", icone: "🔴", texte: ncOuvertesQSE.length + " non-conformité(s) QSE ouverte(s)", action: function () { onOuvrirQSEOnglet("nc"); } });
+  if (stockProchesSeuil.length === 1) {
+    priorites.push({
+      type: "stock_proche_seuil", niveau: "info",
+      titre: stockProchesSeuil[0].prod.nom + " : stock proche du seuil (" + stockProchesSeuil[0].total.toLocaleString() + " u)",
+      explication: "À surveiller dans les prochains jours.",
+      urgence: 3, objet: { type: "tab", id: "stock" }, action: "Voir le stock"
+    });
+  } else if (stockProchesSeuil.length > 1) {
+    priorites.push({
+      type: "stock_proche_seuil_groupe", niveau: "info",
+      titre: stockProchesSeuil.length + " références proches du seuil de stock",
+      explication: "À surveiller dans les prochains jours.",
+      urgence: 3, objet: { type: "tab", id: "stock" }, action: "Voir le stock"
+    });
   }
-  if (cmdAttenteCount > 0) {
-    items.push({ niveau: "surveiller", icone: "🟠", texte: cmdAttenteCount + " commande(s) en attente de validation", action: function () { onNavigate("commandes"); } });
+
+  // --- COMMANDES validees non livrees : comparees par TYPE (pas commande par commande) car
+  // plusieurs commandes du meme type se disputent le meme stock sec disponible. ---
+  var commandesValidees = commandes.filter(function (c) { return normTxt(c.status) === normTxt("Validee") && (c.quantite || 0) > (c.quantiteLivree || 0); });
+  var parType = {};
+  commandesValidees.forEach(function (c) {
+    var reste = (c.quantite || 0) - (c.quantiteLivree || 0);
+    (parType[c.type] = parType[c.type] || []).push({ cmd: c, reste: reste });
+  });
+  Object.keys(parType).forEach(function (type) {
+    var lignes = parType[type];
+    var totalEngage = lignes.reduce(function (a, l) { return a + l.reste; }, 0);
+    var disponible = (stocks[type] || {}).sec || 0;
+    if (totalEngage > disponible) {
+      var deficit = totalEngage - disponible;
+      if (lignes.length === 1) {
+        priorites.push({
+          type: "commande_stock_insuffisant", niveau: "critique",
+          titre: "Commande " + (lignes[0].cmd.numBC || lignes[0].cmd.id) + " (" + (lignes[0].cmd.chantierNom || lignes[0].cmd.client || "-") + ") : besoin " + lignes[0].reste.toLocaleString() + ", disponible " + disponible.toLocaleString() + ", déficit " + deficit.toLocaleString(),
+          explication: "Le stock sec actuel ne couvre pas cette commande validée.",
+          urgence: -100 - deficit, objet: { type: "commande", id: lignes[0].cmd.id }, action: "Voir la commande"
+        });
+      } else {
+        priorites.push({
+          type: "commande_stock_insuffisant_groupe", niveau: "critique",
+          titre: lignes.length + " commandes validées de " + getProduit(type).nom + " dépassent le stock disponible (déficit total " + deficit.toLocaleString() + " u)",
+          explication: "Demande cumulée " + totalEngage.toLocaleString() + " u pour " + disponible.toLocaleString() + " u disponibles.",
+          urgence: -100 - deficit, objet: { type: "tab", id: "stock" }, action: "Voir le stock"
+        });
+      }
+    } else {
+      lignes.forEach(function (l) {
+        priorites.push({
+          type: "commande_a_preparer", niveau: "info",
+          titre: "Commande " + (l.cmd.numBC || l.cmd.id) + " validée, à préparer",
+          explication: (l.cmd.chantierNom || l.cmd.client || "-") + " · " + l.reste.toLocaleString() + " u restant à livrer",
+          urgence: 5, objet: { type: "commande", id: l.cmd.id }, action: "Voir la commande"
+        });
+      });
+    }
+  });
+
+  // --- Commandes en attente de validation Direction ---
+  var commandesEnAttente = commandes.filter(function (c) { return normTxt(c.status) === normTxt("EnAttente"); });
+  if (commandesEnAttente.length === 1) {
+    priorites.push({
+      type: "commande_a_valider", niveau: "important",
+      titre: "Commande " + (commandesEnAttente[0].numBC || commandesEnAttente[0].id) + " en attente de validation",
+      explication: commandesEnAttente[0].chantierNom || commandesEnAttente[0].client || "-",
+      urgence: 1, objet: { type: "commande", id: commandesEnAttente[0].id }, action: "Voir la commande"
+    });
+  } else if (commandesEnAttente.length > 1) {
+    priorites.push({
+      type: "commande_a_valider_groupe", niveau: "important",
+      titre: commandesEnAttente.length + " commande(s) en attente de validation",
+      explication: "", urgence: 1, objet: { type: "tab", id: "commandes" }, action: "Voir les commandes"
+    });
   }
-  if (controlesQSE.length === 1 && controlesQSE[0].numeroLot) {
-    items.push({ niveau: "surveiller", icone: "🟠", texte: "Lot " + controlesQSE[0].numeroLot + " prêt à contrôler", action: function () { onOuvrirLot(controlesQSE[0].numeroLot); } });
-  } else if (controlesQSE.length > 0) {
-    items.push({ niveau: "surveiller", icone: "🟠", texte: controlesQSE.length + " contrôle(s) qualité à réaliser", action: function () { onOuvrirQSEOnglet("controles"); } });
+
+  // --- SECHAGE / CONTROLES : deduits des controles encore "Non mesuré" (pas de decision qualite
+  // automatique - la conformite reste toujours une validation humaine). ---
+  var ncParLotBloquant = {}; // NC ouvertes SANS echeance (les NC avec echeance sont couvertes plus loin, plus precisement)
+  ncs.forEach(function (nc) {
+    if (nc.statut === "Cloturee" || !nc.numeroLot || nc.echeanceAction) return;
+    (ncParLotBloquant[nc.numeroLot] = ncParLotBloquant[nc.numeroLot] || []).push(nc);
+  });
+
+  var lotsEnRetard = [], lotsMatures = [], lotsBientotMatures = [];
+  controlesEnAttente.forEach(function (ctrl) {
+    if (!ctrl.numeroLot || ncParLotBloquant[ctrl.numeroLot]) return; // deja remonte comme NC bloquante
+    var lot = lots.find(function (l) { return l.numeroLot === ctrl.numeroLot; }) || ctrl;
+    var ageMs = dateProductionMs(lot);
+    if (!ageMs) return;
+    var joursDepuisProd = Math.floor((maintenant - ageMs) / MS_PAR_JOUR);
+    var retard = joursDepuisProd - DUREE_SECHAGE;
+    if (retard > 0) lotsEnRetard.push({ lot: lot, retard: retard });
+    else if (retard === 0) lotsMatures.push({ lot: lot });
+    else if (retard >= -3) lotsBientotMatures.push({ lot: lot, joursRestants: -retard });
+  });
+
+  if (lotsEnRetard.length === 1) {
+    var lr = lotsEnRetard[0];
+    priorites.push({
+      type: "controle_retard", niveau: "critique",
+      titre: "Lot " + lr.lot.numeroLot + " — contrôle en retard de " + lr.retard + " jour" + (lr.retard > 1 ? "s" : ""),
+      explication: "Séchage terminé depuis " + lr.retard + " jour(s) sans contrôle enregistré.",
+      urgence: -lr.retard, objet: { type: "lot", id: lr.lot.numeroLot }, action: "Effectuer le contrôle"
+    });
+  } else if (lotsEnRetard.length > 1) {
+    var pireRetard = lotsEnRetard.reduce(function (m, x) { return Math.max(m, x.retard); }, 0);
+    priorites.push({
+      type: "controle_retard_groupe", niveau: "critique",
+      titre: lotsEnRetard.length + " lots en retard de contrôle (jusqu'à " + pireRetard + " j)",
+      explication: "Plusieurs lots ont dépassé leur durée de séchage sans contrôle.",
+      urgence: -pireRetard, objet: { type: "qse_onglet", id: "controles" }, action: "Voir les contrôles"
+    });
   }
-  if (items.length === 0) {
+  if (lotsMatures.length === 1) {
+    priorites.push({
+      type: "lot_pret", niveau: "important",
+      titre: "Lot " + lotsMatures[0].lot.numeroLot + " prêt à contrôler",
+      explication: "Séchage terminé aujourd'hui.",
+      urgence: 0, objet: { type: "lot", id: lotsMatures[0].lot.numeroLot }, action: "Effectuer le contrôle"
+    });
+  } else if (lotsMatures.length > 1) {
+    priorites.push({
+      type: "lot_pret_groupe", niveau: "important",
+      titre: lotsMatures.length + " lots prêts à contrôler",
+      explication: "Séchage terminé, contrôle qualité nécessaire.",
+      urgence: 0, objet: { type: "qse_onglet", id: "controles" }, action: "Voir les contrôles"
+    });
+  }
+  if (lotsBientotMatures.length > 0) {
+    var prochain = lotsBientotMatures.slice().sort(function (a, b) { return a.joursRestants - b.joursRestants; })[0];
+    priorites.push({
+      type: "lot_bientot_mature", niveau: "info",
+      titre: lotsBientotMatures.length + " lot(s) bientôt mature(s) (dès " + prochain.joursRestants + " j)",
+      explication: "Séchage bientôt terminé.",
+      urgence: prochain.joursRestants,
+      objet: lotsBientotMatures.length === 1 ? { type: "lot", id: prochain.lot.numeroLot } : { type: "qse_onglet", id: "tracabilite" },
+      action: "Voir les lots"
+    });
+  }
+
+  // --- Lots sans AUCUN controle enregistre (different de "Non mesure" : ici zero enregistrement
+  // du tout). Ne cree jamais rien silencieusement, se contente de signaler. ---
+  var lotsSansControle = lots.filter(function (l) { return l.numeroLot && !numerosAvecControleRecent[l.numeroLot]; });
+  if (lotsSansControle.length === 1) {
+    priorites.push({
+      type: "lot_sans_controle", niveau: "important",
+      titre: "Lot " + lotsSansControle[0].numeroLot + " — contrôle attendu mais absent",
+      explication: "Aucun enregistrement de contrôle qualité trouvé pour ce lot.",
+      urgence: -5, objet: { type: "lot", id: lotsSansControle[0].numeroLot }, action: "Vérifier ce lot"
+    });
+  } else if (lotsSansControle.length > 1) {
+    priorites.push({
+      type: "lot_sans_controle_groupe", niveau: "important",
+      titre: lotsSansControle.length + " lots sans aucun contrôle qualité enregistré",
+      explication: "", urgence: -5, objet: { type: "qse_onglet", id: "tracabilite" }, action: "Voir les lots"
+    });
+  }
+
+  // --- NC bloquantes sans echeance (celles avec echeance sont traitees ci-dessous, message plus precis) ---
+  var lotsNCBloquantes = Object.keys(ncParLotBloquant);
+  if (lotsNCBloquantes.length === 1) {
+    priorites.push({
+      type: "nc_bloquante", niveau: "critique",
+      titre: "Lot " + lotsNCBloquantes[0] + " — non-conformité ouverte",
+      explication: ncParLotBloquant[lotsNCBloquantes[0]][0].description || "",
+      urgence: -10, objet: { type: "lot", id: lotsNCBloquantes[0] }, action: "Traiter la NC"
+    });
+  } else if (lotsNCBloquantes.length > 1) {
+    priorites.push({
+      type: "nc_bloquante_groupe", niveau: "critique",
+      titre: lotsNCBloquantes.length + " lots bloqués par une non-conformité ouverte",
+      explication: "", urgence: -10, objet: { type: "qse_onglet", id: "nc" }, action: "Voir les non-conformités"
+    });
+  }
+
+  // --- Echeances des actions correctives NC (point 8). Jamais de retard invente : une NC sans
+  // echeanceAction n'est jamais consideree en retard. ---
+  var aujourdHuiISO = new Date(maintenant).toISOString().slice(0, 10);
+  var ncEnRetard = [], ncEcheanceAuj = [], ncEcheanceProche = [];
+  ncs.forEach(function (nc) {
+    if (nc.statut === "Cloturee" || !nc.echeanceAction) return;
+    var diff = joursEntreDatesISO(nc.echeanceAction, aujourdHuiISO);
+    if (diff === null) return;
+    if (diff < 0) ncEnRetard.push({ nc: nc, retard: -diff });
+    else if (diff === 0) ncEcheanceAuj.push({ nc: nc });
+    else if (diff <= 3) ncEcheanceProche.push({ nc: nc, joursRestants: diff });
+  });
+  function objetPourNC(nc) { return nc.numeroLot ? { type: "lot", id: nc.numeroLot } : { type: "qse_onglet", id: "nc" }; }
+  function ajouterPrioriteEcheanceNC(liste, niveau, texteUnique, texteGroupe, urgenceFn) {
+    if (liste.length === 1) {
+      var item = liste[0], nc = item.nc || item;
+      priorites.push({ type: "nc_echeance", niveau: niveau, titre: texteUnique(item), explication: nc.description || "", urgence: urgenceFn(item), objet: objetPourNC(nc), action: "Traiter la NC" });
+    } else if (liste.length > 1) {
+      priorites.push({ type: "nc_echeance_groupe", niveau: niveau, titre: texteGroupe(liste.length), explication: "", urgence: urgenceFn(liste[0]), objet: { type: "qse_onglet", id: "nc" }, action: "Voir les non-conformités" });
+    }
+  }
+  ajouterPrioriteEcheanceNC(ncEnRetard, "critique",
+    function (item) { return "NC " + (item.nc.numeroLot || "(lot inconnu)") + " — action corrective en retard de " + item.retard + " jour" + (item.retard > 1 ? "s" : ""); },
+    function (n) { return n + " actions correctives NC en retard"; },
+    function (item) { return -item.retard; });
+  ajouterPrioriteEcheanceNC(ncEcheanceAuj, "important",
+    function (item) { return "NC " + (item.nc.numeroLot || "(lot inconnu)") + " — action corrective à traiter aujourd'hui"; },
+    function (n) { return n + " actions correctives NC à traiter aujourd'hui"; },
+    function () { return 0; });
+  ajouterPrioriteEcheanceNC(ncEcheanceProche, "info",
+    function (item) { return "NC " + (item.nc.numeroLot || "(lot inconnu)") + " — échéance dans " + item.joursRestants + " jour" + (item.joursRestants > 1 ? "s" : ""); },
+    function (n) { return n + " actions correctives NC arrivent bientôt à échéance"; },
+    function (item) { return item.joursRestants; });
+
+  // --- NC recurrentes : signal de repetition, jamais une conclusion de cause racine (point 7). ---
+  var ncRecentes = ncs.filter(function (nc) { var d = qseTsMs(nc.dateCreation); return d && (maintenant - d) <= 30 * MS_PAR_JOUR; });
+  var ncParTypeRecent = {};
+  ncRecentes.forEach(function (nc) {
+    var lot = lots.find(function (l) { return l.numeroLot === nc.numeroLot; });
+    if (!lot) return;
+    (ncParTypeRecent[lot.type] = ncParTypeRecent[lot.type] || []).push(nc);
+  });
+  Object.keys(ncParTypeRecent).forEach(function (type) {
+    if (ncParTypeRecent[type].length >= 3) {
+      priorites.push({
+        type: "nc_recurrente", niveau: "important",
+        titre: ncParTypeRecent[type].length + " NC sur " + getProduit(type).nom + " au cours des 30 derniers jours",
+        explication: "Signal de répétition à analyser (cause racine potentielle, à confirmer humainement).",
+        urgence: 2, objet: { type: "qse_onglet", id: "nc" }, action: "Analyser la cause récurrente"
+      });
+    }
+  });
+
+  return trierPriorites(priorites);
+}
+
+// Bandeau "A faire aujourd'hui" : affiche les priorites les plus importantes calculees par
+// calculerPrioritesOperationnelles, limitees a 5 par defaut avec un "Voir tout" pour le reste.
+function PrioriteDuJour({ donnees, ouvrirObjet, role }) {
+  var toutes = React.useMemo(function () {
+    return filtrerPrioritesParRole(calculerPrioritesOperationnelles(donnees), role);
+  }, [donnees, role]);
+  var [voirTout, setVoirTout] = React.useState(false);
+  var LIMITE = 5;
+  var affichees = voirTout ? toutes : toutes.slice(0, LIMITE);
+
+  if (toutes.length === 0) {
     return <div className="priorite-jour-ok">🟢 Rien d'urgent — production, stock et qualité sont sous contrôle.</div>;
   }
+  var iconeNiveau = { critique: "🔴", important: "🟠", info: "🟡" };
   return (
     <div className="priorite-jour">
       <div className="priorite-jour-titre">À faire aujourd'hui</div>
       <div className="priorite-jour-liste">
-        {items.map(function(it, i) {
+        {affichees.map(function (p, i) {
           return (
-            <button key={i} className={"priorite-jour-item priorite-jour-" + it.niveau} onClick={it.action}>
-              <span>{it.icone}</span> {it.texte}
+            <button key={i} className={"priorite-jour-item priorite-jour-" + p.niveau} title={p.explication} onClick={function () { ouvrirObjet(p.objet.type, p.objet.id); }}>
+              <span>{iconeNiveau[p.niveau]}</span> {p.titre}
             </button>
           );
         })}
       </div>
+      {toutes.length > LIMITE && (
+        <button className="priorite-jour-voirtout" onClick={function () { setVoirTout(!voirTout); }}>
+          {voirTout ? "Réduire" : "Voir tout (" + toutes.length + ")"}
+        </button>
+      )}
     </div>
   );
 }
@@ -782,6 +1109,8 @@ function creerOuvreurObjet({ setLotOuvert, setFicheChantierOuverte, setTab, setQ
       return;
     }
     if (type === "produit") { setTab("catalogue"); return; }
+    if (type === "qse_onglet") { setQseOnglet(idOuObjet); setTab("qse"); return; }
+    if (type === "tab") { setTab(idOuObjet); return; }
   };
 }
 
@@ -1067,7 +1396,8 @@ const [editUserPwd, setEditUserPwd] = useState("");
 const [userEditMsg, setUserEditMsg] = useState("");
 const [showPwdUid, setShowPwdUid] = useState(null);
   const [pertes, setPertes] = React.useState([]);
-  const [controlesQSEList, setControlesQSEList] = React.useState([]); // controles "Non mesure" (a faire)
+  const [controlesEnAttenteList, setControlesEnAttenteList] = React.useState([]); // controles "Non mesure" (source de verite maturite/retard)
+  const [numerosAvecControleRecent, setNumerosAvecControleRecent] = React.useState({}); // best-effort : lots ayant au moins un controle parmi les 300 plus recents
   const [ncQSEList, setNcQSEList] = React.useState([]); // toutes les NC (ouvertes + cloturees)
   const [qseLotsList, setQseLotsList] = React.useState([]); // tous les lots charges (utilises par la recherche)
   const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
@@ -1099,8 +1429,13 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       setPertes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
     const unsubEv = db.collection("evenements").orderBy("timestamp","desc").limit(200).onSnapshot(snap => { setEvenements(snap.docs.map(d => ({id:d.id,...d.data()}))); });
+    // Volontairement non borne (Phase 1) : ne contient que les controles encore "Non mesure",
+    // qui reste naturellement petit puisque chaque controle en sort des qu'il est renseigne.
+    // C'est LA source de verite pour la maturite/le retard des lots (moteur de priorites Phase 4) :
+    // ne jamais la remplacer par une requete bornee, au risque de perdre de vue un tres vieux
+    // controle jamais renseigne.
     var u7 = db.collection("qse_controles").where("resultat","==","Non mesuré").onSnapshot(snap => {
-      setControlesQSEList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
+      setControlesEnAttenteList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
     });
     var u8 = db.collection("qse_nc").onSnapshot(snap => {
       setNcQSEList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
@@ -1116,8 +1451,17 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       setQseLotsParProdId(m);
       setQseLotsList(liste);
     });
+    // Detection best-effort (Phase 4) des lots sans AUCUN controle enregistre : fenetre bornee sur
+    // les 300 controles les plus recents (coherente avec les 300 lots les plus recents ci-dessus,
+    // crees au meme rythme), pour ne pas transformer une requete filtree naturellement petite en
+    // requete non filtree potentiellement lourde.
+    var u10 = db.collection("qse_controles").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
+      var nums = {};
+      snap.docs.forEach(function(d){ var data = d.data(); if (data.numeroLot) nums[data.numeroLot] = true; });
+      setNumerosAvecControleRecent(nums);
+    });
 
-  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); uMat(); };
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10(); uMat(); };
   }, []);
 
   async function toggleModeDemo() {
@@ -1338,6 +1682,20 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     commandes: commandes
   });
 
+  // Memoise : le moteur de priorites ne doit se recalculer que si une des donnees source change,
+  // pas a chaque re-render de DashboardDirection (point 17 : performance).
+  const prioriteDonnees = React.useMemo(function () {
+    return {
+      stocks: stocks,
+      commandes: commandes,
+      lots: qseLotsList,
+      controlesEnAttente: controlesEnAttenteList,
+      numerosAvecControleRecent: numerosAvecControleRecent,
+      ncs: ncQSEList,
+      maintenant: Date.now()
+    };
+  }, [stocks, commandes, qseLotsList, controlesEnAttenteList, numerosAvecControleRecent, ncQSEList]);
+
   const ts = (t) => ({ padding:"8px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6, marginBottom:6,
     background:tab===t?"#C0392B":"#F5E6D3", color:tab===t?"white":"#2C1810", fontWeight:tab===t?700:500, fontSize:13 });
 
@@ -1467,15 +1825,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       {/* CONTENT */}
       <div className="btp-content">
 
-        <PrioriteDuJour
-          stocks={stocks}
-          cmdAttenteCount={cmdAttente.length}
-          controlesQSE={controlesQSEList}
-          ncOuvertesQSE={ncQSEList.filter(function(nc){ return nc.statut !== "Cloturee"; })}
-          onNavigate={setTab}
-          onOuvrirLot={setLotOuvertProd}
-          onOuvrirQSEOnglet={function(onglet){ setQseOngletDemande(onglet); setTab("qse"); }}
-        />
+        <PrioriteDuJour donnees={prioriteDonnees} ouvrirObjet={ouvrirObjet} role="direction" />
 
         {tab==="stock"&&(
           <div className="fade-up">
@@ -4415,11 +4765,27 @@ async function qseReparerProductionSansLot(production, user, userData) {
       productionId: production.id,
       type: production.type || "",
       quantite: production.quantite || 0,
+      phase: production.phase || "",
+      date: production.date || "",
       dateCreation: now,
       creePar: auteur,
       reparation: true
     });
     tx.set(indexRef, { numeroLot: numeroLot, dateCreation: now });
+    // Fix (Phase 4) : la reparation d'un lot manquant doit aussi creer le controle qualite
+    // associe, exactement comme la creation normale (qseCreerLotEtControlePourProduction) —
+    // sinon le lot repare n'a ni date de production exploitable (phase/date manquaient) ni
+    // controle, et n'apparaissait jamais dans "Controles a faire" ni dans le moteur de priorites.
+    const controleRef = db.collection("qse_controles").doc();
+    tx.set(controleRef, {
+      numeroLot: numeroLot,
+      productionId: production.id,
+      type: production.type || "",
+      date: production.date || "",
+      resultat: "Non mesuré",
+      dateCreation: now,
+      creePar: auteur
+    });
     return numeroLot;
   });
 }
