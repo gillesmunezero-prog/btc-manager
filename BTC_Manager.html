@@ -10,7 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-<script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
 <style>
 :root{
   --btp-dark:#0D1B2A;
@@ -408,6 +409,18 @@ input,select,textarea,button{font-family:inherit;}
   body{background:white!important;color:black!important;}
   .btp-content{padding:0!important;}
 }
+/* Impression d'etiquette (Phase 7) : masque tout SAUF la zone .etiquette-print-zone, qui devient
+   seule visible et repositionnee en pleine page — technique standard "n'imprimer qu'un element". */
+@media print{
+  body.impression-etiquette *{visibility:hidden;}
+  body.impression-etiquette .etiquette-print-zone,
+  body.impression-etiquette .etiquette-print-zone *{visibility:visible;}
+  body.impression-etiquette .etiquette-print-zone{position:fixed;top:0;left:0;width:100%;padding:16px;}
+}
+.etiquette-carte{background:white;color:#111;border:2px solid #111;border-radius:8px;padding:14px;width:280px;
+  display:inline-block;margin:8px;vertical-align:top;page-break-inside:avoid;font-family:Arial,sans-serif;}
+.etiquette-numero{font-size:20px;font-weight:900;letter-spacing:1px;margin-top:8px;text-align:center;}
+.etiquette-ligne{font-size:12px;color:#333;display:flex;justify-content:space-between;margin-top:3px;}
 
 /* RESPONSIVE */
 @media(max-width:900px){
@@ -1114,9 +1127,10 @@ function PrioriteDuJour({ donnees, ouvrirObjet, role }) {
 // n'importe ou (recherche globale, bandeau "A faire", et plus tard alertes/notifications).
 // ouvrirObjet("lot", "BTC-2026-09-001") -> FicheLot ; ouvrirObjet("chantier", id) -> fiche chantier ; etc.
 // Reutilise les ecrans/etats existants, ne cree pas de nouvelles fiches en double.
-function creerOuvreurObjet({ setLotOuvert, setFicheChantierOuverte, setTab, setQseOnglet, chantiers, commandes }) {
+function creerOuvreurObjet({ setLotOuvert, setPaletteOuvert, setFicheChantierOuverte, setTab, setQseOnglet, chantiers, commandes }) {
   return function ouvrirObjet(type, idOuObjet) {
     if (type === "lot") { setLotOuvert(idOuObjet); return; }
+    if (type === "palette" && setPaletteOuvert) { setPaletteOuvert(idOuObjet); return; }
     if (type === "chantier") {
       var ch = chantiers.find(function (c) { return c.id === idOuObjet; });
       if (ch) { setFicheChantierOuverte(ch); setTab("chantiers"); }
@@ -1145,10 +1159,381 @@ function creerOuvreurObjet({ setLotOuvert, setFicheChantierOuverte, setTab, setQ
   };
 }
 
+// ============================================================================================
+// PHASE 7 — QR codes (points 1/2/3/19/29). Principe directeur : le QR ne contient JAMAIS de donnee
+// metier, uniquement une URL stable qui permet a BTC Manager de retrouver l'objet (?lot=... ou
+// ?palette=...). Ouvrable par n'importe quel appareil photo standard sans avoir l'app deja ouverte,
+// et reconnue au chargement par le routeur de App() (point 18). C'est la solution la plus robuste
+// compte tenu de l'hebergement statique sur GitHub Pages : aucune app dediee a installer, aucun
+// schema d'URL personnalise a enregistrer, ca fonctionne meme si l'utilisateur n'a jamais ouvert
+// BTC Manager sur ce telephone.
+// ============================================================================================
+function urlPourObjet(type, id) {
+  try { return window.location.origin + window.location.pathname + "?" + type + "=" + encodeURIComponent(id); }
+  catch (e) { return "?" + type + "=" + encodeURIComponent(id); }
+}
+
+// Dessine un QR (bibliotheque QRCode.js, chargee en tete de page) dans un <div>. Se degrade
+// proprement si la bibliotheque n'a pas pu se charger (reseau coupe, CDN indisponible) — n'affiche
+// jamais une erreur bloquante, juste un message explicite (point 12) ; le numero reste de toute
+// facon lisible a cote (point 3), donc l'objet reste identifiable meme sans QR.
+function QRCodeAffichage({ valeur, taille }) {
+  const ref = React.useRef(null);
+  const [indisponible, setIndisponible] = React.useState(false);
+  React.useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = "";
+    if (typeof QRCode === "undefined") { setIndisponible(true); return; }
+    try {
+      new QRCode(ref.current, { text: valeur, width: taille || 160, height: taille || 160, correctLevel: QRCode.CorrectLevel.M });
+      setIndisponible(false);
+    } catch (e) { setIndisponible(true); }
+  }, [valeur, taille]);
+  if (indisponible) {
+    return <div style={{ width: taille || 160, height: taille || 160, display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f5", color: "#888", fontSize: 11, textAlign: "center", padding: 8, borderRadius: 8 }}>QR indisponible<br />(connexion requise)</div>;
+  }
+  return <div ref={ref} style={{ display: "inline-block", background: "white", padding: 8, borderRadius: 8 }} />;
+}
+
+// Modale "Afficher QR" + "Imprimer étiquette" (points 2/3/19), reutilisable pour un lot ou une
+// palette. "lignes" = tableau de {label, valeur} affiche sous le QR sur l'etiquette (type, date,
+// quantite, statut...) : le numero reste gros et lisible independamment du QR (point 3).
+function ModaleQREtiquette({ titre, type, id, lignes, onClose }) {
+  const url = urlPourObjet(type, id);
+  const imprimer = () => {
+    document.body.classList.add("impression-etiquette");
+    window.print();
+    setTimeout(function () { document.body.classList.remove("impression-etiquette"); }, 300);
+  };
+  return (
+    <div className="btp-modal-overlay" onClick={onClose}>
+      <div className="btp-modal etiquette-print-zone" style={{ maxWidth: 360, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title no-print" style={{ marginBottom: 12 }}>📱 {titre}</div>
+        <div className="etiquette-carte" style={{ width: "auto", margin: "0 auto" }}>
+          <QRCodeAffichage valeur={url} taille={180} />
+          <div className="etiquette-numero">{id}</div>
+          {(lignes || []).map(function (l, i) { return (<div key={i} className="etiquette-ligne"><span>{l.label}</span><strong>{l.valeur}</strong></div>); })}
+        </div>
+        <div className="no-print" style={{ fontSize: 11, color: "var(--btp-text2)", marginTop: 10, wordBreak: "break-all" }}>{url}</div>
+        <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} onClick={imprimer}>🖨️ Imprimer étiquette</button>
+          <button className="btn btn-ghost btn-full" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Impression en lot (point 29) : plusieurs etiquettes palette a la fois, meme mecanique d'impression
+// (visibility, pas de PDF genere — le navigateur suffit et reste utilisable avec une imprimante
+// standard A4 ou etiquettes). "items" = [{ id, lignes }].
+function ModaleQREtiquettesLot({ titre, type, items, onClose }) {
+  const imprimer = () => {
+    document.body.classList.add("impression-etiquette");
+    window.print();
+    setTimeout(function () { document.body.classList.remove("impression-etiquette"); }, 300);
+  };
+  return (
+    <div className="btp-modal-overlay" onClick={onClose}>
+      <div className="btp-modal etiquette-print-zone" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title no-print" style={{ marginBottom: 12 }}>🖨️ {titre} ({(items || []).length})</div>
+        <div style={{ textAlign: "center" }}>
+          {(items || []).map(function (it) {
+            var url = urlPourObjet(type, it.id);
+            return (
+              <div key={it.id} className="etiquette-carte">
+                <QRCodeAffichage valeur={url} taille={130} />
+                <div className="etiquette-numero">{it.id}</div>
+                {(it.lignes || []).map(function (l, i) { return (<div key={i} className="etiquette-ligne"><span>{l.label}</span><strong>{l.valeur}</strong></div>); })}
+              </div>
+            );
+          })}
+        </div>
+        <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} onClick={imprimer}>🖨️ Imprimer {(items || []).length} étiquette(s)</button>
+          <button className="btn btn-ghost btn-full" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Recherche globale : filtre cote client les donnees deja chargees par l'application (aucune
 // lecture Firestore supplementaire declenchee par la frappe). Tolerante a la casse/aux accents/
 // a la saisie partielle via normTxt, avec une correspondance "tous les mots tapes doivent se
 // retrouver quelque part dans le texte de l'objet" (pas besoin de moteur de recherche externe).
+// ============================================================================================
+// PHASE 7 — Mode scan (points 10-12, 24-25). Reconnaissance automatique du type d'objet scanne par
+// le prefixe/URL decode (pas besoin de choisir "scanner lot" vs "scanner palette", point 10).
+// Decodage 100% local (jsQR, aucune image envoyee a un service externe — point 43 "pas d'IA
+// externe, pas de reconnaissance d'image [distante]"). Repli clavier systematique si la camera est
+// refusee/indisponible/HTTPS manquant (points 11/12) : l'utilisateur n'est jamais bloque.
+// ============================================================================================
+function decoderTexteScan(texte) {
+  if (!texte) return null;
+  var t = ("" + texte).trim();
+  try {
+    var url = new URL(t);
+    var lot = url.searchParams.get("lot");
+    var palette = url.searchParams.get("palette");
+    if (lot) return { type: "lot", id: lot };
+    if (palette) return { type: "palette", id: palette };
+  } catch (e) {}
+  if (/^LOT:/i.test(t)) return { type: "lot", id: t.slice(4).trim() };
+  if (/^PAL:/i.test(t)) return { type: "palette", id: t.slice(4).trim() };
+  if (/^PAL-/i.test(t)) return { type: "palette", id: t };
+  if (/^BTC-/i.test(t)) return { type: "lot", id: t };
+  return null; // code inconnu : ni URL de l'app, ni prefixe reconnu
+}
+
+// "continu" (utilise par l'inventaire, point 22/23) : n'appelle PAS onFermer apres un scan reussi,
+// permet d'enchainer les scans sans revenir a l'ecran precedent. "dejaVus" (optionnel) : ensemble de
+// codes deja traites par l'appelant, pour afficher "Palette déjà scannée" au lieu de la retraiter
+// (point 25 — anti-double-scan, complementaire a la dedup locale sur images video consecutives).
+function ModaleScanner({ onFermer, onObjetReconnu, continu, dejaVus, titre }) {
+  const videoRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const rafRef = React.useRef(null);
+  const [etat, setEtat] = React.useState("init"); // init | camera | refuse | indisponible | https
+  const [dernierCode, setDernierCode] = React.useState("");
+  const [saisie, setSaisie] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  const traiterCode = React.useCallback((texte) => {
+    if (texte === dernierCode) return; // anti-rebond : meme image lue plusieurs fois de suite
+    setDernierCode(texte);
+    var objet = decoderTexteScan(texte);
+    if (!objet) { setMsg("❌ Code inconnu"); if (navigator.vibrate) { try { navigator.vibrate(80); } catch (e) {} } return; }
+    if (dejaVus && dejaVus[objet.type + ":" + objet.id]) {
+      setMsg("⚠️ " + (objet.type === "lot" ? "Lot" : "Palette") + " " + objet.id + " déjà scanné(e)");
+      if (navigator.vibrate) { try { navigator.vibrate([30, 30, 30]); } catch (e) {} }
+      return;
+    }
+    setMsg("✓ " + (objet.type === "lot" ? "Lot" : "Palette") + " " + objet.id + " reconnu(e)");
+    if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+    onObjetReconnu(objet);
+    if (!continu) { setTimeout(onFermer, 400); }
+    else { setTimeout(function () { setDernierCode(""); }, 1200); } // permet de re-scanner un AUTRE code juste apres
+  }, [dernierCode, dejaVus, continu, onObjetReconnu, onFermer]);
+
+  React.useEffect(() => {
+    var annule = false;
+    function boucleScan() {
+      if (annule) return;
+      if (!videoRef.current || !canvasRef.current || typeof jsQR === "undefined") { rafRef.current = requestAnimationFrame(boucleScan); return; }
+      var video = videoRef.current, canvas = canvasRef.current;
+      if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        try {
+          var image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          var code = jsQR(image.data, image.width, image.height);
+          if (code && code.data) { traiterCode(code.data); }
+        } catch (e) {}
+      }
+      rafRef.current = requestAnimationFrame(boucleScan);
+    }
+    async function demarrer() {
+      if (!window.isSecureContext) { setEtat("https"); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setEtat("indisponible"); return; }
+      if (typeof jsQR === "undefined") { setEtat("indisponible"); return; }
+      try {
+        var stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (annule) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+        setEtat("camera");
+        boucleScan();
+      } catch (e) {
+        setEtat(e && e.name === "NotAllowedError" ? "refuse" : "indisponible");
+      }
+    }
+    demarrer();
+    return function () {
+      annule = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) { streamRef.current.getTracks().forEach(function (t) { t.stop(); }); }
+    };
+  }, [traiterCode]);
+
+  const soumettreSaisie = (e) => {
+    e.preventDefault();
+    var objet = decoderTexteScan(saisie.trim());
+    if (!objet) { setMsg("❌ Code inconnu — vérifiez le numéro (ex: BTC-2026-09-001 ou PAL-2026-000123)."); return; }
+    if (dejaVus && dejaVus[objet.type + ":" + objet.id]) { setMsg("⚠️ Déjà scanné(e)."); return; }
+    setMsg("✓ " + (objet.type === "lot" ? "Lot" : "Palette") + " " + objet.id + " reconnu(e)");
+    onObjetReconnu(objet);
+    setSaisie("");
+    if (!continu) onFermer();
+  };
+
+  return (
+    <div className="btp-modal-overlay" onClick={onFermer}>
+      <div className="btp-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title" style={{ marginBottom: 12 }}>📷 {titre || "Scanner"}</div>
+        {etat === "camera" && (
+          <div style={{ position: "relative", background: "#000", borderRadius: 10, overflow: "hidden" }}>
+            <video ref={videoRef} playsInline muted style={{ width: "100%", display: "block", maxHeight: 320, objectFit: "cover" }} />
+            <div style={{ position: "absolute", inset: 0, border: "3px solid rgba(255,255,255,.5)", margin: 30, borderRadius: 12, pointerEvents: "none" }} />
+          </div>
+        )}
+        {etat === "init" && <div style={{ padding: 20, textAlign: "center", color: "var(--btp-text2)" }}>Activation de la caméra…</div>}
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+        {(etat === "refuse" || etat === "indisponible" || etat === "https") && (
+          <div className="btp-alert alert-error" style={{ marginBottom: 12 }}>
+            {etat === "refuse" && "⚠️ Accès à la caméra refusé. Autorisez la caméra dans les paramètres du navigateur, ou saisissez le code ci-dessous."}
+            {etat === "indisponible" && "⚠️ Caméra indisponible sur cet appareil ou navigateur. Saisissez le code ci-dessous."}
+            {etat === "https" && "⚠️ Le scan caméra nécessite une connexion sécurisée (HTTPS). Saisissez le code ci-dessous."}
+          </div>
+        )}
+        {msg && <div style={{ marginTop: 10, marginBottom: 6, fontWeight: 700, color: msg.indexOf("❌") >= 0 ? "#EC7063" : (msg.indexOf("⚠️") >= 0 ? "#F39C12" : "#2ECC71") }}>{msg}</div>}
+        <form onSubmit={soumettreSaisie} style={{ marginTop: 14 }}>
+          <label className="btp-label">Saisir le code (si la caméra ne fonctionne pas)</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input className="btp-input" placeholder="Ex: BTC-2026-09-001 ou PAL-2026-000123" value={saisie} onChange={(e) => setSaisie(e.target.value)} style={{ flex: 1 }} />
+            <button className="btn btn-primary" type="submit">Valider</button>
+          </div>
+        </form>
+        <button className="btn btn-ghost btn-full" style={{ marginTop: 14 }} onClick={onFermer}>Fermer</button>
+      </div>
+    </div>
+  );
+}
+
+// Bouton "Scanner" pret a l'emploi (point 10) : ouvre la modale, route automatiquement vers
+// FicheLot ou FichePalette selon le type reconnu. A deposer dans n'importe quel tableau de bord ;
+// "user"/"userData" sont transmis normalement par le composant appelant (memes props que partout
+// ailleurs dans l'application, pas d'etat global).
+function BoutonScanner({ user, userData, style, libelle }) {
+  const [ouvert, setOuvert] = React.useState(false);
+  const [cible, setCible] = React.useState(null); // { type, id }
+  return (
+    <React.Fragment>
+      <button className="btn btn-primary btn-lg" style={Object.assign({ fontSize: 16, fontWeight: 800 }, style)} onClick={() => setOuvert(true)}>📷 {libelle || "Scanner"}</button>
+      {ouvert && <ModaleScanner onFermer={() => setOuvert(false)} onObjetReconnu={(o) => setCible(o)} />}
+      {cible && cible.type === "lot" && <FicheLot numeroLot={cible.id} user={user} userData={userData} onClose={() => setCible(null)} />}
+      {cible && cible.type === "palette" && <FichePalette paletteId={cible.id} user={user} userData={userData} onClose={() => setCible(null)} />}
+    </React.Fragment>
+  );
+}
+
+// Phase 7 (points 22/23/25) : premier workflow d'inventaire terrain. L'utilisateur demarre un
+// inventaire (optionnellement filtre sur un emplacement), scanne les palettes presentes en serie
+// (anti-double-scan integre a ModaleScanner via "dejaVus"), puis obtient une comparaison
+// attendues/scannees. NE CORRIGE JAMAIS le stock automatiquement (point 22) : produit une
+// proposition d'ecart a examiner et traiter manuellement (ex: via le diagnostic Direction).
+function InventaireParScan({ user, userData, onFermer }) {
+  const [etape, setEtape] = React.useState("configuration"); // configuration | scan | resultat
+  const [emplacement, setEmplacement] = React.useState("");
+  const [attendues, setAttendues] = React.useState([]);
+  const [scannees, setScannees] = React.useState([]); // [{paletteId, ts}]
+  const [showScanner, setShowScanner] = React.useState(false);
+  const [chargement, setChargement] = React.useState(false);
+
+  const dejaVus = {};
+  scannees.forEach(function (s) { dejaVus["palette:" + s.paletteId] = true; });
+
+  const demarrer = async () => {
+    setChargement(true);
+    try {
+      var query = db.collection("stock_palettes");
+      if (emplacement.trim()) query = query.where("emplacement", "==", emplacement.trim());
+      var snap = await query.limit(1000).get();
+      var liste = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); })
+        .filter(function (p) { return (p.disponibleCache || 0) > 0; });
+      setAttendues(liste);
+      setScannees([]);
+      setEtape("scan");
+    } catch (e) {
+      window.alert("Erreur : " + e.message);
+    } finally {
+      setChargement(false);
+    }
+  };
+
+  const surObjetScanne = (objet) => {
+    if (objet.type !== "palette") return; // l'inventaire ne porte que sur les palettes (point 22)
+    setScannees(function (prev) { return prev.concat([{ paletteId: objet.id, ts: Date.now() }]); });
+  };
+
+  const idsAttendus = {}; attendues.forEach(function (p) { idsAttendus[p.paletteId] = p; });
+  const idsScannes = {}; scannees.forEach(function (s) { idsScannes[s.paletteId] = true; });
+  const manquantes = attendues.filter(function (p) { return !idsScannes[p.paletteId]; });
+  const inattendues = scannees.filter(function (s) { return !idsAttendus[s.paletteId]; });
+
+  return (
+    <div className="btp-modal-overlay" onClick={onFermer}>
+      <div className="btp-modal" style={{ maxWidth: 520, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title" style={{ marginBottom: 12 }}>📋 Inventaire par scan</div>
+
+        {etape === "configuration" && (
+          <React.Fragment>
+            <label className="btp-label">Emplacement à inventorier (facultatif — laisser vide pour tout)</label>
+            <input className="btp-input" placeholder="Ex: Zone A" value={emplacement} onChange={(e) => setEmplacement(e.target.value)} style={{ marginBottom: 14 }} />
+            <button className="btn btn-primary btn-full" onClick={demarrer} disabled={chargement}>{chargement ? "Chargement…" : ("▶️ Démarrer l'inventaire" + (emplacement.trim() ? (" — " + emplacement.trim()) : ""))}</button>
+            <button className="btn btn-ghost btn-full" style={{ marginTop: 10 }} onClick={onFermer}>Annuler</button>
+          </React.Fragment>
+        )}
+
+        {etape === "scan" && (
+          <React.Fragment>
+            <div style={{ fontSize: 13, color: "var(--btp-text2)", marginBottom: 10 }}>{attendues.length} palette(s) attendue(s){emplacement.trim() ? (" en " + emplacement.trim()) : ""}.</div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
+              <button className="btn btn-primary" onClick={() => setShowScanner(true)}>📷 Scanner</button>
+              <strong style={{ fontSize: 15 }}>{scannees.length} palette{scannees.length > 1 ? "s" : ""} scannée{scannees.length > 1 ? "s" : ""}</strong>
+            </div>
+            {scannees.length > 0 && (
+              <div style={{ maxHeight: 160, overflowY: "auto", marginBottom: 14, fontSize: 12 }}>
+                {scannees.slice().reverse().map(function (s, i) {
+                  var ok = !!idsAttendus[s.paletteId];
+                  return <div key={i} style={{ color: ok ? "#2ECC71" : "#F39C12" }}>{ok ? "✓" : "⚠️"} {s.paletteId}{!ok ? " (inattendue)" : ""}</div>;
+                })}
+              </div>
+            )}
+            <button className="btn btn-success btn-full" onClick={() => setEtape("resultat")}>✅ Terminer l'inventaire</button>
+            <button className="btn btn-ghost btn-full" style={{ marginTop: 10 }} onClick={onFermer}>Annuler</button>
+          </React.Fragment>
+        )}
+
+        {etape === "resultat" && (
+          <React.Fragment>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>Attendues : <strong>{attendues.length}</strong> · Scannées : <strong>{scannees.length}</strong></div>
+              <div style={{ fontSize: 13, color: manquantes.length > 0 ? "#EC7063" : "#2ECC71" }}>Manquantes : <strong>{manquantes.length}</strong></div>
+              <div style={{ fontSize: 13, color: inattendues.length > 0 ? "#F39C12" : "#2ECC71" }}>Inattendues : <strong>{inattendues.length}</strong></div>
+            </div>
+            {manquantes.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <strong style={{ fontSize: 12, color: "#EC7063" }}>Palettes attendues non trouvées</strong>
+                <ul style={{ margin: "6px 0 0 18px", fontSize: 12 }}>
+                  {manquantes.map(function (p) { return <li key={p.paletteId}>{p.paletteId} — lot {p.numeroLot} · {(p.disponibleCache || 0).toLocaleString()} u</li>; })}
+                </ul>
+              </div>
+            )}
+            {inattendues.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <strong style={{ fontSize: 12, color: "#F39C12" }}>Palettes scannées non attendues ici</strong>
+                <ul style={{ margin: "6px 0 0 18px", fontSize: 12 }}>
+                  {inattendues.map(function (s) { return <li key={s.paletteId}>{s.paletteId}</li>; })}
+                </ul>
+              </div>
+            )}
+            {manquantes.length === 0 && inattendues.length === 0 && <div style={{ color: "#2ECC71", fontWeight: 700 }}>🟢 Inventaire conforme : rien à signaler.</div>}
+            <p style={{ fontSize: 11, color: "var(--btp-text2)", marginTop: 10 }}>Cet écart est une proposition à vérifier — aucune correction automatique du stock n'a été effectuée.</p>
+            <button className="btn btn-ghost btn-full" style={{ marginTop: 10 }} onClick={onFermer}>Fermer</button>
+          </React.Fragment>
+        )}
+      </div>
+      {showScanner && (
+        <ModaleScanner titre="Scanner les palettes" continu={true} dejaVus={dejaVus}
+          onFermer={() => setShowScanner(false)} onObjetReconnu={surObjetScanne} />
+      )}
+    </div>
+  );
+}
+
 function GlobalSearch(props) {
   const [ouverte, setOuverte] = React.useState(false);
   const [requete, setRequete] = React.useState("");
@@ -1205,15 +1590,16 @@ function GlobalSearch(props) {
     return tokens.every(function (t) { return n.indexOf(t) !== -1; });
   }
 
-  var resLots = [], resCommandes = [], resChantiers = [], resNC = [], resProduits = [];
+  var resLots = [], resPalettes = [], resCommandes = [], resChantiers = [], resNC = [], resProduits = [];
   if (tokens.length > 0) {
     resLots = (props.lots || []).filter(function (l) { return correspond((l.numeroLot || "") + " " + (l.type || "")); }).slice(0, 6);
+    resPalettes = (props.palettes || []).filter(function (p) { return correspond((p.paletteId || "") + " " + (p.numeroLot || "") + " " + (p.typeBTC || "")); }).slice(0, 6);
     resCommandes = (props.commandes || []).filter(function (c) { return correspond((c.numBC || "") + " " + (c.client || "") + " " + (c.chantierNom || "") + " " + (c.typNom || c.type || "")); }).slice(0, 6);
     resChantiers = (props.chantiers || []).filter(function (ch) { return correspond((ch.nom || "") + " " + (ch.client || "")); }).slice(0, 6);
     resNC = (props.ncs || []).filter(function (nc) { return correspond((nc.numeroLot || "") + " " + (nc.description || "") + " " + (nc.responsable || "")); }).slice(0, 6);
     resProduits = CATALOGUE.filter(function (p) { return correspond(p.nom + " " + p.id + " " + p.dim); }).slice(0, 6);
   }
-  var total = resLots.length + resCommandes.length + resChantiers.length + resNC.length + resProduits.length;
+  var total = resLots.length + resPalettes.length + resCommandes.length + resChantiers.length + resNC.length + resProduits.length;
 
   if (!ouverte) {
     return (
@@ -1229,7 +1615,7 @@ function GlobalSearch(props) {
         <div className="gsearch-input-row">
           <span>🔍</span>
           <input ref={inputRef} className="gsearch-input"
-            placeholder="Lot, commande, chantier, non-conformité, produit…"
+            placeholder="Lot, palette, commande, chantier, non-conformité, produit…"
             value={requete} onChange={(e) => setRequete(e.target.value)} />
           <button className="gsearch-close" onClick={() => setOuverte(false)}>✕</button>
         </div>
@@ -1265,6 +1651,19 @@ function GlobalSearch(props) {
                   <div key={l.numeroLot} className="gsearch-item" onClick={() => ouvrir({ type: "lot", id: l.numeroLot, label: l.numeroLot, subtitle: getProduit(l.type).nom })}>
                     <div className="gsearch-item-titre">🏷️ {l.numeroLot}</div>
                     <div className="gsearch-item-sub">{getProduit(l.type).nom} · {(l.quantite || 0).toLocaleString()} u</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {resPalettes.length > 0 && (
+            <div className="gsearch-groupe">
+              <div className="gsearch-groupe-titre">Palettes</div>
+              {resPalettes.map(function (p) {
+                return (
+                  <div key={p.paletteId} className="gsearch-item" onClick={() => ouvrir({ type: "palette", id: p.paletteId, label: p.paletteId, subtitle: "Lot " + p.numeroLot })}>
+                    <div className="gsearch-item-titre">📦 {p.paletteId}</div>
+                    <div className="gsearch-item-sub">Lot {p.numeroLot} · {getProduit(p.typeBTC).nom} · {(p.disponibleCache || 0).toLocaleString()} u dispo.</div>
                   </div>
                 );
               })}
@@ -1345,20 +1744,29 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
   const calculerDiagnostic = async () => {
     setChargement(true);
     try {
-      const [mvtSnap, lotsSnap, allocSnap, cmdSnap] = await Promise.all([
+      const [mvtSnap, lotsSnap, allocSnap, cmdSnap, paletteSnap, controlesSnap, ncSnap] = await Promise.all([
         db.collection("stock_mouvements").limit(3000).get(),
         db.collection("qse_lots").limit(1000).get(),
         db.collection("stock_allocations").limit(2000).get(),
-        db.collection("commandes").limit(1000).get()
+        db.collection("commandes").limit(1000).get(),
+        db.collection("stock_palettes").limit(2000).get(),
+        db.collection("qse_controles").limit(2000).get(),
+        db.collection("qse_nc").limit(2000).get()
       ]);
       const mouvements = mvtSnap.docs.map((d) => d.data());
       const lots = lotsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
       const allocations = allocSnap.docs.map((d) => d.data());
       const commandes = cmdSnap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      const palettes = paletteSnap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      const controles = controlesSnap.docs.map((d) => d.data());
+      const ncs = ncSnap.docs.map((d) => d.data());
       const res = CATALOGUE.map((prod) => reconcilierStockType(prod.id, stocks, mouvements, lots, allocations))
         .filter((r) => r.ancien > 0 || r.calculeDepuisMouvements !== 0 || r.reserve > 0);
       setEcarts(res);
-      setAnomalies(diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, stocks));
+      const controlesParLot = {}; controles.forEach((c) => { if (c.numeroLot) (controlesParLot[c.numeroLot] = controlesParLot[c.numeroLot] || []).push(c); });
+      const ncParLot = {}; ncs.forEach((n) => { if (n.numeroLot) (ncParLot[n.numeroLot] = ncParLot[n.numeroLot] || []).push(n); });
+      const lotsBloques = lots.filter((l) => l.annule || qseStatutLot(l, controlesParLot[l.numeroLot] || [], ncParLot[l.numeroLot] || []).code === "bloque").map((l) => l.numeroLot);
+      setAnomalies(diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, stocks, palettes, lotsBloques));
     } catch (e) {
       setEcarts([]); setAnomalies([]);
     } finally {
@@ -1397,7 +1805,13 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
     mouvement_sans_allocation_correspondante: "Mouvements de livraison sans allocation correspondante",
     commande_livree_sans_mouvement: "Commande livrée sans mouvement de stock",
     commande_livraison_incoherente: "Quantité livrée de la commande incohérente avec ses allocations",
-    compteur_negatif: "Compteur agrégé négatif"
+    compteur_negatif: "Compteur agrégé négatif",
+    palette_lot_inexistant: "Palette liée à un lot inexistant",
+    palette_type_different: "Type BTC de la palette différent de celui du lot",
+    palette_quantite_negative: "Quantité disponible négative sur la palette",
+    palette_disponible_sur_lot_bloque: "Palette disponible alors que le lot est bloqué",
+    palettes_superieures_au_stock_lot: "Somme des palettes supérieure au stock physique du lot",
+    palette_livree_sans_allocation: "Mouvement de livraison sur une palette sans allocation correspondante"
   };
 
   return (
@@ -1427,7 +1841,7 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
             {anomalies.map(function (a, i) {
               return (
                 <tr key={i}>
-                  <td>{a.lot || a.numBC || a.typeBTC || "—"}</td>
+                  <td>{a.palette ? (a.palette + (a.lot ? (" (" + a.lot + ")") : "")) : (a.lot || a.numBC || a.typeBTC || "—")}</td>
                   <td>{libellesAnomalie[a.type] || a.type}</td>
                   <td>{a.attendu != null ? a.attendu.toLocaleString() : "—"}</td>
                   <td>{a.trouve != null ? a.trouve.toLocaleString() : "—"}</td>
@@ -1466,7 +1880,7 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
   );
 }
 
-function Login() {
+function Login({ destinationEnAttente }) {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
@@ -1495,6 +1909,11 @@ function Login() {
         <div className="login-logo">🧱</div>
         <div className="login-title">BTC Manager</div>
         <div className="login-sub">Terre et Eau — Mamoudzou, Mayotte</div>
+        {destinationEnAttente && (
+          <div className="btp-alert" style={{ background: "rgba(93,173,226,.15)", border: "1px solid #5DADE2", color: "#5DADE2", marginBottom: 16, fontSize: 13 }}>
+            📷 Connectez-vous pour ouvrir {destinationEnAttente.type === "palette" ? "la palette" : "le lot"} <strong>{destinationEnAttente.id}</strong> scanné(e).
+          </div>
+        )}
         <form onSubmit={handleLogin}>
           <div className="form-group">
             <label className="btp-label">Adresse email</label>
@@ -1569,8 +1988,10 @@ const [showPwdUid, setShowPwdUid] = useState(null);
   const [numerosAvecControleRecent, setNumerosAvecControleRecent] = React.useState({}); // best-effort : lots ayant au moins un controle parmi les 300 plus recents
   const [ncQSEList, setNcQSEList] = React.useState([]); // toutes les NC (ouvertes + cloturees)
   const [qseLotsList, setQseLotsList] = React.useState([]); // tous les lots charges (utilises par la recherche)
+  const [palettesList, setPalettesList] = React.useState([]); // Phase 7 : palettes recentes (recherche)
   const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
   const [lotOuvertProd, setLotOuvertProd] = React.useState(null);
+  const [paletteOuverteProd, setPaletteOuverteProd] = React.useState(null); // Phase 7
   const [qseOngletDemande, setQseOngletDemande] = React.useState(null);
 
   const [evenements, setEvenements] = React.useState([]); const [showNewChantier, setShowNewChantier] = React.useState(false); const [dirNomChantier, setDirNomChantier] = React.useState(""); const [dirClientChantier, setDirClientChantier] = React.useState(""); const [dirAdresseChantier, setDirAdresseChantier] = React.useState(""); const [dirMsgChantier, setDirMsgChantier] = React.useState(""); const creerChantierDirection = async () => { if(!dirNomChantier||!dirClientChantier){ setDirMsgChantier("Remplissez le nom et le client"); return; } try { await db.collection("chantiers").add({ nom:dirNomChantier, client:dirClientChantier, adresse:dirAdresseChantier, besoins:{}, chefUid:user.uid, chefNom:userData.nom||user.email, createdAt:firebase.firestore.FieldValue.serverTimestamp() }); setDirNomChantier(""); setDirClientChantier(""); setDirAdresseChantier(""); setDirMsgChantier("Chantier cree avec succes !"); setTimeout(()=>{setShowNewChantier(false); setDirMsgChantier("");},1200); } catch(e){ setDirMsgChantier("Erreur: "+e.message); } }; const supprimerChantierDirection = async (ch) => { if(window.confirm('Supprimer definitivement le chantier "'+ch.nom+'" ?')){ try { await db.collection("chantiers").doc(ch.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } }; const supprimerEvenement = async (ev) => { if(window.confirm("Supprimer cette action du journal de tracabilite ?")){ try { await db.collection("evenements").doc(ev.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } };
@@ -1629,8 +2050,11 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       snap.docs.forEach(function(d){ var data = d.data(); if (data.numeroLot) nums[data.numeroLot] = true; });
       setNumerosAvecControleRecent(nums);
     });
+    var u11 = db.collection("stock_palettes").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
+      setPalettesList(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
+    });
 
-  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10(); uMat(); };
+  return () => { unsubEv(); u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10(); u11(); uMat(); };
   }, []);
 
   async function toggleModeDemo() {
@@ -1839,6 +2263,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
   const ouvrirObjet = creerOuvreurObjet({
     setLotOuvert: setLotOuvertProd,
+    setPaletteOuvert: setPaletteOuverteProd,
     setFicheChantierOuverte: setFicheOuverte,
     setTab: setTab,
     setQseOnglet: setQseOngletDemande,
@@ -1865,8 +2290,9 @@ const [showPwdUid, setShowPwdUid] = useState(null);
 
   return (
     <div className="btp-app">
-      {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} onOuvrirLot={setLotOuvertProd} />}
+      {ficheOuverte && <FicheChantierDirection chantier={ficheOuverte} commandes={commandes} onClose={()=>setFicheOuverte(null)} onOuvrirLot={setLotOuvertProd} user={user} userData={userData} />}
       {lotOuvertProd && <FicheLot numeroLot={lotOuvertProd} user={user} userData={userData} onClose={()=>setLotOuvertProd(null)} />}
+      {paletteOuverteProd && <FichePalette paletteId={paletteOuverteProd} user={user} userData={userData} onClose={()=>setPaletteOuverteProd(null)} />}
       
       {/* RESET DEMO MODAL */}
       {editProd && (
@@ -1926,12 +2352,14 @@ const [showPwdUid, setShowPwdUid] = useState(null);
         <div className="btp-header-right">
           <GlobalSearch
             lots={qseLotsList}
+            palettes={palettesList}
             commandes={commandes}
             chantiers={chantiers}
             ncs={ncQSEList}
             ouvrirObjet={ouvrirObjet}
             onNavigate={setTab}
           />
+          <BoutonScanner user={user} userData={userData} style={{ padding: "8px 14px", fontSize: 13 }} />
           <div
             className={"mode-badge " + (modeDemo ? "mode-badge-demo" : "mode-badge-real")}
             onClick={toggleModeDemo}
@@ -2848,9 +3276,10 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   );
 }
 
-function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot }) {
+function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, user, userData }) {
   const [tabFiche, setTabFiche] = useState("suivi");
   const [lotsUtilises, setLotsUtilises] = React.useState(null); // null = pas encore charge
+  const [paletteOuverte, setPaletteOuverte] = React.useState(null); // Phase 7 (point 28)
 
   React.useEffect(() => {
     let annule = false;
@@ -3086,7 +3515,7 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot }) {
               {lotsUtilises!==null && lotsUtilises.length===0 && <p style={{color:"var(--btp-text2)"}}>Aucun lot tracé réservé/livré sur ce chantier pour l'instant.</p>}
               {lotsUtilises && lotsUtilises.length>0 && (
                 <table className="btp-table">
-                  <thead><tr><th>Lot</th><th>Type BTC</th><th>Réservé</th><th>Livré</th><th>Statut</th><th></th></tr></thead>
+                  <thead><tr><th>Lot</th><th>Palette</th><th>Type BTC</th><th>Réservé</th><th>Livré</th><th>Statut</th><th></th></tr></thead>
                   <tbody>
                     {lotsUtilises.map(function(a){
                       var libelles = { Reservee: "📌 Réservée", PartiellementLivree: "🚚 Partiellement livrée", Livree: "✅ Livrée", Annulee: "↩️ Annulée" };
@@ -3095,6 +3524,7 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot }) {
                       return (
                         <tr key={a.id}>
                           <td>{a.numeroLot || "Stock historique non traçable"}</td>
+                          <td>{a.paletteId ? <button className="btn btn-sm btn-ghost" onClick={()=>setPaletteOuverte(a.paletteId)}>📦 {a.paletteId}</button> : "—"}</td>
                           <td>{getProduit(a.typeBTC).nom}</td>
                           <td>{qteReservee.toLocaleString()} u</td>
                           <td>{qteLivree.toLocaleString()} u</td>
@@ -3110,6 +3540,7 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot }) {
           )}
         </div>
       </div>
+      {paletteOuverte && <FichePalette paletteId={paletteOuverte} user={user} userData={userData} onClose={()=>setPaletteOuverte(null)} />}
     </div>
   );
 }
@@ -3488,6 +3919,31 @@ function DashboardChef({ user, userData }) {
   const [cmdQte, setCmdQte] = useState("");
   const [cmdNotes, setCmdNotes] = useState("");
   const [msgCmd, setMsgCmd] = useState("");
+  const [msgScan, setMsgScan] = React.useState(""); // Phase 7 (point 16)
+  const [showScanChef, setShowScanChef] = React.useState(false);
+
+  // Phase 7 (point 16) : un scan de lot/palette par le chef affiche directement s'il a ete livre
+  // sur UN DE SES chantiers, sans qu'il ait besoin de connaitre la structure interne de l'app.
+  const surObjetScanneChef = async (objet) => {
+    setMsgScan("Vérification…");
+    try {
+      var query = objet.type === "lot"
+        ? db.collection("stock_allocations").where("numeroLot", "==", objet.id)
+        : db.collection("stock_allocations").where("paletteId", "==", objet.id);
+      var snap = await query.get();
+      var mesChantierIds = chantiers.map(function (c) { return c.id; });
+      var pertinentes = snap.docs.map(function (d) { return d.data(); }).filter(function (a) { return a.chantierId && mesChantierIds.indexOf(a.chantierId) !== -1 && (a.quantiteLivree || 0) > 0; });
+      if (pertinentes.length === 0) {
+        setMsgScan((objet.type === "lot" ? "Lot " : "Palette ") + objet.id + " : aucune livraison trouvée sur l'un de vos chantiers.");
+      } else {
+        var total = pertinentes.reduce(function (a, p) { return a + (p.quantiteLivree || 0); }, 0);
+        var nomsChantiers = pertinentes.map(function (p) { return p.chantierNom; }).filter(function (v, i, arr) { return v && arr.indexOf(v) === i; }).join(", ");
+        setMsgScan("✅ Ce " + (objet.type === "lot" ? "lot" : "palette") + " a été livré sur votre chantier (" + nomsChantiers + ") — " + total.toLocaleString() + " u.");
+      }
+    } catch (e) {
+      setMsgScan("Erreur de vérification : " + e.message);
+    }
+  };
 
   useEffect(() => {
     var u1 = db.collection("chantiers").onSnapshot(snap => {
@@ -3651,7 +4107,12 @@ function DashboardChef({ user, userData }) {
         ))}
       </div>
       <div className="btp-content">
-      
+        {/* Phase 7 (point 16) : scanner un lot/palette recu sur chantier, reponse directe sans avoir
+            a connaitre la structure interne de l'application. */}
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn btn-primary btn-lg" style={{ fontWeight: 800, fontSize: 16 }} onClick={() => { setShowScanChef(true); setMsgScan(""); }}>📷 Scanner un lot reçu</button>
+          {msgScan && <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600, color: msgScan.indexOf("✅") >= 0 ? "#2ECC71" : "var(--btp-text2)" }}>{msgScan}</div>}
+        </div>
 
         {tabChef==="chantiers"&&(
           <div className="fade-in">
@@ -3786,6 +4247,9 @@ function DashboardChef({ user, userData }) {
           </div>
         )}
       </div>
+      {showScanChef && (
+        <ModaleScanner titre="Scanner un lot reçu" onFermer={() => setShowScanChef(false)} onObjetReconnu={surObjetScanneChef} continu={false} />
+      )}
     </div>
   );
 }
@@ -3806,6 +4270,10 @@ function DashboardStock({ user, userData }) {
   const [editCmdQte, setEditCmdQte] = React.useState("");
   const [editCmdChantierId, setEditCmdChantierId] = React.useState("");
   const [msgEditCmd, setMsgEditCmd] = React.useState("");
+  // Phase 7 : inventaire par scan (points 22/23/25) et verification par scan a la preparation (points 26/27).
+  const [showInventaire, setShowInventaire] = React.useState(false);
+  const [scanVerifPourCmd, setScanVerifPourCmd] = React.useState(null); // cmdId en cours de verification
+  const [resultatsScanCmd, setResultatsScanCmd] = React.useState({}); // cmdId -> [{texte, ok}]
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -3914,6 +4382,42 @@ function DashboardStock({ user, userData }) {
     }
   };
 
+  // Phase 7 (points 26/27) : verifie une palette (ou un lot) scanne au moment du chargement d'une
+  // livraison, contre les reservations actives de la commande — bon type, bon lot, palette
+  // disponible, lot non bloque. N'AUTOMATISE aucune livraison : c'est une aide a la verification,
+  // le clic "Confirmer livraison" (deja existant) reste le geste qui declenche la sortie physique.
+  const verifierPaletteScanneePourCmd = async (cmdId, objet) => {
+    var allocs = allocationsParCmd[cmdId] || [];
+    var resultat;
+    try {
+      if (objet.type === "palette") {
+        var paletteSnap = await db.collection("stock_palettes").doc(objet.id).get();
+        if (!paletteSnap.exists) {
+          resultat = { texte: "❌ Palette " + objet.id + " introuvable", ok: false };
+        } else {
+          var p = paletteSnap.data();
+          var lotSnap = await db.collection("qse_lots").doc(p.numeroLot).get();
+          var lotBloqueVerif = lotSnap.exists && lotSnap.data().annule === true;
+          var allocCorrespondante = allocs.find(function (a) { return a.paletteId === objet.id; }) ||
+            allocs.find(function (a) { return !a.paletteId && a.numeroLot === p.numeroLot; });
+          if (lotBloqueVerif) resultat = { texte: "🚫 Palette " + objet.id + " — lot bloqué, non utilisable pour une livraison normale", ok: false };
+          else if (!allocCorrespondante) resultat = { texte: "❌ Palette " + objet.id + " (lot " + p.numeroLot + ") ne correspond à aucune réservation de cette commande", ok: false };
+          else resultat = { texte: "✓ Palette " + objet.id + " (lot " + p.numeroLot + ") conforme — " + (p.disponibleCache || 0).toLocaleString() + " u disponibles", ok: true };
+        }
+      } else {
+        var allocLot = allocs.find(function (a) { return a.numeroLot === objet.id; });
+        resultat = allocLot ? { texte: "✓ Lot " + objet.id + " conforme pour cette commande", ok: true } : { texte: "❌ Lot " + objet.id + " ne correspond à aucune réservation de cette commande", ok: false };
+      }
+    } catch (e) {
+      resultat = { texte: "❌ Erreur de vérification : " + e.message, ok: false };
+    }
+    setResultatsScanCmd(function (prev) {
+      var liste = (prev[cmdId] || []).slice();
+      liste.unshift(resultat);
+      return Object.assign({}, prev, { [cmdId]: liste.slice(0, 8) });
+    });
+  };
+
   const modifierQteAllocInput = (cmdId, allocId, v) => {
     setAllocationsParCmd(function (prev) {
       var liste = (prev[cmdId] || []).map(function (a) { return a.id === allocId ? Object.assign({}, a, { _qte: v }) : a; });
@@ -3992,6 +4496,28 @@ function DashboardStock({ user, userData }) {
       </div>
       <div className="btp-content">
 
+        {/* Phase 7 (point 13) : mode terrain "ultra simple" — actions principales + a faire, avant
+            le detail du stock. Le reste de l'ecran (deja construit en Phase 6) reste inchange et
+            entierement accessible juste en dessous : rien n'est retire, seulement mis en avant. */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+          <BoutonScanner user={user} userData={userData} />
+          <button className="btn btn-lg" style={{ background: "#5DADE2", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowInventaire(true)}>📋 Inventaire</button>
+        </div>
+        {(() => {
+          var aPreparer = commandes.filter(function (c) { return Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0)) > 0; }).length;
+          var pretesALivrer = commandes.filter(function (c) { return (c.quantiteReservee || 0) > 0 && Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0)) === 0; }).length;
+          if (aPreparer === 0 && pretesALivrer === 0) return null;
+          return (
+            <div style={{ background: "var(--btp-card)", borderRadius: 10, padding: 12, marginBottom: 20, fontSize: 13 }}>
+              <strong style={{ color: "var(--btp-orange)" }}>À faire</strong>
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                {aPreparer > 0 && <li>{aPreparer} commande{aPreparer > 1 ? "s" : ""} à réserver/préparer</li>}
+                {pretesALivrer > 0 && <li>{pretesALivrer} réservation{pretesALivrer > 1 ? "s" : ""} prête{pretesALivrer > 1 ? "s" : ""} pour livraison</li>}
+              </ul>
+            </div>
+          );
+        })()}
+
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:28}}>
           {CATALOGUE.map(prod=>{
@@ -4066,7 +4592,15 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
 
                 {allocs.length > 0 && (
                   <div style={{marginBottom:14,background:"var(--btp-card2)",borderRadius:8,padding:12}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"var(--btp-text2)",marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>Réservations actives ({allocs.length})</div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"var(--btp-text2)",textTransform:"uppercase",letterSpacing:".5px"}}>Réservations actives ({allocs.length})</div>
+                      <button className="btn btn-sm btn-ghost" onClick={()=>setScanVerifPourCmd(cmd.id)}>📷 Vérifier une palette chargée</button>
+                    </div>
+                    {(resultatsScanCmd[cmd.id]||[]).length > 0 && (
+                      <div style={{marginBottom:8,fontSize:12}}>
+                        {resultatsScanCmd[cmd.id].map(function(r,i){ return <div key={i} style={{color:r.ok?"#2ECC71":"#EC7063"}}>{r.texte}</div>; })}
+                      </div>
+                    )}
                     {allocs.map(function(a){
                       var resteAlloc = (a.quantiteReservee||0)-(a.quantiteLivree||0);
                       return (
@@ -4138,6 +4672,11 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
           })
         }
       </div>
+      {scanVerifPourCmd && (
+        <ModaleScanner titre="Vérifier une palette chargée" onFermer={() => setScanVerifPourCmd(null)}
+          onObjetReconnu={(o) => verifierPaletteScanneePourCmd(scanVerifPourCmd, o)} continu={true} />
+      )}
+      {showInventaire && <InventaireParScan user={user} userData={userData} onFermer={() => setShowInventaire(false)} />}
     </div>
   );
 }
@@ -4333,6 +4872,24 @@ function DashboardProduction({ user, userData }) {
         { tabProd === 'production' && (
           <div>
 <div style={{padding:20}}>
+        {/* Phase 7 (point 14) : entree terrain rapide — le reste de l'ecran (deja construit) reste inchange en dessous. */}
+        <div style={{ marginBottom: 18 }}>
+          <BoutonScanner user={user} userData={userData} libelle="Scanner un lot" />
+        </div>
+        {(() => {
+          var enSechageActif = CATALOGUE.reduce(function (a, p) { return a + calcSechageActif(productions, p.id); }, 0);
+          var sousSeuil = typesParUrgence.filter(function (it) { return it.total < STOCK_ALERTE; }).length;
+          if (enSechageActif === 0 && sousSeuil === 0) return null;
+          return (
+            <div style={{ background: "var(--btp-card)", borderRadius: 10, padding: 12, marginBottom: 18, fontSize: 13 }}>
+              <strong style={{ color: "var(--btp-orange)" }}>À faire</strong>
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                {enSechageActif > 0 && <li>{enSechageActif.toLocaleString()} u en séchage, pas encore mature</li>}
+                {sousSeuil > 0 && <li>{sousSeuil} référence{sousSeuil > 1 ? "s" : ""} sous le seuil de stock</li>}
+              </ul>
+            </div>
+          );
+        })()}
         <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
         <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
@@ -5195,6 +5752,7 @@ function ecrireMouvementStock(tx, id, mouvement) {
   tx.set(db.collection("stock_mouvements").doc(id), {
     type: mouvement.type,
     numeroLot: mouvement.numeroLot || null,
+    paletteId: mouvement.paletteId || null, // Phase 7 : tag optionnel, la palette est une SUBDIVISION du lot, pas une source de verite distincte
     typeBTC: mouvement.typeBTC || "",
     quantite: mouvement.quantite,
     date: mouvement.date || new Date().toLocaleDateString("fr-FR"),
@@ -5210,6 +5768,8 @@ function ecrireMouvementStock(tx, id, mouvement) {
 // Firestore ici). Convention de signe : ENTREE_PRODUCTION et ANNULATION_LIVRAISON sont positifs ;
 // PERTE et SORTIE_LIVRAISON sont negatifs ; AJUSTEMENT_INVENTAIRE/CORRECTION portent leur propre
 // signe. "disponible" = somme signee brute de tous les mouvements du lot : aucune ambiguite.
+// AFFECTATION_PALETTE (Phase 7) est EXCLU de cette somme : ce type ne represente pas un changement
+// de quantite physique du lot, seulement son affectation a une palette precise (sinon double compte).
 function calculerStockLot(numeroLot, mouvements) {
   var mvts = (mouvements || []).filter(function (m) { return m.numeroLot === numeroLot; });
   var produit = 0, perdu = 0, livre = 0, ajustements = 0;
@@ -5219,9 +5779,25 @@ function calculerStockLot(numeroLot, mouvements) {
     else if (m.type === "SORTIE_LIVRAISON" || m.type === "ANNULATION_LIVRAISON") livre += -m.quantite; // SORTIE (negatif) ajoute au livre affiche, ANNULATION (positif) le retranche
     else if (m.type === "AJUSTEMENT_INVENTAIRE" || m.type === "CORRECTION") ajustements += m.quantite;
   });
-  var disponible = mvts.reduce(function (a, m) { return a + m.quantite; }, 0);
+  var disponible = mvts.reduce(function (a, m) { return m.type === "AFFECTATION_PALETTE" ? a : a + m.quantite; }, 0);
   mvts.sort(function (a, b) { return qseTsMs(a.dateCreation) - qseTsMs(b.dateCreation); });
   return { produit: produit, perdu: perdu, livre: livre, ajustements: ajustements, disponible: Math.max(0, disponible), mouvements: mvts };
+}
+
+// Equivalent de calculerStockLot, mais a la granularite d'une palette (Phase 7, point 31) : la
+// palette n'introduit PAS une nouvelle source de verite, elle lit le MEME grand livre filtre par
+// paletteId. AFFECTATION_PALETTE est ici la seule entree positive (creation de la palette) ; PERTE
+// et SORTIE_LIVRAISON tagges de ce paletteId la diminuent, symetriquement a calculerStockLot.
+function calculerStockPalette(paletteId, mouvements) {
+  var mvts = (mouvements || []).filter(function (m) { return m.paletteId === paletteId; });
+  var perdu = 0, livre = 0;
+  mvts.forEach(function (m) {
+    if (m.type === "PERTE") perdu += -m.quantite;
+    else if (m.type === "SORTIE_LIVRAISON" || m.type === "ANNULATION_LIVRAISON") livre += -m.quantite;
+  });
+  var restant = mvts.reduce(function (a, m) { return a + m.quantite; }, 0);
+  mvts.sort(function (a, b) { return qseTsMs(a.dateCreation) - qseTsMs(b.dateCreation); });
+  return { perdu: perdu, livre: livre, restant: Math.max(0, restant), mouvements: mvts };
 }
 
 // Propose une allocation FIFO (lots les plus anciens d'abord) parmi des lots DEJA FILTRES comme
@@ -5339,7 +5915,7 @@ function reconcilierStockType(typeBTC, stocksCache, mouvements, lots, allocation
 // Detecte des incoherences structurelles (point 18) sans jamais rien corriger automatiquement.
 // Prend des donnees DEJA CHARGEES (aucun acces Firestore ici) pour rester rapide et testable —
 // n'est appele qu'a la demande depuis le panneau de diagnostic (point 19), jamais en continu.
-function diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, stocksCache) {
+function diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, stocksCache, palettes, lotsBloques) {
   var anomalies = [];
   var mvtsParLot = {};
   (mouvements || []).forEach(function (m) { if (m.numeroLot) (mvtsParLot[m.numeroLot] = mvtsParLot[m.numeroLot] || []).push(m); });
@@ -5386,6 +5962,55 @@ function diagnostiquerCoherenceStock(lots, mouvements, allocations, commandes, s
     var s = stocksCache[type] || {};
     if ((s.sec || 0) < 0 || (s.sechage || 0) < 0) {
       anomalies.push({ lot: null, type: "compteur_negatif", attendu: 0, trouve: Math.min(s.sec || 0, s.sechage || 0), action: "Vérification manuelle requise", typeBTC: type });
+    }
+  });
+
+  // --- Phase 7 (point 32) : coherence lot / palettes. lotsBloques est une liste de numeroLot
+  // calculee par l'appelant (qseStatutLot, deja charge ailleurs) — cette fonction reste pure et ne
+  // recalcule pas la conformite qualite elle-meme. ---
+  var lotsParNumero = {};
+  (lots || []).forEach(function (l) { lotsParNumero[l.numeroLot] = l; });
+  var lotsBloquesSet = {};
+  (lotsBloques || []).forEach(function (n) { lotsBloquesSet[n] = true; });
+  var palettesParLot = {};
+  (palettes || []).forEach(function (p) { (palettesParLot[p.numeroLot] = palettesParLot[p.numeroLot] || []).push(p); });
+
+  (palettes || []).forEach(function (p) {
+    var lot = lotsParNumero[p.numeroLot];
+    var dispoPalette = p.disponibleCache != null ? p.disponibleCache : 0;
+    if (!lot) {
+      anomalies.push({ lot: p.numeroLot, palette: p.paletteId, type: "palette_lot_inexistant", attendu: null, trouve: p.paletteId, action: "Vérification manuelle requise" });
+      return;
+    }
+    if (lot.type !== p.typeBTC) {
+      anomalies.push({ lot: p.numeroLot, palette: p.paletteId, type: "palette_type_different", attendu: lot.type, trouve: p.typeBTC, action: "Vérification manuelle requise" });
+    }
+    if (dispoPalette < 0) {
+      anomalies.push({ lot: p.numeroLot, palette: p.paletteId, type: "palette_quantite_negative", attendu: 0, trouve: dispoPalette, action: "Vérification manuelle requise" });
+    }
+    if (lotsBloquesSet[p.numeroLot] && dispoPalette > 0) {
+      anomalies.push({ lot: p.numeroLot, palette: p.paletteId, type: "palette_disponible_sur_lot_bloque", attendu: 0, trouve: dispoPalette, action: "Vérification manuelle requise" });
+    }
+  });
+
+  Object.keys(palettesParLot).forEach(function (numeroLot) {
+    if (!lotsParNumero[numeroLot]) return; // deja signale ci-dessus (palette_lot_inexistant)
+    var sommePalettes = palettesParLot[numeroLot].reduce(function (a, p) { return a + (p.disponibleCache != null ? p.disponibleCache : 0); }, 0);
+    var stockLot = calculerStockLot(numeroLot, mvtsParLot[numeroLot] || []);
+    if (sommePalettes > stockLot.disponible) {
+      anomalies.push({ lot: numeroLot, type: "palettes_superieures_au_stock_lot", attendu: stockLot.disponible, trouve: sommePalettes, action: "Vérification manuelle requise" });
+    }
+  });
+
+  var sortiesParPalette = {};
+  (mouvements || []).forEach(function (m) { if (m.type === "SORTIE_LIVRAISON" && m.paletteId) { sortiesParPalette[m.paletteId] = (sortiesParPalette[m.paletteId] || 0) + (-m.quantite); } });
+  var allocsParPalette = {};
+  (allocations || []).forEach(function (a) { if (a.paletteId) (allocsParPalette[a.paletteId] = allocsParPalette[a.paletteId] || []).push(a); });
+  Object.keys(sortiesParPalette).forEach(function (paletteId) {
+    var totalSorti = sortiesParPalette[paletteId];
+    var totalLivreAlloc = (allocsParPalette[paletteId] || []).reduce(function (a, al) { return a + (al.quantiteLivree || 0); }, 0);
+    if (Math.abs(totalSorti - totalLivreAlloc) > 0) {
+      anomalies.push({ lot: null, palette: paletteId, type: "palette_livree_sans_allocation", attendu: totalLivreAlloc, trouve: totalSorti, action: "Vérification manuelle requise" });
     }
   });
 
@@ -5586,33 +6211,180 @@ async function annulerProductionLot(production, user, userData) {
   return { tracable: true };
 }
 
+// ============================================================================================
+// PHASE 7 — palettes : subdivision physique detaillee d'un lot, pour le scan et l'ergonomie
+// terrain. AUCUNE nouvelle source de verite (point 31) : stock_palettes ne fait que denormaliser
+// numeroLot/typeBTC (pour l'affichage et les requetes sans jointure) ; la quantite restante d'une
+// palette se lit du MEME grand livre (stock_mouvements, filtre par paletteId — voir
+// calculerStockPalette), exactement comme un lot se lit par numeroLot. disponibleCache existe aussi
+// au niveau palette, avec le MEME invariant qu'au niveau lot (disponible a reserver = physique
+// moins reserve actif), transactionnellement tenu a jour en parallele du lot par les fonctions
+// ci-dessus (reserverCommandeStock, livrerReservation, annulerReservation, declarerPerteLot).
+// ============================================================================================
+
+// Genere un identifiant de palette unique, court, lisible, non reutilise (point 30) : meme
+// mecanique que qseProchainNumeroLot (compteur transactionnel par annee), resistante aux creations
+// simultanees — jamais un simple comptage de documents existants (qui collisionnerait sous charge).
+async function stockProchainNumeroPalette(annee) {
+  const compteurRef = db.collection("stock_palettes_index").doc("_compteur_" + annee);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(compteurRef);
+    const dernier = (snap.exists && snap.data().dernier) || 0;
+    const suivant = dernier + 1;
+    tx.set(compteurRef, { dernier: suivant });
+    return "PAL-" + annee + "-" + String(suivant).padStart(6, "0");
+  });
+}
+
+// Propose une repartition simple d'un lot en palettes de capacite egale (point 6), en autorisant
+// un reliquat plus petit sur la derniere plutot que de forcer une capacite rigide (point 5) —
+// Terre & Eau n'utilise pas toujours des palettes standardisees. Fonction pure, aucune ecriture.
+function proposerRepartitionPalettes(quantiteTotale, capacitePalette) {
+  var cap = parseInt(capacitePalette, 10);
+  if (!(quantiteTotale > 0) || !(cap > 0)) return [];
+  var lignes = [];
+  var reste = quantiteTotale;
+  while (reste > 0) {
+    var q = Math.min(cap, reste);
+    lignes.push(q);
+    reste -= q;
+  }
+  return lignes;
+}
+
+// Fonction metier CENTRALE et UNIQUE pour creer des palettes a partir d'un lot (point 6). Ecrit,
+// dans UNE SEULE transaction, un mouvement AFFECTATION_PALETTE (quantite positive, exclu du calcul
+// du stock physique du lot — voir calculerStockLot) et un document stock_palettes par palette, avec
+// disponibleCache initialise a sa quantite. Ne decremente PAS le disponibleCache du lot : une
+// palette est une etiquette physique posee sur du stock deja disponible, pas une reservation ni une
+// consommation (le lot reste tout aussi disponible a reserver qu'avant). Idempotent par lot de
+// creation entier via un document de suivi (stock_palettes_batches/{token}) : un double clic sur
+// "Confirmer" renvoie les MEMES identifiants de palette au lieu d'en creer de nouveaux en double.
+async function creerPalettesPourLot(lot, repartition, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var quantites = (repartition || []).filter(function (q) { return q > 0; });
+  var total = quantites.reduce(function (a, q) { return a + q; }, 0);
+  if (total <= 0) throw new Error("Répartition invalide.");
+
+  var batchRef = db.collection("stock_palettes_batches").doc(token);
+  var batchSnap = await batchRef.get();
+  if (batchSnap.exists) return batchSnap.data().paletteIds; // deja cree (double clic/retry)
+
+  var annee = new Date().getFullYear();
+  var ids = [];
+  for (var i = 0; i < quantites.length; i++) { ids.push(await stockProchainNumeroPalette(annee)); }
+
+  var lotRef = db.collection("qse_lots").doc(lot.numeroLot);
+  await db.runTransaction(async function (tx) {
+    var lotSnap = await tx.get(lotRef);
+    if (!lotSnap.exists) throw new Error("Lot introuvable.");
+    var batchCheck = await tx.get(batchRef);
+    if (batchCheck.exists) return; // cree entre-temps par une tentative concurrente avec le meme token
+    var lotData = lotSnap.data();
+    var dispo = lotData.disponibleCache != null ? lotData.disponibleCache : 0;
+    if (total > dispo) throw new Error("Quantité à répartir (" + total.toLocaleString() + " u) supérieure à la disponibilité du lot (" + dispo.toLocaleString() + " u).");
+
+    for (var j = 0; j < ids.length; j++) {
+      tx.set(db.collection("stock_palettes").doc(ids[j]), {
+        paletteId: ids[j], numeroLot: lot.numeroLot, typeBTC: lot.type,
+        quantiteInitiale: quantites[j], disponibleCache: quantites[j],
+        emplacement: null, dateCreation: firebase.firestore.FieldValue.serverTimestamp(), creePar: auteur
+      });
+      ecrireMouvementStock(tx, idMouvementStock("creation_palette", ids[j], lot.numeroLot, "AFFECTATION_PALETTE"), {
+        type: "AFFECTATION_PALETTE", numeroLot: lot.numeroLot, paletteId: ids[j], typeBTC: lot.type, quantite: quantites[j],
+        sourceType: "creation_palette", sourceId: ids[j], utilisateur: auteur, commentaire: "Création de palette"
+      });
+    }
+    tx.set(batchRef, { paletteIds: ids, numeroLot: lot.numeroLot, total: total, utilisateur: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp() });
+  });
+  return ids;
+}
+
+// Charge les palettes d'un lot (requete CIBLEE, point 34 — jamais tout le grand livre). Utilisee par
+// FicheLot (liste des palettes issues du lot, point 28) et par la preparation de livraison.
+async function chargerPalettesDuLot(numeroLot) {
+  var snap = await db.collection("stock_palettes").where("numeroLot", "==", numeroLot).get();
+  return snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+}
+
+// Point 8/9 : une fois le lot choisi par le FIFO (proposerAllocationFIFO), propose comment couvrir
+// le besoin AVEC les palettes de ce lot — entieres si possible, une derniere partielle sinon, sans
+// jamais forcer une palette a etre consommee entierement (point 9). Fonction pure ; les palettes
+// donnees en entree doivent deja avoir ete filtrees a disponibleCache > 0.
+function proposerPalettesPourLot(palettesDuLot, besoin) {
+  var tries = (palettesDuLot || []).filter(function (p) { return (p.disponibleCache || 0) > 0; })
+    .slice().sort(function (a, b) { return qseTsMs(a.dateCreation) - qseTsMs(b.dateCreation); });
+  var lignes = [];
+  var reste = besoin;
+  tries.forEach(function (p) {
+    if (reste <= 0) return;
+    var pris = Math.min(p.disponibleCache, reste);
+    lignes.push({ paletteId: p.paletteId, quantite: pris, disponibleMax: p.disponibleCache, emplacement: p.emplacement || null });
+    reste -= pris;
+  });
+  return { lignes: lignes, couvert: besoin - reste, deficit: Math.max(0, reste) };
+}
+
+// Deplace une palette vers un nouvel emplacement (point 20). Enregistre l'historique dans une
+// collection dediee (stock_palette_emplacements), coherente avec le style du reste de l'app (pas de
+// sous-collection) plutot qu'un tableau qui grossirait indefiniment sur le document palette.
+async function deplacerPalette(paletteId, nouvelEmplacement, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var paletteRef = db.collection("stock_palettes").doc(paletteId);
+  var ancienEmplacement = null;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(paletteRef);
+    if (!snap.exists) throw new Error("Palette introuvable.");
+    ancienEmplacement = snap.data().emplacement || null;
+    tx.update(paletteRef, { emplacement: nouvelEmplacement || null });
+  });
+  try {
+    await db.collection("stock_palette_emplacements").add({
+      paletteId: paletteId, ancienEmplacement: ancienEmplacement, nouvelEmplacement: nouvelEmplacement || null,
+      utilisateur: auteur, date: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {}
+}
+
 // Declare une perte rattachee a un lot precis (depuis FicheLot). Refuse toute quantite superieure
 // a la disponibilite reelle du lot (point 12/25). Transaction unique, lectures puis ecritures.
 // "token" est un identifiant STABLE genere une seule fois par l'appelant au moment ou l'utilisateur
 // ouvre le formulaire (jamais recalcule a chaque clic) : c'est ce qui rend un double clic sur
 // "Confirmer" idempotent (meme token -> meme mouvement -> la deuxieme tentative est detectee comme
 // deja appliquee et n'a AUCUN effet, ni sur le mouvement ni sur le cache/stock — voir dejaApplique).
-async function declarerPerteLot(numeroLot, typeBTC, quantite, motif, token, user, userData) {
+// "paletteId" (Phase 7, optionnel, ajoute en dernier parametre pour ne rien casser des appels
+// existants) : quand fourni, la perte est aussi imputee a une palette precise — meme garde-fou
+// (refus si superieure a la disponibilite), meme mouvement unique (paletteId tagge dessus).
+async function declarerPerteLot(numeroLot, typeBTC, quantite, motif, token, user, userData, paletteId) {
   var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
   if (!(quantite > 0)) throw new Error("Quantité invalide.");
   var lotRef = db.collection("qse_lots").doc(numeroLot);
   var stockRef = db.collection("stocks").doc(typeBTC);
-  var mvt = { type: "PERTE", numeroLot: numeroLot, typeBTC: typeBTC, quantite: -quantite, sourceType: "perte_lot", sourceId: token, utilisateur: auteur, commentaire: motif || "" };
+  var paletteRef = paletteId ? db.collection("stock_palettes").doc(paletteId) : null;
+  var mvt = { type: "PERTE", numeroLot: numeroLot, paletteId: paletteId || null, typeBTC: typeBTC, quantite: -quantite, sourceType: "perte_lot", sourceId: token, utilisateur: auteur, commentaire: motif || "" };
   await db.runTransaction(async function (tx) {
     var lotSnap = await tx.get(lotRef);
     if (!lotSnap.exists) throw new Error("Lot introuvable.");
     var stockSnap = await tx.get(stockRef);
+    var paletteSnap = paletteRef ? await tx.get(paletteRef) : null;
     var chk = await verifierMouvementExistant(tx, mvt);
     if (chk.existe) return; // deja applique (double clic/retry) : aucun effet une deuxieme fois
 
     var lot = lotSnap.data();
     var dispo = lot.disponibleCache != null ? lot.disponibleCache : (lot.quantite || 0);
     if (quantite > dispo) throw new Error("Quantité perdue (" + quantite + " u) supérieure à la disponibilité du lot (" + dispo + " u).");
+    var dispoPalette = 0;
+    if (paletteRef) {
+      if (!paletteSnap.exists) throw new Error("Palette introuvable.");
+      dispoPalette = paletteSnap.data().disponibleCache != null ? paletteSnap.data().disponibleCache : 0;
+      if (quantite > dispoPalette) throw new Error("Quantité perdue (" + quantite + " u) supérieure à la disponibilité de la palette (" + dispoPalette + " u).");
+    }
     var s = stockSnap.exists ? stockSnap.data() : {};
     var newSec = Math.max(0, (s.sec || 0) - quantite);
 
     ecrireMouvementStock(tx, chk.id, mvt);
     tx.update(lotRef, { disponibleCache: dispo - quantite });
+    if (paletteRef) { tx.update(paletteRef, { disponibleCache: dispoPalette - quantite }); }
     tx.set(stockRef, { sec: newSec, sechage: s.sechage || 0 }, { merge: true });
   });
 }
@@ -5625,6 +6397,9 @@ async function declarerPerteLot(numeroLot, typeBTC, quantite, motif, token, user
 // (genere une seule fois a l'ouverture de l'action "Réserver"), pour l'idempotence — deux
 // utilisateurs qui tentent de reserver le meme lot au meme instant se disputent le meme document
 // (disponibleCache), donc jamais les deux ne peuvent reussir a reserver la meme unite (point 15).
+// "ligne.paletteId" (Phase 7, optionnel) : quand une ligne precise une palette (proposerPalettesPourLot),
+// sa disponibilite est verifiee et decrementee EN PLUS de celle du lot, dans la meme transaction —
+// le lot reste l'unite d'allocation autoritaire (point 8), la palette n'est qu'une precision physique.
 async function reserverCommandeStock(cmd, lignes, token, user, userData) {
   var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
   var lignesValides = (lignes || []).filter(function (l) { return l.quantite > 0; });
@@ -5634,8 +6409,9 @@ async function reserverCommandeStock(cmd, lignes, token, user, userData) {
   var cmdRef = db.collection("commandes").doc(cmd.id);
   var stockRef = db.collection("stocks").doc(cmd.type);
   var lotsAvecNumero = lignesValides.filter(function (l) { return l.numeroLot; });
+  var lignesAvecPalette = lignesValides.filter(function (l) { return l.paletteId; });
   var ligneHistorique = lignesValides.find(function (l) { return !l.numeroLot; });
-  var allocIds = lignesValides.map(function (l) { return { ligne: l, id: (token + "_" + (l.numeroLot || "HIST")).replace(/[\/\s]/g, "-").slice(0, 400) }; });
+  var allocIds = lignesValides.map(function (l) { return { ligne: l, id: (token + "_" + (l.numeroLot || "HIST") + (l.paletteId ? ("_" + l.paletteId) : "")).replace(/[\/\s]/g, "-").slice(0, 400) }; });
 
   await db.runTransaction(async function (tx) {
     // --- LECTURES (toutes avant toute ecriture) ---
@@ -5647,6 +6423,11 @@ async function reserverCommandeStock(cmd, lignes, token, user, userData) {
     for (var i = 0; i < lotsAvecNumero.length; i++) {
       var lref = db.collection("qse_lots").doc(lotsAvecNumero[i].numeroLot);
       lotsLus.push({ ligne: lotsAvecNumero[i], ref: lref, snap: await tx.get(lref) });
+    }
+    var palettesLues = [];
+    for (var k = 0; k < lignesAvecPalette.length; k++) {
+      var pref = db.collection("stock_palettes").doc(lignesAvecPalette[k].paletteId);
+      palettesLues.push({ ligne: lignesAvecPalette[k], ref: pref, snap: await tx.get(pref) });
     }
     var allocSnaps = [];
     for (var j = 0; j < allocIds.length; j++) {
@@ -5662,6 +6443,12 @@ async function reserverCommandeStock(cmd, lignes, token, user, userData) {
       var lot = x.snap.data();
       var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
       if (x.ligne.quantite > dispo) throw new Error("Lot " + x.ligne.numeroLot + " : quantité demandée (" + x.ligne.quantite + ") supérieure à sa disponibilité à réserver (" + dispo + " u).");
+    });
+    palettesLues.forEach(function (x) {
+      if (!x.snap.exists) throw new Error("Palette " + x.ligne.paletteId + " introuvable.");
+      var palette = x.snap.data();
+      var dispo = palette.disponibleCache != null ? palette.disponibleCache : 0;
+      if (x.ligne.quantite > dispo) throw new Error("Palette " + x.ligne.paletteId + " : quantité demandée (" + x.ligne.quantite + ") supérieure à sa disponibilité (" + dispo + " u).");
     });
     var s = stockSnap.exists ? stockSnap.data() : {};
     if (ligneHistorique) {
@@ -5682,13 +6469,18 @@ async function reserverCommandeStock(cmd, lignes, token, user, userData) {
       var dispo = lot.disponibleCache != null ? lot.disponibleCache : 0;
       tx.update(x.ref, { disponibleCache: dispo - x.ligne.quantite });
     });
+    palettesLues.forEach(function (x) {
+      var palette = x.snap.data();
+      var dispo = palette.disponibleCache != null ? palette.disponibleCache : 0;
+      tx.update(x.ref, { disponibleCache: dispo - x.ligne.quantite });
+    });
     if (ligneHistorique) {
       tx.set(stockRef, { historiqueReserve: (s.historiqueReserve || 0) + ligneHistorique.quantite }, { merge: true });
     }
     allocSnaps.forEach(function (a) {
       tx.set(db.collection("stock_allocations").doc(a.id), {
         commandeId: cmd.id, chantierId: cmd.chantierId || null, chantierNom: cmd.chantierNom || cmd.client || "",
-        numeroLot: a.ligne.numeroLot || null, typeBTC: cmd.type,
+        numeroLot: a.ligne.numeroLot || null, paletteId: a.ligne.paletteId || null, typeBTC: cmd.type,
         quantiteReservee: a.ligne.quantite, quantiteLivree: 0, statut: "Reservee",
         utilisateurReservation: auteur, dateReservation: firebase.firestore.FieldValue.serverTimestamp()
       });
@@ -5737,7 +6529,10 @@ async function livrerReservation(alloc, quantiteALivrer, token, user, userData) 
     var reste = (allocData.quantiteReservee || 0) - (allocData.quantiteLivree || 0);
     if (qte > reste) throw new Error("Quantité demandée (" + qte + " u) supérieure au reliquat réservé (" + reste + " u).");
 
-    ecrireMouvementStock(tx, chk.id, { type: "SORTIE_LIVRAISON", numeroLot: allocData.numeroLot || null, typeBTC: allocData.typeBTC, quantite: -qte, sourceType: "livraison_reservation", sourceId: alloc.id + "_" + token, utilisateur: auteur, commentaire: "" });
+    // paletteId (Phase 7) simplement tagge sur le mouvement, comme allocData.numeroLot : le stock
+    // physique ET le reserve de la palette baissent tous les deux de qte, disponibleCache de la
+    // palette ne bouge donc pas (meme invariant que pour le lot, voir commentaire de tete de fonction).
+    ecrireMouvementStock(tx, chk.id, { type: "SORTIE_LIVRAISON", numeroLot: allocData.numeroLot || null, paletteId: allocData.paletteId || null, typeBTC: allocData.typeBTC, quantite: -qte, sourceType: "livraison_reservation", sourceId: alloc.id + "_" + token, utilisateur: auteur, commentaire: "" });
 
     var nouveauLivre = (allocData.quantiteLivree || 0) + qte;
     var nouveauStatut = nouveauLivre >= (allocData.quantiteReservee || 0) ? "Livree" : "PartiellementLivree";
@@ -5787,6 +6582,8 @@ async function annulerReservation(alloc, quantiteALiberer, motif, user, userData
     var cmdSnap = await tx.get(cmdRef);
     var lotRef = allocData.numeroLot ? db.collection("qse_lots").doc(allocData.numeroLot) : null;
     var lotSnap = lotRef ? await tx.get(lotRef) : null;
+    var paletteRef = allocData.paletteId ? db.collection("stock_palettes").doc(allocData.paletteId) : null;
+    var paletteSnap = paletteRef ? await tx.get(paletteRef) : null;
     var stockRef = allocData.numeroLot ? null : db.collection("stocks").doc(allocData.typeBTC);
     var stockSnap = stockRef ? await tx.get(stockRef) : null;
 
@@ -5803,6 +6600,11 @@ async function annulerReservation(alloc, quantiteALiberer, motif, user, userData
     } else if (stockRef && stockSnap) {
       var s = stockSnap.exists ? stockSnap.data() : {};
       tx.set(stockRef, { historiqueReserve: Math.max(0, (s.historiqueReserve || 0) - aLiberer) }, { merge: true });
+    }
+    if (paletteRef && paletteSnap && paletteSnap.exists) {
+      var palette = paletteSnap.data();
+      var dispoPalette = palette.disponibleCache != null ? palette.disponibleCache : 0;
+      tx.update(paletteRef, { disponibleCache: dispoPalette + aLiberer });
     }
     if (cmdSnap.exists) {
       var cmdData = cmdSnap.data();
@@ -5838,7 +6640,7 @@ async function annulerLivraisonPhysique(alloc, quantiteAAnnuler, token, user, us
     if ((allocData.quantiteLivree || 0) <= 0) throw new Error("Aucune livraison à annuler sur cette réservation.");
     if (qte > (allocData.quantiteLivree || 0)) throw new Error("Quantité à annuler (" + qte + ") supérieure à la quantité livrée (" + (allocData.quantiteLivree || 0) + ").");
 
-    ecrireMouvementStock(tx, chk.id, { type: "ANNULATION_LIVRAISON", numeroLot: allocData.numeroLot || null, typeBTC: allocData.typeBTC, quantite: qte, sourceType: "annulation_livraison_reservation", sourceId: alloc.id + "_" + token, utilisateur: auteur, commentaire: "" });
+    ecrireMouvementStock(tx, chk.id, { type: "ANNULATION_LIVRAISON", numeroLot: allocData.numeroLot || null, paletteId: allocData.paletteId || null, typeBTC: allocData.typeBTC, quantite: qte, sourceType: "annulation_livraison_reservation", sourceId: alloc.id + "_" + token, utilisateur: auteur, commentaire: "" });
 
     var nouveauLivre = (allocData.quantiteLivree || 0) - qte;
     var nouveauStatut = nouveauLivre <= 0 ? "Reservee" : "PartiellementLivree";
@@ -6453,6 +7255,16 @@ function FicheLot(props) {
   const [erreur, setErreur] = React.useState("");
   const [msgAction, setMsgAction] = React.useState("");
   const [formPerte, setFormPerte] = React.useState(null); // { quantite, motif } quand ouvert
+  // Phase 7 : palettes du lot, QR/etiquette, creation de palettes, ouverture imbriquee d'une fiche palette.
+  const [palettes, setPalettes] = React.useState([]);
+  const [showQR, setShowQR] = React.useState(false);
+  const [paletteOuverte, setPaletteOuverte] = React.useState(null);
+  const [formCreerPalettes, setFormCreerPalettes] = React.useState(null); // { capacite, repartition, token, envoi, erreur }
+  const [nouvellesPalettesCreees, setNouvellesPalettesCreees] = React.useState(null); // pour impression en lot juste apres creation
+
+  const rechargerPalettes = React.useCallback(async () => {
+    try { setPalettes(await chargerPalettesDuLot(numeroLot)); } catch (e) {}
+  }, [numeroLot]);
 
   React.useEffect(() => {
     let annule = false;
@@ -6465,14 +7277,15 @@ function FicheLot(props) {
           return;
         }
         const lotData = Object.assign({ id: lotSnap.id }, lotSnap.data());
-        const [prod, controlesSnap, ncSnap, originesSnap, stockSnap, mouvementsSnap, allocationsSnap] = await Promise.all([
+        const [prod, controlesSnap, ncSnap, originesSnap, stockSnap, mouvementsSnap, allocationsSnap, palettesLot] = await Promise.all([
           qseRecupererProductionDuLot(lotData),
           db.collection("qse_controles").where("numeroLot", "==", numeroLot).get(),
           db.collection("qse_nc").where("numeroLot", "==", numeroLot).get(),
           db.collection("qse_origines_terre").where("numeroLot", "==", numeroLot).get(),
           db.collection("stocks").doc(lotData.type).get(),
           db.collection("stock_mouvements").where("numeroLot", "==", numeroLot).get(),
-          db.collection("stock_allocations").where("numeroLot", "==", numeroLot).get()
+          db.collection("stock_allocations").where("numeroLot", "==", numeroLot).get(),
+          chargerPalettesDuLot(numeroLot)
         ]);
         if (annule) return;
         setLot(lotData);
@@ -6483,6 +7296,7 @@ function FicheLot(props) {
         setStockType(stockSnap.exists ? stockSnap.data() : null);
         setMouvements(mouvementsSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
         setAllocations(allocationsSnap.docs.map((d) => Object.assign({ id: d.id, _annulToken: d.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) }, d.data())));
+        setPalettes(palettesLot);
         const cmdSnap = await db.collection("commandes").where("type", "==", lotData.type).get();
         if (!annule) setCommandesType(cmdSnap.docs.map((d) => Object.assign({ id: d.id }, d.data())));
       } catch (e) {
@@ -6592,6 +7406,52 @@ function FicheLot(props) {
     }
   };
 
+  // Phase 7 (point 6) : ouvre le formulaire de creation de palettes avec une proposition automatique
+  // (capacite standard 250, ajustable) — l'utilisateur n'a jamais a ressaisir quatre fois la meme info.
+  const ouvrirCreerPalettes = () => {
+    var capaciteParDefaut = 250;
+    setFormCreerPalettes({
+      capacite: String(capaciteParDefaut),
+      repartition: proposerRepartitionPalettes(disponibleAReserver, capaciteParDefaut),
+      token: numeroLot + "_pal_" + Date.now() + "_" + Math.random().toString(36).slice(2),
+      envoi: false, erreur: ""
+    });
+  };
+  const recalculerPropositionPalettes = (capacite) => {
+    setFormCreerPalettes(function (prev) {
+      if (!prev) return prev;
+      return Object.assign({}, prev, { capacite: capacite, repartition: proposerRepartitionPalettes(disponibleAReserver, parseInt(capacite, 10) || 0) });
+    });
+  };
+  const modifierLignePalette = (idx, valeur) => {
+    setFormCreerPalettes(function (prev) {
+      if (!prev) return prev;
+      var r = prev.repartition.slice();
+      r[idx] = Math.max(0, parseInt(valeur, 10) || 0);
+      return Object.assign({}, prev, { repartition: r });
+    });
+  };
+  const confirmerCreerPalettes = async () => {
+    if (!formCreerPalettes || formCreerPalettes.envoi) return;
+    var total = formCreerPalettes.repartition.reduce(function (a, q) { return a + q; }, 0);
+    if (total <= 0 || total > disponibleAReserver) {
+      setFormCreerPalettes(Object.assign({}, formCreerPalettes, { erreur: "La répartition doit couvrir entre 1 et " + disponibleAReserver.toLocaleString() + " u (disponible à réserver)." }));
+      return;
+    }
+    setFormCreerPalettes(Object.assign({}, formCreerPalettes, { envoi: true, erreur: "" }));
+    try {
+      var ids = await creerPalettesPourLot(lot, formCreerPalettes.repartition, formCreerPalettes.token, user, userData);
+      await rechargerPalettes();
+      var lotSnapFrais = await db.collection("qse_lots").doc(numeroLot).get();
+      if (lotSnapFrais.exists) setLot(Object.assign({ id: lotSnapFrais.id }, lotSnapFrais.data()));
+      setNouvellesPalettesCreees(ids);
+      setFormCreerPalettes(null);
+      setMsgAction(ids.length + " palette(s) créée(s).");
+    } catch (e) {
+      setFormCreerPalettes(Object.assign({}, formCreerPalettes, { envoi: false, erreur: e.message }));
+    }
+  };
+
   return (
     <div className="btp-modal-overlay" onClick={onClose}>
       <div className="btp-modal" style={{ maxWidth: 820, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
@@ -6602,6 +7462,7 @@ function FicheLot(props) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span className={"fichelot-statut " + statut.classe}>{statut.icone} {statut.label}</span>
+            <button className="btn btn-sm btn-ghost" onClick={() => setShowQR(true)}>📱 QR / Étiquette</button>
             {tracable && disponibleAReserver > 0 && (
               <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte({ quantite: "", motif: "", token: numeroLot + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) })}>📉 Déclarer une perte</button>
             )}
@@ -6827,6 +7688,67 @@ function FicheLot(props) {
 
         {tracable && (
           <div className="fichelot-section">
+            <h4>Palettes du lot ({palettes.length})</h4>
+            <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 10 }}>Subdivision physique du lot (point 31) : la quantité totale du lot reste la référence, les palettes n'en sont qu'une représentation détaillée pour le terrain.</p>
+            {palettes.length === 0 && !formCreerPalettes && (
+              <button className="btn btn-sm btn-primary" onClick={ouvrirCreerPalettes} disabled={disponibleAReserver <= 0}>📦 Créer des palettes</button>
+            )}
+            {palettes.length > 0 && (
+              <React.Fragment>
+                <table className="btp-table">
+                  <thead><tr><th>Palette</th><th>Initiale</th><th>Disponible</th><th>Emplacement</th><th></th></tr></thead>
+                  <tbody>
+                    {palettes.map(function (p) {
+                      return (
+                        <tr key={p.id}>
+                          <td><button className="btn btn-sm btn-ghost" onClick={() => setPaletteOuverte(p.paletteId)}>🏷️ {p.paletteId}</button></td>
+                          <td>{(p.quantiteInitiale || 0).toLocaleString()} u</td>
+                          <td style={{ fontWeight: 700, color: (p.disponibleCache || 0) > 0 ? "#2ecc71" : "var(--btp-text2)" }}>{(p.disponibleCache || 0).toLocaleString()} u</td>
+                          <td>{p.emplacement || "—"}</td>
+                          <td></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                  {disponibleAReserver > 0 && !formCreerPalettes && <button className="btn btn-sm btn-ghost" onClick={ouvrirCreerPalettes}>📦 Créer d'autres palettes</button>}
+                  <button className="btn btn-sm btn-ghost" onClick={() => setNouvellesPalettesCreees(palettes.map(function (p) { return p.paletteId; }))}>🖨️ Imprimer les étiquettes des palettes</button>
+                </div>
+              </React.Fragment>
+            )}
+            {formCreerPalettes && (
+              <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-blue)", flexDirection: "column", alignItems: "stretch", marginTop: 10 }}>
+                <strong style={{ marginBottom: 6 }}>📦 Créer des palettes ({disponibleAReserver.toLocaleString()} u disponibles à répartir)</strong>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
+                  <div>
+                    <label className="btp-label">Capacité par palette</label>
+                    <input type="number" min="1" className="btp-input" style={{ width: 120 }} value={formCreerPalettes.capacite} onChange={(e) => recalculerPropositionPalettes(e.target.value)} />
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--btp-text2)" }}>→ proposition : {formCreerPalettes.repartition.length} palette(s)</div>
+                </div>
+                {formCreerPalettes.repartition.map(function (q, idx) {
+                  return (
+                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
+                      <span style={{ flex: 1 }}>Palette {idx + 1}</span>
+                      <input type="number" min="0" className="btp-input" style={{ width: 90, textAlign: "right" }} value={q} onChange={(e) => modifierLignePalette(idx, e.target.value)} />
+                      <span style={{ color: "var(--btp-text2)" }}>u</span>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 4 }}>Total réparti : <strong>{formCreerPalettes.repartition.reduce(function (a, q) { return a + q; }, 0).toLocaleString()} u</strong></div>
+                {formCreerPalettes.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formCreerPalettes.erreur}</div>}
+                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                  <button className="btn btn-sm btn-success" onClick={confirmerCreerPalettes} disabled={formCreerPalettes.envoi}>{formCreerPalettes.envoi ? "Création…" : "Confirmer"}</button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setFormCreerPalettes(null)}>Annuler</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tracable && (
+          <div className="fichelot-section">
             <h4>Historique stock ({stockLot.mouvements.length})</h4>
             {stockLot.mouvements.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucun mouvement enregistré.</p> : (
               <div className="fichelot-timeline">
@@ -6847,6 +7769,358 @@ function FicheLot(props) {
           </div>
         )}
       </div>
+      {showQR && (
+        <ModaleQREtiquette titre={"Lot " + lot.numeroLot} type="lot" id={lot.numeroLot}
+          lignes={[
+            { label: "Type", valeur: produit.nom },
+            { label: "Date de production", valeur: lot.date || "—" },
+            { label: "Quantité initiale", valeur: (lot.quantite || 0).toLocaleString() + " u" },
+            { label: "Statut", valeur: statut.label }
+          ]}
+          onClose={() => setShowQR(false)} />
+      )}
+      {nouvellesPalettesCreees && (
+        <ModaleQREtiquettesLot titre={"Étiquettes palettes — Lot " + lot.numeroLot} type="palette"
+          items={nouvellesPalettesCreees.map(function (id) {
+            var p = palettes.find(function (x) { return x.paletteId === id; });
+            return { id: id, lignes: [{ label: "Lot", valeur: lot.numeroLot }, { label: "Type", valeur: produit.nom }, { label: "Quantité", valeur: p ? (p.quantiteInitiale || 0).toLocaleString() + " u" : "—" }] };
+          })}
+          onClose={() => setNouvellesPalettesCreees(null)} />
+      )}
+      {paletteOuverte && (
+        <FichePalette paletteId={paletteOuverte} user={user} userData={userData}
+          onClose={() => { setPaletteOuverte(null); rechargerPalettes(); }} />
+      )}
+    </div>
+  );
+}
+
+// Phase 7 (points 7/19) : fiche palette, symetrique de FicheLot mais a la granularite terrain —
+// c'est l'ecran qu'un magasinier voit juste apres un scan. Aucune nouvelle source de verite (point
+// 31) : tout est derive du meme grand livre (stock_mouvements filtre par paletteId) et des memes
+// stock_allocations (filtrees par paletteId) que le reste de l'application.
+function FichePalette(props) {
+  const paletteId = props.paletteId;
+  const user = props.user;
+  const userData = props.userData;
+  const onClose = props.onClose;
+
+  const [palette, setPalette] = React.useState(null);
+  const [lot, setLot] = React.useState(null);
+  const [controles, setControles] = React.useState([]);
+  const [ncs, setNcs] = React.useState([]);
+  const [mouvements, setMouvements] = React.useState([]);
+  const [allocations, setAllocations] = React.useState([]);
+  const [emplacements, setEmplacements] = React.useState([]);
+  const [commandesType, setCommandesType] = React.useState([]);
+  const [charge, setCharge] = React.useState(true);
+  const [erreur, setErreur] = React.useState("");
+  const [msgAction, setMsgAction] = React.useState("");
+  const [showQR, setShowQR] = React.useState(false);
+  const [lotOuvert, setLotOuvert] = React.useState(null);
+  const [formDeplacer, setFormDeplacer] = React.useState(null); // { emplacement }
+  const [formPerte, setFormPerte] = React.useState(null); // { quantite, motif, token }
+  const [formReserver, setFormReserver] = React.useState(null); // { commandeId, quantite, token }
+  const [formsLivraison, setFormsLivraison] = React.useState({}); // allocId -> { qte, token, envoi, msg }
+
+  const charger = React.useCallback(async () => {
+    setCharge(true); setErreur(""); setMsgAction("");
+    try {
+      const paletteSnap = await db.collection("stock_palettes").doc(paletteId).get();
+      if (!paletteSnap.exists) { setErreur("Palette introuvable : " + paletteId); setCharge(false); return; }
+      const paletteData = Object.assign({ id: paletteSnap.id }, paletteSnap.data());
+      const [lotSnap, mvtSnap, allocSnap, emplSnap] = await Promise.all([
+        db.collection("qse_lots").doc(paletteData.numeroLot).get(),
+        db.collection("stock_mouvements").where("paletteId", "==", paletteId).get(),
+        db.collection("stock_allocations").where("paletteId", "==", paletteId).get(),
+        db.collection("stock_palette_emplacements").where("paletteId", "==", paletteId).get()
+      ]);
+      var lotData = lotSnap.exists ? Object.assign({ id: lotSnap.id }, lotSnap.data()) : null;
+      var controlesArr = [], ncsArr = [];
+      if (lotData) {
+        const [controlesSnap, ncSnap] = await Promise.all([
+          db.collection("qse_controles").where("numeroLot", "==", lotData.numeroLot).get(),
+          db.collection("qse_nc").where("numeroLot", "==", lotData.numeroLot).get()
+        ]);
+        controlesArr = controlesSnap.docs.map(function (d) { return d.data(); });
+        ncsArr = ncSnap.docs.map(function (d) { return d.data(); });
+      }
+      const cmdSnap = paletteData.typeBTC ? await db.collection("commandes").where("type", "==", paletteData.typeBTC).where("status", "==", "Validee").get() : null;
+
+      setPalette(paletteData);
+      setLot(lotData);
+      setControles(controlesArr);
+      setNcs(ncsArr);
+      setMouvements(mvtSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+      setAllocations(allocSnap.docs.map(function (d) { return Object.assign({ id: d.id, _token: d.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) }, d.data()); }));
+      setEmplacements(emplSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }).sort(function (a, b) { return qseTsMs(b.date) - qseTsMs(a.date); }));
+      setCommandesType(cmdSnap ? cmdSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }) : []);
+    } catch (e) {
+      setErreur("Erreur de chargement : " + e.message);
+    } finally {
+      setCharge(false);
+    }
+  }, [paletteId]);
+
+  React.useEffect(() => { charger(); }, [charger]);
+
+  if (charge) {
+    return (
+      <div className="btp-modal-overlay" onClick={onClose}>
+        <div className="btp-modal" style={{ maxWidth: 260 }} onClick={(e) => e.stopPropagation()}>Chargement de la palette…</div>
+      </div>
+    );
+  }
+  if (erreur || !palette) {
+    return (
+      <div className="btp-modal-overlay" onClick={onClose}>
+        <div className="btp-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="btp-alert alert-error">⚠️ {erreur || "Palette introuvable."}</div>
+          <button className="btn btn-ghost btn-full" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    );
+  }
+
+  const produit = getProduit(palette.typeBTC);
+  const stockPalette = calculerStockPalette(paletteId, mouvements);
+  const disponible = palette.disponibleCache != null ? palette.disponibleCache : 0;
+  const reserveActif = allocations.filter(function (a) { return a.statut === "Reservee" || a.statut === "PartiellementLivree"; })
+    .reduce(function (a, al) { return a + Math.max(0, (al.quantiteReservee || 0) - (al.quantiteLivree || 0)); }, 0);
+  const livreTotal = allocations.reduce(function (a, al) { return a + (al.quantiteLivree || 0); }, 0);
+  const statutLot = lot ? qseStatutLot(lot, controles, ncs) : null;
+  const lotBloque = !!(lot && (lot.annule || (statutLot && statutLot.code === "bloque")));
+
+  // Point 19 : etat compose — bloque prime sur tout (point 27, jamais utilisable meme partiellement).
+  var etat;
+  if (lotBloque) etat = { label: "Bloquée — lot non conforme", classe: "statut-bloque", icone: "🔴" };
+  else if (stockPalette.restant <= 0) etat = { label: "Vide / livrée", classe: "statut-conforme", icone: "⚪" };
+  else if (reserveActif >= stockPalette.restant) etat = { label: "Réservée", classe: "statut-attention", icone: "📌" };
+  else if (reserveActif > 0) etat = { label: "Partielle (partiellement réservée)", classe: "statut-attention", icone: "🟡" };
+  else etat = { label: "Disponible", classe: "statut-conforme", icone: "🟢" };
+
+  const allocationsActives = allocations.filter(function (a) { return a.statut !== "Annulee"; });
+  const timeline = mouvements.slice().sort(function (a, b) { return qseTsMs(a.dateCreation) - qseTsMs(b.dateCreation); });
+
+  const soumettreDeplacement = async () => {
+    if (!formDeplacer) return;
+    try {
+      await deplacerPalette(paletteId, formDeplacer.emplacement || null, user, userData);
+      setFormDeplacer(null);
+      setMsgAction("Emplacement mis à jour.");
+      await charger();
+    } catch (e) { setMsgAction("Erreur : " + e.message); }
+  };
+
+  const soumettrePerte = async () => {
+    if (!formPerte || formPerte.envoi) return;
+    var qte = parseInt(formPerte.quantite, 10);
+    if (!qte || qte <= 0) { setFormPerte(Object.assign({}, formPerte, { erreur: "Quantité invalide." })); return; }
+    setFormPerte(Object.assign({}, formPerte, { envoi: true, erreur: "" }));
+    try {
+      await declarerPerteLot(palette.numeroLot, palette.typeBTC, qte, formPerte.motif || "", formPerte.token, user, userData, paletteId);
+      setFormPerte(null);
+      setMsgAction("Perte de " + qte + " u enregistrée sur la palette.");
+      await charger();
+    } catch (e) { setFormPerte(Object.assign({}, formPerte, { envoi: false, erreur: e.message })); }
+  };
+
+  const soumettreReservation = async () => {
+    if (!formReserver || formReserver.envoi) return;
+    var cmd = commandesType.find(function (c) { return c.id === formReserver.commandeId; });
+    if (!cmd) { setFormReserver(Object.assign({}, formReserver, { erreur: "Choisissez une commande." })); return; }
+    var qte = parseInt(formReserver.quantite, 10);
+    if (!qte || qte <= 0 || qte > disponible) { setFormReserver(Object.assign({}, formReserver, { erreur: "Quantité invalide." })); return; }
+    setFormReserver(Object.assign({}, formReserver, { envoi: true, erreur: "" }));
+    try {
+      await reserverCommandeStock(cmd, [{ numeroLot: palette.numeroLot, paletteId: paletteId, quantite: qte }], formReserver.token, user, userData);
+      setFormReserver(null);
+      setMsgAction("Réservation enregistrée pour la commande " + (cmd.numBC || cmd.id) + ".");
+      await charger();
+    } catch (e) { setFormReserver(Object.assign({}, formReserver, { envoi: false, erreur: e.message })); }
+  };
+
+  const livrerAlloc = async (alloc) => {
+    var etatForm = formsLivraison[alloc.id] || {};
+    var reste = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
+    var qte = parseInt(etatForm.qte, 10) || reste;
+    if (qte > reste) qte = reste;
+    setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: Object.assign({}, etatForm, { envoi: true }) }); });
+    try {
+      await livrerReservation(alloc, qte, alloc._token, user, userData);
+      setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: { envoi: false, msg: "✅ Livré." } }); });
+      await charger();
+    } catch (e) {
+      setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: Object.assign({}, etatForm, { envoi: false, msg: "❌ " + e.message }) }); });
+    }
+  };
+
+  return (
+    <div className="btp-modal-overlay" onClick={onClose}>
+      <div className="btp-modal" style={{ maxWidth: 720, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div className="fichelot-header">
+          <div>
+            <div className="btp-modal-title" style={{ marginBottom: 4 }}>📦 Palette {palette.paletteId}</div>
+            <div style={{ fontSize: 13, color: "var(--btp-text2)" }}>{produit.nom} <span style={{ color: "var(--btp-orange)" }}>({produit.dim})</span></div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span className={"fichelot-statut " + etat.classe}>{etat.icone} {etat.label}</span>
+            <button className="btn btn-sm btn-ghost" onClick={() => setShowQR(true)}>📱 QR / Étiquette</button>
+            <button className="btn btn-sm btn-ghost" onClick={onClose}>✕ Fermer</button>
+          </div>
+        </div>
+
+        {lotBloque && (
+          <div className="fichelot-anomalies">
+            <h4>🚫 Palette non utilisable — lot bloqué (non conforme ou non-conformité ouverte)</h4>
+          </div>
+        )}
+
+        <div className="fichelot-grid">
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Quantité initiale</div><div className="fichelot-fait-valeur">{(palette.quantiteInitiale || 0).toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Restante (physique)</div><div className="fichelot-fait-valeur">{stockPalette.restant.toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Réservée</div><div className="fichelot-fait-valeur" style={{ color: "#5DADE2" }}>{reserveActif.toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Livrée</div><div className="fichelot-fait-valeur">{livreTotal.toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Disponible à réserver</div><div className="fichelot-fait-valeur" style={{ color: "#2ecc71" }}>{disponible.toLocaleString()} u</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Lot</div><div className="fichelot-fait-valeur"><button className="btn btn-sm btn-ghost" onClick={() => setLotOuvert(palette.numeroLot)}>🏷️ {palette.numeroLot}</button></div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Qualité (statut du lot)</div><div className="fichelot-fait-valeur">{statutLot ? (statutLot.icone + " " + statutLot.label) : "—"}</div></div>
+          <div className="fichelot-fait"><div className="fichelot-fait-label">Emplacement</div><div className="fichelot-fait-valeur">{palette.emplacement || "Non renseigné"}</div></div>
+        </div>
+
+        {/* Actions contextuelles (point 7) : seulement celles reellement possibles */}
+        <div className="fichelot-action" style={{ flexWrap: "wrap", gap: 8 }}>
+          {!lotBloque && disponible > 0 && !formReserver && (
+            <button className="btn btn-sm btn-primary" onClick={() => setFormReserver({ commandeId: "", quantite: String(disponible), token: paletteId + "_res_" + Date.now() + "_" + Math.random().toString(36).slice(2), erreur: "" })}>📌 Réserver</button>
+          )}
+          {!lotBloque && disponible > 0 && !formPerte && (
+            <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte({ quantite: "", motif: "", token: paletteId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2) })}>📉 Déclarer une perte</button>
+          )}
+          <button className="btn btn-sm btn-ghost" onClick={() => setFormDeplacer({ emplacement: palette.emplacement || "" })}>📍 Déplacer</button>
+          <button className="btn btn-sm btn-ghost" onClick={() => setLotOuvert(palette.numeroLot)}>👁️ Voir le lot</button>
+          {msgAction && <div style={{ width: "100%", fontSize: 12, color: "var(--btp-green)", marginTop: 6 }}>{msgAction}</div>}
+        </div>
+
+        {formDeplacer && (
+          <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-blue)", flexDirection: "column", alignItems: "stretch" }}>
+            <strong style={{ marginBottom: 6 }}>📍 Déplacer la palette</strong>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input className="btp-input" style={{ flex: 1, minWidth: 180 }} placeholder="Ex: Zone A, Rack B-03, Extérieur 2"
+                value={formDeplacer.emplacement} onChange={(e) => setFormDeplacer({ emplacement: e.target.value })} />
+              <button className="btn btn-sm btn-success" onClick={soumettreDeplacement}>Enregistrer</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setFormDeplacer(null)}>Annuler</button>
+            </div>
+          </div>
+        )}
+
+        {formPerte && (
+          <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-red)", flexDirection: "column", alignItems: "stretch" }}>
+            <strong style={{ marginBottom: 6 }}>📉 Déclarer une perte sur cette palette (max {disponible.toLocaleString()} u)</strong>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div>
+                <label className="btp-label">Quantité perdue</label>
+                <input type="number" min="1" max={disponible} className="btp-input" style={{ width: 120 }} value={formPerte.quantite} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { quantite: e.target.value }))} />
+              </div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <label className="btp-label">Motif</label>
+                <input className="btp-input" placeholder="Ex: casse au déchargement" value={formPerte.motif} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { motif: e.target.value }))} />
+              </div>
+              <button className="btn btn-sm btn-danger" onClick={soumettrePerte} disabled={formPerte.envoi}>{formPerte.envoi ? "Enregistrement…" : "Confirmer la perte"}</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte(null)}>Annuler</button>
+            </div>
+            {formPerte.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formPerte.erreur}</div>}
+          </div>
+        )}
+
+        {formReserver && (
+          <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-blue)", flexDirection: "column", alignItems: "stretch" }}>
+            <strong style={{ marginBottom: 6 }}>📌 Réserver cette palette pour une commande</strong>
+            {commandesType.length === 0 ? <div style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucune commande validée en attente pour ce type de BTC.</div> : (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <label className="btp-label">Commande</label>
+                  <select className="btp-input" value={formReserver.commandeId} onChange={(e) => setFormReserver(Object.assign({}, formReserver, { commandeId: e.target.value }))}>
+                    <option value="">— Choisir —</option>
+                    {commandesType.map(function (c) { return <option key={c.id} value={c.id}>{(c.numBC || c.id) + " · " + (c.chantierNom || c.client || "-")}</option>; })}
+                  </select>
+                </div>
+                <div>
+                  <label className="btp-label">Quantité</label>
+                  <input type="number" min="1" max={disponible} className="btp-input" style={{ width: 100 }} value={formReserver.quantite} onChange={(e) => setFormReserver(Object.assign({}, formReserver, { quantite: e.target.value }))} />
+                </div>
+                <button className="btn btn-sm btn-success" onClick={soumettreReservation} disabled={formReserver.envoi}>{formReserver.envoi ? "…" : "Confirmer"}</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => setFormReserver(null)}>Annuler</button>
+              </div>
+            )}
+            {formReserver.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formReserver.erreur}</div>}
+          </div>
+        )}
+
+        {allocationsActives.length > 0 && (
+          <div className="fichelot-section">
+            <h4>Commande{allocationsActives.length > 1 ? "s" : ""} ({allocationsActives.length})</h4>
+            {allocationsActives.map(function (a) {
+              var reste = (a.quantiteReservee || 0) - (a.quantiteLivree || 0);
+              var etatForm = formsLivraison[a.id] || {};
+              var libelles = { Reservee: "📌 Réservée", PartiellementLivree: "🚚 Partiellement livrée", Livree: "✅ Livrée" };
+              return (
+                <div key={a.id} style={{ background: "var(--btp-card2)", borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 13 }}>
+                  <div>{a.chantierNom || "—"} — réservé {(a.quantiteReservee || 0).toLocaleString()} u, livré {(a.quantiteLivree || 0).toLocaleString()} u ({libelles[a.statut] || a.statut})</div>
+                  {reste > 0 && !lotBloque && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, color: "var(--btp-text2)" }}>Préparer livraison :</span>
+                      <input type="number" min="1" max={reste} placeholder={String(reste)} style={{ width: 80, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--btp-border)", textAlign: "right" }}
+                        value={etatForm.qte || ""} onChange={(e) => setFormsLivraison(function (prev) { return Object.assign({}, prev, { [a.id]: Object.assign({}, etatForm, { qte: e.target.value }) }); })} />
+                      <button className="btn btn-sm" style={{ background: "#1E8449", color: "white" }} onClick={() => livrerAlloc(a)} disabled={etatForm.envoi}>🚚 Confirmer livraison</button>
+                      {etatForm.msg && <span style={{ fontSize: 11 }}>{etatForm.msg}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="fichelot-section">
+          <h4>Historique ({timeline.length + emplacements.length + 1})</h4>
+          <div className="fichelot-timeline">
+            <div className="fichelot-tl-item tl-ok"><div><div className="fichelot-tl-titre">📦 Création de la palette</div><div className="fichelot-tl-detail">{palette.dateCreation && qseTsMs(palette.dateCreation) ? new Date(qseTsMs(palette.dateCreation)).toLocaleDateString("fr-FR") : "—"} · {(palette.quantiteInitiale || 0).toLocaleString()} u · {palette.creePar || "—"}</div></div></div>
+            {timeline.map(function (m) {
+              var cls = m.quantite >= 0 ? "tl-ok" : "tl-bad";
+              var libelles = { SORTIE_LIVRAISON: "🚚 Livraison", PERTE: "📉 Perte", ANNULATION_LIVRAISON: "↩️ Annulation livraison" };
+              return (
+                <div key={m.id} className={"fichelot-tl-item " + cls}>
+                  <div>
+                    <div className="fichelot-tl-titre">{libelles[m.type] || m.type} — {m.quantite > 0 ? "+" : ""}{m.quantite.toLocaleString()} u</div>
+                    <div className="fichelot-tl-detail">{qseTsMs(m.dateCreation) ? new Date(qseTsMs(m.dateCreation)).toLocaleDateString("fr-FR") : "—"} · {m.utilisateur || "—"}{m.commentaire ? (" · " + m.commentaire) : ""}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {emplacements.map(function (e) {
+              return (
+                <div key={e.id} className="fichelot-tl-item tl-ok">
+                  <div>
+                    <div className="fichelot-tl-titre">📍 Déplacement : {e.ancienEmplacement || "(non renseigné)"} → {e.nouvelEmplacement || "(non renseigné)"}</div>
+                    <div className="fichelot-tl-detail">{qseTsMs(e.date) ? new Date(qseTsMs(e.date)).toLocaleDateString("fr-FR") : "—"} · {e.utilisateur || "—"}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {showQR && (
+        <ModaleQREtiquette titre={"Palette " + palette.paletteId} type="palette" id={palette.paletteId}
+          lignes={[
+            { label: "Lot", valeur: palette.numeroLot },
+            { label: "Type", valeur: produit.nom },
+            { label: "Quantité", valeur: (palette.quantiteInitiale || 0).toLocaleString() + " u" }
+          ]}
+          onClose={() => setShowQR(false)} />
+      )}
+      {lotOuvert && (
+        <FicheLot numeroLot={lotOuvert} user={user} userData={userData} onClose={() => { setLotOuvert(null); charger(); }} />
+      )}
     </div>
   );
 }
@@ -6960,6 +8234,28 @@ function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Phase 7 (point 18) : capture la destination demandee par l'URL (?lot=... ou ?palette=...) UNE
+  // SEULE FOIS au chargement, avant toute authentification. Comme ce state n'est jamais recalcule
+  // depuis l'URL ensuite, il survit intact a l'ecran de connexion : apres login, App() se re-rend
+  // avec user/userData renseignes et deepLink toujours present -> la fiche s'ouvre automatiquement.
+  const [deepLink, setDeepLink] = React.useState(function () {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var lot = params.get("lot");
+      var palette = params.get("palette");
+      if (lot) return { type: "lot", id: lot };
+      if (palette) return { type: "palette", id: palette };
+    } catch (e) {}
+    return null;
+  });
+  const fermerDeepLink = function () {
+    setDeepLink(null);
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.delete("lot"); url.searchParams.delete("palette");
+      window.history.replaceState({}, "", url.pathname + (url.search || "") + url.hash);
+    } catch (e) {}
+  };
 
   useEffect(() => {
     var unsub = auth.onAuthStateChanged(async (u) => {
@@ -6988,7 +8284,7 @@ function App() {
     </div>
   );
 
-    if (!user) return <Login />;
+    if (!user) return <Login destinationEnAttente={deepLink} />;
   if (!userData) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{textAlign:"center",color:"var(--btp-text2)"}}><div style={{fontSize:40}}>⏳</div><p>Chargement...</p></div>
@@ -6996,11 +8292,19 @@ function App() {
   );
 
   var role = userData.role ? userData.role.trim().toLowerCase() : "";
-  if (role==="direction") return <DashboardDirection user={user} userData={userData} />;
-  if (role==="chef_chantier") return <DashboardChef user={user} userData={userData} />;
-  if (role==="resp_stock") return <DashboardStock user={user} userData={userData} />;
-  if (role==="resp_production") return <DashboardProduction user={user} userData={userData} />;
-  if (role==="comptable") return <DashboardComptable user={user} userData={userData} />;
+  // Phase 7 (point 18) : la fiche demandee par l'URL s'affiche par-dessus le tableau de bord du
+  // role, quel qu'il soit, une fois l'utilisateur authentifie et son role connu.
+  var ficheDeepLink = deepLink && (
+    deepLink.type === "lot"
+      ? <FicheLot numeroLot={deepLink.id} user={user} userData={userData} onClose={fermerDeepLink} />
+      : <FichePalette paletteId={deepLink.id} user={user} userData={userData} onClose={fermerDeepLink} onOuvrirLot={function (numeroLot) { setDeepLink({ type: "lot", id: numeroLot }); }} />
+  );
+
+  if (role==="direction") return <React.Fragment><DashboardDirection user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
+  if (role==="chef_chantier") return <React.Fragment><DashboardChef user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
+  if (role==="resp_stock") return <React.Fragment><DashboardStock user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
+  if (role==="resp_production") return <React.Fragment><DashboardProduction user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
+  if (role==="comptable") return <React.Fragment><DashboardComptable user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,var(--btp-dark),var(--btp-navy))"}}>
