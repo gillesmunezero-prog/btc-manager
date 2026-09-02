@@ -2,8 +2,17 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>BTC Manager - Terre et Eau</title>
+<meta name="description" content="Gestion de stock, production et QSE — Terre et Eau">
+<meta name="theme-color" content="#0D1B2A">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BTC Manager">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -452,6 +461,64 @@ input,select,textarea,button{font-family:inherit;}
 .priorite-jour-ok{display:flex;align-items:center;gap:8px;background:rgba(29,185,84,.1);
   border:1px solid rgba(29,185,84,.3);border-left:4px solid var(--btp-green);border-radius:var(--btp-radius);
   padding:14px 20px;margin-bottom:20px;color:#2ecc71;font-weight:700;font-size:13px;}
+/* Phase 8 (point 25) : "Mode Aujourd'hui" — mêmes puces que priorite-jour-item, regroupées par niveau. */
+.mode-aujourdhui{display:flex;flex-direction:column;gap:14px;}
+.mode-aujourdhui-groupe{display:flex;flex-direction:column;gap:6px;}
+.mode-aujourdhui-titre{font-size:12px;font-weight:800;color:var(--btp-text2);text-transform:uppercase;letter-spacing:.5px;}
+.mode-aujourdhui .priorite-jour-item{width:100%;box-sizing:border-box;text-align:left;justify-content:flex-start;}
+.mode-aujourdhui-plus{font-size:12px;color:var(--btp-text2);font-style:italic;}
+
+/* Phase 8 — indicateur de connexion (point 6) : petit badge discret, coin superieur droit, jamais
+   une grosse banniere. Reste visible en permanence (etat "En ligne" compris), change juste de ton. */
+.btp-indicateur-connexion{position:fixed;top:8px;right:10px;z-index:2000;display:flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:14px;font-size:11px;font-weight:700;pointer-events:none;
+  background:rgba(13,27,42,.72);color:var(--btp-text2);backdrop-filter:blur(2px);
+  transition:background .3s,color .3s;}
+.btp-indicateur-connexion.en-ligne{color:#9fd8b0;}
+.btp-indicateur-connexion.hors-ligne{background:rgba(192,57,43,.85);color:#fff;}
+.btp-indicateur-point{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;}
+.btp-indicateur-connexion.en-ligne .btp-indicateur-point{box-shadow:0 0 4px #2ECC71;background:#2ECC71;}
+.btp-indicateur-connexion.hors-ligne .btp-indicateur-point{background:#fff;}
+@media (max-width:480px){ .btp-indicateur-connexion{top:auto;bottom:8px;right:8px;font-size:10px;} }
+
+/* Bandeau mise a jour (point 4) et invitation installation PWA (point 34) : discrets, en haut,
+   n'empechent jamais l'usage du reste de l'ecran en dessous. */
+.btp-bandeau-maj{position:fixed;top:0;left:0;right:0;z-index:2100;display:flex;align-items:center;
+  justify-content:center;gap:14px;background:var(--btp-gold);color:#1a1200;font-weight:700;font-size:13px;
+  padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.25);}
+.btp-bandeau-maj button{background:#1a1200;color:#fff;border:none;padding:6px 14px;border-radius:8px;
+  font-weight:800;cursor:pointer;font-size:12px;}
+.btp-bandeau-install{position:fixed;left:12px;right:12px;bottom:12px;z-index:1900;display:flex;
+  align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  background:var(--btp-card);border:1px solid var(--btp-border);border-left:4px solid var(--btp-orange);
+  border-radius:12px;padding:12px 16px;box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:13px;color:var(--btp-text);}
+.btp-bandeau-install button{background:var(--btp-orange);color:#1a1200;border:none;padding:7px 16px;
+  border-radius:8px;font-weight:800;cursor:pointer;font-size:12px;}
+.btp-bandeau-install-plustard{background:transparent!important;color:var(--btp-text2)!important;font-weight:600!important;}
+
+/* Phase 8 — barre de navigation basse (point 17), mobile uniquement. */
+.btp-bottomnav{display:none;}
+@media (max-width:640px){
+  .btp-bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:1500;
+    background:var(--btp-navy);border-top:1px solid var(--btp-border);
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px rgba(0,0,0,.3);}
+  .btp-bottomnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+    background:none;border:none;color:var(--btp-text2);padding:6px 4px;cursor:pointer;font-family:inherit;}
+  .btp-bottomnav-icone{font-size:20px;}
+  .btp-bottomnav-label{font-size:10px;font-weight:700;}
+  .btp-content{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));}
+
+  /* Phase 8 (point 41) : le header desktop suppose que tout tient sur une seule ligne de 64px —
+     avec la recherche universelle desormais presente sur tous les roles (point 22), ca deborde sur
+     petit ecran. On autorise le passage a la ligne uniquement en dessous de 640px, sans toucher au
+     rendu desktop/Direction. */
+  .btp-header{height:auto;flex-wrap:wrap;row-gap:8px;padding:10px 14px;}
+  .btp-header-right{flex-wrap:wrap;justify-content:flex-end;row-gap:8px;}
+}
+
+/* Compteur de notifications (point 24) — pastille discrete a cote de l'action principale. */
+.btp-badge-compteur{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;
+  padding:0 6px;border-radius:11px;background:var(--btp-red);color:#fff;font-size:12px;font-weight:800;}
 
 /* ============ MODULE QSE (homogeneisation visuelle avec le reste de l'appli) ============ */
 .qse-module{display:flex;flex-direction:column;gap:18px;}
@@ -632,6 +699,204 @@ const FIREBASE_CONFIG = {
 if (!firebase.apps.length) { firebase.initializeApp(FIREBASE_CONFIG); }
 const auth = firebase.auth();
 const db = firebase.firestore();
+// Persistance locale (IndexedDB) : permet a Firestore de repondre aux lectures (.get()/onSnapshot)
+// depuis le cache local quand le reseau est coupe, y compris apres un rechargement/relance de la
+// PWA — c'est le mecanisme natif qui rend la "consultation hors ligne" (Phase 8, points 8/9)
+// possible sans construire de couche de cache maison. Echoue silencieusement si plusieurs onglets
+// sont ouverts ou si le navigateur ne supporte pas IndexedDB : dans ce cas, l'app continue de
+// fonctionner normalement, simplement sans persistance longue duree (best-effort, jamais bloquant).
+try { db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
+
+// ============================================================================================
+// PHASE 8 — Infrastructure partagee : version d'app, etat de connexion reel, execution harmonisee
+// des operations critiques (jamais de confirmation avant que Firestore ait reellement repondu),
+// mise a jour du service worker, invite d'installation PWA, "recents" locaux. Regroupe ici pour que
+// chaque composant du reste du fichier puisse s'y brancher sans dupliquer de logique.
+// ============================================================================================
+const APP_VERSION = "8.0.0";
+
+// Verrou anti-double-declenchement partage entre TOUS les composants (module-level, pas de state
+// React) : protege meme si deux boutons/chemins UI differents tentaient la meme operation logique
+// en meme temps (ex: clic + touche Entree). Cle libre, choisie par l'appelant (point 12).
+var VERROUS_OPERATIONS_EN_COURS = {};
+
+// Contexte de connectivite (point 6/9) : navigator.onLine donne l'etat de l'interface reseau
+// (rapide mais peu fiable — un wifi capture, par exemple, reste "online"), affine par un vrai
+// signal Firestore : le document utilisateur courant est ecoute avec includeMetadataChanges, et
+// snapshot.metadata.fromCache indique si la derniere reponse vient reellement du serveur ou du
+// cache local. Un seul listener leger, mutualise pour toute l'application (pas un ecouteur de plus
+// par composant), qui alimente aussi "derniere synchro" pour le panneau diagnostic (point 33).
+const ConnexionContext = React.createContext({ enLigne: true, firestoreOK: true, derniereSync: null });
+function useConnexion() { return React.useContext(ConnexionContext); }
+
+function ConnexionProvider({ children }) {
+  const [enLigneBrut, setEnLigneBrut] = React.useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [firestoreOK, setFirestoreOK] = React.useState(true);
+  const [derniereSync, setDerniereSync] = React.useState(null);
+  const [uid, setUid] = React.useState(auth.currentUser ? auth.currentUser.uid : null);
+
+  React.useEffect(() => {
+    const surEnLigne = () => setEnLigneBrut(true);
+    const surHorsLigne = () => setEnLigneBrut(false);
+    window.addEventListener("online", surEnLigne);
+    window.addEventListener("offline", surHorsLigne);
+    return () => { window.removeEventListener("online", surEnLigne); window.removeEventListener("offline", surHorsLigne); };
+  }, []);
+
+  React.useEffect(() => auth.onAuthStateChanged(function (u) { setUid(u ? u.uid : null); }), []);
+
+  React.useEffect(() => {
+    if (!uid) { setFirestoreOK(true); return; }
+    var annule = false;
+    var unsub = db.collection("users").doc(uid).onSnapshot({ includeMetadataChanges: true }, function (snap) {
+      if (annule) return;
+      var depuisCache = snap.metadata.fromCache;
+      setFirestoreOK(!depuisCache);
+      if (!depuisCache) setDerniereSync(new Date());
+    }, function () { if (!annule) setFirestoreOK(false); });
+    return function () { annule = true; unsub(); };
+  }, [uid]);
+
+  // "Reellement joignable" = les deux signaux d'accord ; si l'un des deux dit non, on prefere le
+  // faux negatif (indicateur "hors ligne" affiche a tort) au faux positif (jamais de "en ligne"
+  // affiche a tort — c'est la propriete qui protege des confirmations d'ecriture erronees).
+  var enLigne = enLigneBrut && firestoreOK;
+  var valeur = React.useMemo(function () {
+    return { enLigne: enLigne, enLigneBrut: enLigneBrut, firestoreOK: firestoreOK, derniereSync: derniereSync };
+  }, [enLigne, enLigneBrut, firestoreOK, derniereSync]);
+  return <ConnexionContext.Provider value={valeur}>{children}</ConnexionContext.Provider>;
+}
+
+// Execution harmonisee d'une operation Firestore critique (points 7/8/11/12/13). N'affiche JAMAIS
+// de succes avant que la promesse ait reellement abouti ; refuse immediatement et clairement si
+// hors ligne (aucune tentative) ; signale une connexion lente sans jamais relancer l'operation tout
+// seul ; protege contre le double-declenchement via VERROUS_OPERATIONS_EN_COURS.
+// options: { cle, enLigne, setStatut(fn), operation:()=>Promise, texteEnCours, texteSucces(res)|string, texteHorsLigne, onSuccess, onError }
+// setStatut recoit toujours un objet { etat: 'encours'|'succes'|'echec', texte }.
+function executerOperationCritique(options) {
+  var cle = options.cle || ("op_" + Math.random());
+  var setStatut = options.setStatut || function () {};
+  if (VERROUS_OPERATIONS_EN_COURS[cle]) {
+    return Promise.reject(new Error("Une opération est déjà en cours pour cette action."));
+  }
+  if (options.enLigne === false) {
+    setStatut({ etat: "echec", texte: options.texteHorsLigne || "🚫 Connexion requise — action impossible hors connexion." });
+    return Promise.reject(new Error("hors_ligne"));
+  }
+  VERROUS_OPERATIONS_EN_COURS[cle] = true;
+  var texteBase = options.texteEnCours || "Enregistrement...";
+  setStatut({ etat: "encours", texte: texteBase });
+  var lent = setTimeout(function () {
+    setStatut({ etat: "encours", texte: texteBase + " · Connexion lente — toujours en cours." });
+  }, 4000);
+  function terminer() { delete VERROUS_OPERATIONS_EN_COURS[cle]; clearTimeout(lent); }
+  return options.operation().then(function (resultat) {
+    terminer();
+    var texteSucces = typeof options.texteSucces === "function" ? options.texteSucces(resultat) : (options.texteSucces || "✓ Opération enregistrée.");
+    setStatut({ etat: "succes", texte: texteSucces });
+    if (options.onSuccess) options.onSuccess(resultat);
+    return resultat;
+  }, function (e) {
+    terminer();
+    setStatut({ etat: "echec", texte: "❌ Échec de l'enregistrement — aucune modification confirmée. (" + (e && e.message ? e.message : "erreur") + ")" });
+    if (options.onError) options.onError(e);
+    throw e;
+  });
+}
+
+// Enregistrement du service worker + detection de nouvelle version (points 3/4/5). Le service
+// worker reste passif tant qu'aucune nouvelle version n'est installee ; des qu'une nouvelle version
+// est PRETE (installee, en attente), on le signale via `disponible` sans jamais rafraichir tout
+// seul — c'est l'utilisateur qui declenche `actualiser()` (bouton "Nouvelle version — Actualiser"),
+// pour ne jamais interrompre une saisie ou une operation en cours.
+function useMiseAJourServiceWorker() {
+  const [disponible, setDisponible] = React.useState(false);
+  const attenteRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    var annule = false;
+    navigator.serviceWorker.register("sw.js").then(function (reg) {
+      if (annule || !reg) return;
+      function verifierAttente() {
+        if (reg.waiting && navigator.serviceWorker.controller) { attenteRef.current = reg.waiting; setDisponible(true); }
+      }
+      verifierAttente();
+      reg.addEventListener("updatefound", function () {
+        var nouveau = reg.installing;
+        if (!nouveau) return;
+        nouveau.addEventListener("statechange", function () {
+          if (nouveau.state === "installed" && navigator.serviceWorker.controller) {
+            attenteRef.current = nouveau; setDisponible(true);
+          }
+        });
+      });
+    }).catch(function () {});
+    // Au tout premier chargement (aucun service worker n'a encore jamais controle cette page),
+    // clients.claim() dans sw.js declenche AUSSI un "controllerchange" des l'activation initiale —
+    // ce n'est pas une nouvelle version qui remplace une version active, juste la toute premiere
+    // prise de controle. On ne recharge que si un controleur existait DEJA avant cet evenement,
+    // signe qu'un service worker actif vient reellement d'etre remplace par une version plus recente.
+    var controleurInitial = navigator.serviceWorker.controller;
+    var dejaRecharge = false;
+    var surChangementControleur = function () {
+      if (!controleurInitial) { controleurInitial = navigator.serviceWorker.controller; return; }
+      if (dejaRecharge) return; dejaRecharge = true; window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", surChangementControleur);
+    return function () { annule = true; navigator.serviceWorker.removeEventListener("controllerchange", surChangementControleur); };
+  }, []);
+  const actualiser = function () { if (attenteRef.current) attenteRef.current.postMessage({ type: "SKIP_WAITING" }); };
+  return { disponible: disponible, actualiser: actualiser };
+}
+
+// Invite d'installation PWA (point 34) : Chrome/Edge Android emettent "beforeinstallprompt" ; on le
+// capture pour proposer NOTRE bouton discret plutot que le mini-popup natif imprevisible, et on
+// respecte un refus (pas de re-proposition avant 7 jours, memorise en localStorage — jamais de
+// donnee critique dans ce stockage, juste une preference d'affichage, point 44/19).
+function useInvitationInstallationPWA() {
+  const [evenement, setEvenement] = React.useState(null);
+  const [installee, setInstallee] = React.useState(function () {
+    try { return window.matchMedia && window.matchMedia("(display-mode: standalone)").matches; } catch (e) { return false; }
+  });
+  React.useEffect(() => {
+    var surPrompt = function (e) { e.preventDefault(); setEvenement(e); };
+    var surInstalle = function () { setInstallee(true); setEvenement(null); };
+    window.addEventListener("beforeinstallprompt", surPrompt);
+    window.addEventListener("appinstalled", surInstalle);
+    return function () { window.removeEventListener("beforeinstallprompt", surPrompt); window.removeEventListener("appinstalled", surInstalle); };
+  }, []);
+  var refusRecent = function () {
+    try {
+      var t = localStorage.getItem("btc_install_refuse_le");
+      return t && (Date.now() - parseInt(t, 10)) < 7 * 24 * 3600 * 1000;
+    } catch (e) { return false; }
+  };
+  const proposer = !installee && !!evenement && !refusRecent();
+  const installer = async function () {
+    if (!evenement) return;
+    try { await evenement.prompt(); await evenement.userChoice; } catch (e) {}
+    setEvenement(null);
+  };
+  const refuser = function () {
+    try { localStorage.setItem("btc_install_refuse_le", String(Date.now())); } catch (e) {}
+    setEvenement(null);
+  };
+  return { proposer: proposer, installer: installer, refuser: refuser };
+}
+
+// "Recents" locaux (point 19) : uniquement un confort de navigation, jamais une donnee fiable pour
+// une decision de stock — juste des raccourcis vers les dernieres fiches consultees.
+function ajouterRecent(type, id, libelle) {
+  try {
+    var liste = JSON.parse(localStorage.getItem("btc_recents") || "[]");
+    liste = liste.filter(function (r) { return !(r.type === type && r.id === id); });
+    liste.unshift({ type: type, id: id, libelle: libelle || id, ts: Date.now() });
+    localStorage.setItem("btc_recents", JSON.stringify(liste.slice(0, 8)));
+  } catch (e) {}
+}
+function lireRecents() {
+  try { return JSON.parse(localStorage.getItem("btc_recents") || "[]"); } catch (e) { return []; }
+}
 
 // CATALOGUE COMPLET TERRE ET EAU
 const CATALOGUE = [
@@ -769,7 +1034,10 @@ function trierPriorites(liste) {
 var PRIORITES_PAR_ROLE = {
   resp_production: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "lot_pret", "lot_pret_groupe", "lot_bientot_mature", "controle_retard", "controle_retard_groupe", "lot_sans_controle", "lot_sans_controle_groupe"],
   qualite: ["controle_retard", "controle_retard_groupe", "lot_pret", "lot_pret_groupe", "lot_sans_controle", "lot_sans_controle_groupe", "nc_bloquante", "nc_bloquante_groupe", "nc_echeance", "nc_echeance_groupe", "nc_recurrente"],
-  chef_chantier: ["commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe", "commande_a_valider", "commande_a_valider_groupe"]
+  chef_chantier: ["commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe", "commande_a_valider", "commande_a_valider_groupe"],
+  // Phase 8 (point 21) : le Responsable Stock voit son propre perimetre operationnel — l'etat du
+  // stock et les commandes a reserver/livrer — jamais les alertes QSE/production qui ne le concernent pas.
+  resp_stock: ["stock_bas", "stock_bas_groupe", "stock_incoherent", "stock_proche_seuil", "stock_proche_seuil_groupe", "commande_reservation_insuffisante", "commande_reservation_insuffisante_groupe", "commande_validee_sans_reservation", "commande_validee_sans_reservation_groupe", "commande_prete_a_livrer", "commande_prete_a_livrer_groupe"]
 };
 function filtrerPrioritesParRole(liste, role) {
   var autorises = PRIORITES_PAR_ROLE[role];
@@ -1119,6 +1387,56 @@ function PrioriteDuJour({ donnees, ouvrirObjet, role }) {
           {voirTout ? "Réduire" : "Voir tout (" + toutes.length + ")"}
         </button>
       )}
+    </div>
+  );
+}
+
+// Hook partage : nombre de priorites pertinentes pour un role, pour alimenter un badge de
+// notification ("À faire (3)") sans recalculer/dupliquer la logique de filtrage (Phase 8, point 24 —
+// les notifications viennent du moteur de priorites, pas d'une logique parallele).
+function useCompteurPriorites(donnees, role) {
+  return React.useMemo(function () {
+    return filtrerPrioritesParRole(calculerPrioritesOperationnelles(donnees), role).length;
+  }, [donnees, role]);
+}
+
+// "Mode Aujourd'hui" (Phase 8, point 25) : vue minimaliste pour les roles operationnels — regroupe
+// les MEMES priorites (aucune deuxieme logique) en 3 blocs de lecture immediate, 7 elements maximum
+// au total pour rester lisible sur un ecran de telephone. Reutilise volontairement les niveaux deja
+// calcules (critique/important/info) plutot que d'inventer une nouvelle classification.
+function ModeAujourdhui({ donnees, ouvrirObjet, role }) {
+  var toutes = React.useMemo(function () {
+    return filtrerPrioritesParRole(calculerPrioritesOperationnelles(donnees), role);
+  }, [donnees, role]);
+  if (toutes.length === 0) {
+    return <div className="priorite-jour-ok">🟢 Rien d'urgent aujourd'hui — votre périmètre est à jour.</div>;
+  }
+  var MAX_TOTAL = 7;
+  var affichees = toutes.slice(0, MAX_TOTAL);
+  var groupes = [
+    { niveau: "critique", titre: "🔴 Urgent" },
+    { niveau: "important", titre: "🟠 À faire aujourd'hui" },
+    { niveau: "info", titre: "🟡 À surveiller" }
+  ];
+  return (
+    <div className="mode-aujourdhui">
+      {groupes.map(function (g) {
+        var items = affichees.filter(function (p) { return p.niveau === g.niveau; });
+        if (items.length === 0) return null;
+        return (
+          <div key={g.niveau} className="mode-aujourdhui-groupe">
+            <div className="mode-aujourdhui-titre">{g.titre}</div>
+            {items.map(function (p, i) {
+              return (
+                <button key={i} className={"priorite-jour-item priorite-jour-" + p.niveau} title={p.explication} onClick={function () { ouvrirObjet(p.objet.type, p.objet.id); }}>
+                  {p.titre}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+      {toutes.length > MAX_TOTAL && <div className="mode-aujourdhui-plus">+ {toutes.length - MAX_TOTAL} autre{toutes.length - MAX_TOTAL > 1 ? "s" : ""} à consulter dans "À faire"</div>}
     </div>
   );
 }
@@ -1732,6 +2050,7 @@ function GlobalSearch(props) {
 // Requetes a la demande (bouton), pas d'ecouteur permanent — c'est un outil de transition, pas un
 // ecran consulte en continu (point 22).
 function DiagnosticStockPhase5({ stocks, user, userData }) {
+  const { enLigne, derniereSync } = useConnexion();
   const [ecarts, setEcarts] = React.useState(null);
   const [anomalies, setAnomalies] = React.useState(null);
   const [chargement, setChargement] = React.useState(false);
@@ -1775,6 +2094,7 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
   };
 
   const lancerMigration = async () => {
+    if (!enLigne) { setMsgMigration("🚫 Connexion requise — migration impossible hors connexion."); return; }
     setMigrationEnCours(true);
     setMsgMigration("");
     try {
@@ -1790,6 +2110,7 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
   // Point 20 : reparation controlee — ne touche QUE le cache, avec confirmation et tracabilite.
   const reparerCache = async (a) => {
     if (!window.confirm("Recalculer le cache du lot " + a.lot + " à " + a.attendu.toLocaleString() + " u (valeur déduite du grand livre) ?")) return;
+    if (!enLigne) { setMsgReparation(function (prev) { return Object.assign({}, prev, { [a.lot]: "🚫 Connexion requise — réparation impossible hors connexion." }); }); return; }
     try {
       await reparerCacheLot(a.lot, a.attendu, user, userData);
       setMsgReparation(function (prev) { return Object.assign({}, prev, { [a.lot]: "✅ Cache recalculé." }); });
@@ -1816,13 +2137,22 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
 
   return (
     <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginTop: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
+      {/* Phase 8 (point 33) : panneau support/diagnostic — version, connexion, utilisateur, role,
+          derniere synchro reelle (jamais de secret Firebase affiche). Simplifie enormement le
+          depannage terrain sans avoir a ouvrir la console du navigateur. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", fontSize: 11, color: "var(--btp-text2)", marginBottom: 14, padding: "8px 12px", background: "var(--btp-card2)", borderRadius: 8 }}>
+        <span>🏷️ Version <strong>{APP_VERSION}</strong></span>
+        <span>{enLigne ? "🟢 En ligne" : "🔴 Hors connexion"}</span>
+        <span>👤 {userData.nom || user.email} ({userData.role})</span>
+        <span>🔄 Dernière synchro : {derniereSync ? derniereSync.toLocaleTimeString("fr-FR") : "—"}</span>
+      </div>
       <h4 style={{ marginBottom: 6, color: "var(--btp-gold)" }}>🔎 Diagnostic stock (grand livre de traçabilité par lot)</h4>
       <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 12 }}>
         Outil de transition, réservé à la Direction. Un écart n'est pas forcément une anomalie : il correspond souvent au stock antérieur à l'activation du suivi par lot, jamais individuellement journalisé.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <button className="btn btn-sm btn-gold" onClick={calculerDiagnostic} disabled={chargement}>{chargement ? "Calcul…" : "Calculer l'écart compteur / grand livre"}</button>
-        <button className="btn btn-sm btn-ghost" onClick={lancerMigration} disabled={migrationEnCours}>{migrationEnCours ? "Initialisation…" : "Initialiser le suivi par lot (lots existants)"}</button>
+        <button className="btn btn-sm btn-ghost" onClick={lancerMigration} disabled={migrationEnCours || !enLigne}>{migrationEnCours ? "Initialisation…" : (!enLigne ? "🚫 Hors connexion" : "Initialiser le suivi par lot (lots existants)")}</button>
       </div>
       {msgMigration && <div style={{ fontSize: 12, marginBottom: 12, color: msgMigration.indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgMigration}</div>}
       <p style={{ fontSize: 11, color: "var(--btp-text2)", marginBottom: 12, fontStyle: "italic" }}>
@@ -1847,7 +2177,7 @@ function DiagnosticStockPhase5({ stocks, user, userData }) {
                   <td>{a.trouve != null ? a.trouve.toLocaleString() : "—"}</td>
                   <td>
                     {a.type === "cache_incoherent"
-                      ? <button className="btn btn-sm btn-ghost" onClick={() => reparerCache(a)}>Recalculer le cache</button>
+                      ? <button className="btn btn-sm btn-ghost" onClick={() => reparerCache(a)} disabled={!enLigne}>{!enLigne ? "🚫 Hors connexion" : "Recalculer le cache"}</button>
                       : <span style={{ fontSize: 11, color: "var(--btp-text2)" }}>{a.action}</span>}
                     {msgReparation[a.lot] && <div style={{ fontSize: 11, marginTop: 4, color: msgReparation[a.lot].indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgReparation[a.lot]}</div>}
                   </td>
@@ -3957,6 +4287,20 @@ function DashboardChef({ user, userData }) {
     return () => { u1(); u2(); };
   }, []);
 
+  // Phase 8 (points 21/22) : "Mon travail" et la recherche universelle du chef ne portent QUE sur
+  // son propre perimetre (chantiers/commandes deja filtres ci-dessus par chefUid) — jamais les
+  // donnees d'un autre chef.
+  var prioriteDonneesChef = { commandes: commandes, maintenant: Date.now() };
+  var compteurPrioritesChef = useCompteurPriorites(prioriteDonneesChef, "chef_chantier");
+  var ouvrirObjetChef = function (type, idOuObjet) {
+    if (type === "chantier") { var ch = chantiers.find(function (c) { return c.id === idOuObjet; }); if (ch) { setFicheOuverte(ch); setTabChef("chantiers"); } return; }
+    if (type === "commande") {
+      var cmd = commandes.find(function (c) { return c.id === idOuObjet; });
+      if (cmd && cmd.chantierId) { var chC = chantiers.find(function (c) { return c.id === cmd.chantierId; }); if (chC) { setFicheOuverte(chC); setTabChef("chantiers"); return; } }
+      setTabChef("chantiers");
+    }
+  };
+
   // Quand chantier sélectionné change -> reset type BTC
   useEffect(() => {
     if (cmdChantierId) {
@@ -4089,6 +4433,7 @@ function DashboardChef({ user, userData }) {
           </div>
         </div>
         <div className="btp-header-right">
+          <GlobalSearch chantiers={chantiers} commandes={commandes} ouvrirObjet={ouvrirObjetChef} />
           <div className="btp-user-chip">👤 <strong>{userData.nom||user.email}</strong></div>
           <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>⏻ Déco.</button>
         </div>
@@ -4109,9 +4454,15 @@ function DashboardChef({ user, userData }) {
       <div className="btp-content">
         {/* Phase 7 (point 16) : scanner un lot/palette recu sur chantier, reponse directe sans avoir
             a connaitre la structure interne de l'application. */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
           <button className="btn btn-primary btn-lg" style={{ fontWeight: 800, fontSize: 16 }} onClick={() => { setShowScanChef(true); setMsgScan(""); }}>📷 Scanner un lot reçu</button>
-          {msgScan && <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600, color: msgScan.indexOf("✅") >= 0 ? "#2ECC71" : "var(--btp-text2)" }}>{msgScan}</div>}
+          {compteurPrioritesChef > 0 && <span className="btp-badge-compteur">{compteurPrioritesChef}</span>}
+        </div>
+        {msgScan && <div style={{ marginBottom: 16, fontSize: 13, fontWeight: 600, color: msgScan.indexOf("✅") >= 0 ? "#2ECC71" : "var(--btp-text2)" }}>{msgScan}</div>}
+
+        <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
+        <div style={{ marginBottom: 20 }}>
+          <ModeAujourdhui donnees={prioriteDonneesChef} ouvrirObjet={ouvrirObjetChef} role="chef_chantier" />
         </div>
 
         {tabChef==="chantiers"&&(
@@ -4256,6 +4607,7 @@ function DashboardChef({ user, userData }) {
 
 
 function DashboardStock({ user, userData }) {
+  const { enLigne } = useConnexion();
   const [commandes, setCommandes] = useState([]);
   const [stocks, setStocks] = useState({});
   const [qteEnvoi, setQteEnvoi] = useState({}); // par cmdId
@@ -4274,6 +4626,13 @@ function DashboardStock({ user, userData }) {
   const [showInventaire, setShowInventaire] = React.useState(false);
   const [scanVerifPourCmd, setScanVerifPourCmd] = React.useState(null); // cmdId en cours de verification
   const [resultatsScanCmd, setResultatsScanCmd] = React.useState({}); // cmdId -> [{texte, ok}]
+  // Phase 8 (points 15/21/22) : Stock est une page unique (pas d'onglets comme Direction) — la
+  // recherche universelle et le moteur de priorites ouvrent directement une fiche par-dessus.
+  const [lotOuvertPrio, setLotOuvertPrio] = React.useState(null);
+  const [paletteOuvertePrio, setPaletteOuvertePrio] = React.useState(null);
+  const [lots, setLots] = React.useState([]);
+  const [palettesList, setPalettesList] = React.useState([]);
+  const [showScannerAccueil, setShowScannerAccueil] = React.useState(false); // Phase 8 (point 17) : bouton "Scanner" de la barre basse mobile
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -4288,8 +4647,24 @@ function DashboardStock({ user, userData }) {
     var u4 = db.collection("chantiers").onSnapshot(snap => {
       setChantiers(snap.docs.map(d => Object.assign({id:d.id}, d.data())));
     });
-    return () => { u1(); u2(); u3(); u4(); };
+    // Phase 8 (point 22) : Stock peut chercher palette/lot/commande — bornees (limit), pas un
+    // ecouteur sur tout le grand livre ni sur les donnees QSE/Direction (point 30).
+    var u5 = db.collection("qse_lots").orderBy("dateCreation", "desc").limit(300).onSnapshot(snap => {
+      setLots(snap.docs.map(d => Object.assign({ id: d.id }, d.data())));
+    });
+    var u6 = db.collection("stock_palettes").orderBy("dateCreation", "desc").limit(300).onSnapshot(snap => {
+      setPalettesList(snap.docs.map(d => Object.assign({ id: d.id }, d.data())));
+    });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
   }, []);
+
+  var ouvrirObjetStock = function (type, idOuObjet) {
+    if (type === "lot") { setLotOuvertPrio(idOuObjet); return; }
+    if (type === "palette") { setPaletteOuvertePrio(idOuObjet); return; }
+    // "commande"/"tab" : page unique, pas de navigation supplementaire — deja visible plus bas.
+  };
+  var prioriteDonneesStock = { stocks: stocks, commandes: commandes, maintenant: Date.now() };
+  var compteurPrioritesStock = useCompteurPriorites(prioriteDonneesStock, "resp_stock");
 
   // Charge les reservations d'une commande precise (requete CIBLEE, pas d'ecouteur permanent sur
   // tout le grand livre — discipline de performance, point 34). Regenere un token de livraison
@@ -4342,6 +4717,8 @@ function DashboardStock({ user, userData }) {
   const declencherReservation = async (cmd) => {
     var etat = fifoParCmd[cmd.id];
     if (!etat || !etat.lignes || etat.lignes.length === 0) return;
+    if (msgLivraison[cmd.id] === "Réservation...") return; // anti-double-clic (point 12)
+    if (!enLigne) { setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "🚫 Connexion requise — réservation impossible hors connexion." }); }); return; }
     setMsgLivraison(function (prev) { return Object.assign({}, prev, { [cmd.id]: "Réservation..." }); });
     try {
       await reserverCommandeStock(cmd, etat.lignes, etat.token, user, userData);
@@ -4357,28 +4734,31 @@ function DashboardStock({ user, userData }) {
   // Etape "Confirmer livraison" (point 8/10) : sortie physique reelle, totale ou partielle, d'une
   // reservation existante.
   const livrerAlloc = async (cmdId, alloc) => {
+    if (msgAllocLivraison[alloc.id] === "Enregistrement...") return; // anti-double-clic (point 12)
     var reste = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
     var qte = parseInt(alloc._qte, 10);
     if (!qte || qte <= 0) qte = reste;
     if (qte > reste) qte = reste;
+    if (!enLigne) { setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "🚫 Livraison impossible hors connexion." }); }); return; }
     setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "Enregistrement..." }); });
     try {
       await livrerReservation(alloc, qte, alloc._token, user, userData);
-      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "✅ Livré." }); });
+      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "✓ " + qte.toLocaleString() + " u livrée(s) — " + (alloc.chantierNom || "chantier") + "." }); });
       await chargerAllocationsCmd(cmdId);
     } catch (e) {
-      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "❌ Erreur : " + e.message }); });
+      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")" }); });
     }
   };
 
   const annulerAlloc = async (cmdId, alloc) => {
     var reste = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
     if (!window.confirm("Annuler cette réservation de " + reste.toLocaleString() + " u ? Le stock redeviendra disponible.")) return;
+    if (!enLigne) { setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "🚫 Connexion requise — annulation impossible hors connexion." }); }); return; }
     try {
       await annulerReservation(alloc, null, "Annulation manuelle (Responsable Stock)", user, userData);
       await chargerAllocationsCmd(cmdId);
     } catch (e) {
-      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "❌ Erreur : " + e.message }); });
+      setMsgAllocLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: "❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")" }); });
     }
   };
 
@@ -4490,33 +4870,26 @@ function DashboardStock({ user, userData }) {
           </div>
         </div>
         <div className="btp-header-right">
+          <GlobalSearch lots={lots} palettes={palettesList} commandes={commandes} ouvrirObjet={ouvrirObjetStock} />
           <div className="btp-user-chip">👤 <strong>{userData.nom||user.email}</strong></div>
           <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>⏻ Déco.</button>
         </div>
       </div>
       <div className="btp-content">
 
-        {/* Phase 7 (point 13) : mode terrain "ultra simple" — actions principales + a faire, avant
-            le detail du stock. Le reste de l'ecran (deja construit en Phase 6) reste inchange et
-            entierement accessible juste en dessous : rien n'est retire, seulement mis en avant. */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        {/* Phase 7/8 (points 13/16) : mode terrain "ultra simple" — action principale tres visible,
+            "Mon travail" juste en dessous (moteur de priorites, point 21/25), avant le detail du
+            stock. Rien n'est retire : le reste de l'ecran reste entierement accessible plus bas. */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
           <BoutonScanner user={user} userData={userData} />
           <button className="btn btn-lg" style={{ background: "#5DADE2", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowInventaire(true)}>📋 Inventaire</button>
+          {compteurPrioritesStock > 0 && <span className="btp-badge-compteur">{compteurPrioritesStock}</span>}
         </div>
-        {(() => {
-          var aPreparer = commandes.filter(function (c) { return Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0)) > 0; }).length;
-          var pretesALivrer = commandes.filter(function (c) { return (c.quantiteReservee || 0) > 0 && Math.max(0, (c.quantite || 0) - (c.quantiteLivree || 0) - (c.quantiteReservee || 0)) === 0; }).length;
-          if (aPreparer === 0 && pretesALivrer === 0) return null;
-          return (
-            <div style={{ background: "var(--btp-card)", borderRadius: 10, padding: 12, marginBottom: 20, fontSize: 13 }}>
-              <strong style={{ color: "var(--btp-orange)" }}>À faire</strong>
-              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
-                {aPreparer > 0 && <li>{aPreparer} commande{aPreparer > 1 ? "s" : ""} à réserver/préparer</li>}
-                {pretesALivrer > 0 && <li>{pretesALivrer} réservation{pretesALivrer > 1 ? "s" : ""} prête{pretesALivrer > 1 ? "s" : ""} pour livraison</li>}
-              </ul>
-            </div>
-          );
-        })()}
+
+        <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
+        <div style={{ marginBottom: 24 }}>
+          <ModeAujourdhui donnees={prioriteDonneesStock} ouvrirObjet={ouvrirObjetStock} role="resp_stock" />
+        </div>
 
         <h3 style={{marginBottom:14,color:"#145A32"}}>Etat du stock</h3>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10,marginBottom:28}}>
@@ -4609,9 +4982,11 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
                           <input type="number" min="1" max={resteAlloc} placeholder={String(resteAlloc)} value={a._qte}
                             onChange={e=>modifierQteAllocInput(cmd.id, a.id, e.target.value)}
                             style={{width:80,padding:"4px 8px",borderRadius:6,border:"1px solid var(--btp-border)",textAlign:"right"}} />
-                          <button className="btn btn-sm" style={{background:"#1E8449",color:"white"}} onClick={()=>livrerAlloc(cmd.id, a)}>🚚 Confirmer livraison</button>
-                          <button className="btn btn-sm btn-ghost" onClick={()=>annulerAlloc(cmd.id, a)}>✖ Annuler</button>
-                          {msgAllocLivraison[a.id] && <div style={{width:"100%",fontSize:11,color:msgAllocLivraison[a.id].indexOf("Erreur")>=0?"#EC7063":"#2ECC71"}}>{msgAllocLivraison[a.id]}</div>}
+                          <button className="btn btn-sm" style={{background:"#1E8449",color:"white"}} onClick={()=>livrerAlloc(cmd.id, a)} disabled={msgAllocLivraison[a.id]==="Enregistrement..." || !enLigne}>
+                            {msgAllocLivraison[a.id]==="Enregistrement..." ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "🚚 Confirmer livraison")}
+                          </button>
+                          <button className="btn btn-sm btn-ghost" onClick={()=>annulerAlloc(cmd.id, a)} disabled={!enLigne}>✖ Annuler</button>
+                          {msgAllocLivraison[a.id] && <div style={{width:"100%",fontSize:11,color:(msgAllocLivraison[a.id].indexOf("❌")>=0||msgAllocLivraison[a.id].indexOf("🚫")>=0)?"#EC7063":"#2ECC71"}}>{msgAllocLivraison[a.id]}</div>}
                         </div>
                       );
                     })}
@@ -4657,11 +5032,11 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
                         )}
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
                           <span style={{fontSize:12,color:"var(--btp-text2)"}}>Total : <strong style={{color:"white"}}>{fifoParCmd[cmd.id].lignes.reduce(function(a,l){return a+l.quantite;},0).toLocaleString()} u</strong></span>
-                          <button onClick={()=>declencherReservation(cmd)} disabled={msgLivraison[cmd.id]==="Réservation..."} style={{background:"#2980B9",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,opacity:msgLivraison[cmd.id]==="Réservation..."?0.6:1}}>{msgLivraison[cmd.id]==="Réservation..."?"Réservation…":"📌 Réserver"}</button>
+                          <button onClick={()=>declencherReservation(cmd)} disabled={msgLivraison[cmd.id]==="Réservation..." || !enLigne} style={{background:"#2980B9",color:"white",border:"none",padding:"9px 18px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,opacity:(msgLivraison[cmd.id]==="Réservation..."||!enLigne)?0.6:1}}>{msgLivraison[cmd.id]==="Réservation..."?"Réservation…":(!enLigne?"🚫 Hors connexion":"📌 Réserver")}</button>
                         </div>
                       </div>
                     )}
-                    {msgLivraison[cmd.id] && <div style={{marginTop:8,fontSize:12,color:msgLivraison[cmd.id].indexOf("Erreur")>=0?"#EC7063":"#2ECC71"}}>{msgLivraison[cmd.id]}</div>}
+                    {msgLivraison[cmd.id] && <div style={{marginTop:8,fontSize:12,color:(msgLivraison[cmd.id].indexOf("Erreur")>=0||msgLivraison[cmd.id].indexOf("🚫")>=0)?"#EC7063":"#2ECC71"}}>{msgLivraison[cmd.id]}</div>}
                   </div>
                 )}
                 {resteCmd === 0 && (
@@ -4677,10 +5052,22 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
           onObjetReconnu={(o) => verifierPaletteScanneePourCmd(scanVerifPourCmd, o)} continu={true} />
       )}
       {showInventaire && <InventaireParScan user={user} userData={userData} onFermer={() => setShowInventaire(false)} />}
+      {lotOuvertPrio && <FicheLot numeroLot={lotOuvertPrio} user={user} userData={userData} onClose={() => setLotOuvertPrio(null)} />}
+      {paletteOuvertePrio && <FichePalette paletteId={paletteOuvertePrio} user={user} userData={userData} onClose={() => setPaletteOuvertePrio(null)} onOuvrirLot={(n) => { setPaletteOuvertePrio(null); setLotOuvertPrio(n); }} />}
+      {showScannerAccueil && (
+        <ModaleScanner onFermer={() => setShowScannerAccueil(false)} onObjetReconnu={(o) => { setShowScannerAccueil(false); ouvrirObjetStock(o.type, o.id); }} />
+      )}
+      <BottomNavMobile items={[
+        { icone: "🏠", label: "Accueil", onClick: () => window.scrollTo({ top: 0, behavior: "smooth" }) },
+        { icone: "📷", label: "Scanner", onClick: () => setShowScannerAccueil(true) },
+        { icone: "📋", label: "Inventaire", onClick: () => setShowInventaire(true) }
+      ]} />
     </div>
   );
 }
 function DashboardProduction({ user, userData }) {
+  const { enLigne } = useConnexion();
+  const [enregistrementEnCours, setEnregistrementEnCours] = React.useState(false);
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
   const [saisieType, setSaisieType] = useState(CATALOGUE[0].id);
@@ -4706,6 +5093,11 @@ function DashboardProduction({ user, userData }) {
   const [tabProd, setTabProd] = React.useState("production");
   const [qseLotsParProdId, setQseLotsParProdId] = React.useState({});
   const [lotOuvert, setLotOuvert] = React.useState(null);
+  const [lots, setLots] = React.useState([]);
+  const [controlesEnAttente, setControlesEnAttente] = React.useState([]);
+  var prioriteDonneesProd = { stocks: stocks, lots: lots, controlesEnAttente: controlesEnAttente, ncs: [], maintenant: Date.now() };
+  var compteurPrioritesProd = useCompteurPriorites(prioriteDonneesProd, "resp_production");
+  var ouvrirObjetProd = function (type, idOuObjet) { if (type === "lot") setLotOuvert(idOuObjet); };
 
   useEffect(() => {
     var u1 = db.collection("stocks").onSnapshot(snap => {
@@ -4721,11 +5113,18 @@ function DashboardProduction({ user, userData }) {
       setCommandes(snap.docs.map(d=>({id:d.id,...d.data()})));
     });
     var u5 = db.collection("qse_lots").orderBy("dateCreation","desc").limit(300).onSnapshot(snap => {
-      var m = {};
-      snap.docs.forEach(function(d){ var data = d.data(); if (data.productionId) m[data.productionId] = data.numeroLot; });
+      var m = {}; var liste = [];
+      snap.docs.forEach(function(d){ var data = d.data(); if (data.productionId) m[data.productionId] = data.numeroLot; liste.push(Object.assign({ id: d.id }, data)); });
       setQseLotsParProdId(m);
+      setLots(liste);
     });
-    return () => { u1(); u2(); u3(); u4(); u5(); };
+    // Phase 8 (point 21) : necessaire au moteur de priorites de ce role (lot_pret/controle_retard/
+    // lot_sans_controle) — c'est la SEULE donnee QSE supplementaire chargee ici, pas les NC ni
+    // l'historique complet (point 30 : pas plus que ce dont ce role a reellement besoin).
+    var u6 = db.collection("qse_controles").where("resultat","==","Non mesuré").onSnapshot(snap => {
+      setControlesEnAttente(snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); }));
+    });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
   }, []);
 
   var typesParUrgence = CATALOGUE.map(function(prod) {
@@ -4737,9 +5136,16 @@ function DashboardProduction({ user, userData }) {
   var prodAujourdHui = productions.filter(function(p) { return p.date === dateAujourdHui; });
 
   var enregistrer = async function() {
+    if (enregistrementEnCours) return; // anti-double-clic (point 12)
     if (!saisieType||!saisieQte) { setMsg("Choisissez un type et entrez la quantite"); return; }
     var qte = parseInt(saisieQte);
     if (isNaN(qte)||qte<=0) { setMsg("Quantite invalide"); return; }
+    // Phase 8 (points 7/8) : la production modifie physiquement le stock — jamais de tentative si
+    // hors connexion, refus immediat et explicite.
+    if (!enLigne) { setMsg("🚫 Connexion requise — production impossible à enregistrer hors connexion."); return; }
+    setEnregistrementEnCours(true);
+    setMsg("Enregistrement...");
+    var alerteLente = setTimeout(function () { setMsg("Enregistrement... · Connexion lente — toujours en cours."); }, 4000);
     try {
       var dateFr = dateAujourdHui;
       if (saisieDate) { var parts = saisieDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
@@ -4756,9 +5162,15 @@ function DashboardProduction({ user, userData }) {
       var upd = {};
       if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
       await db.collection("stocks").doc(saisieType).set(upd, { merge:true });
-      setMsg("Production enregistree ! Stock mis a jour.");
+      clearTimeout(alerteLente);
+      setEnregistrementEnCours(false);
+      setMsg("✓ " + qte.toLocaleString() + " u — production enregistrée, stock mis à jour.");
       setSaisieQte("");
-    } catch(e) { setMsg("Erreur: "+e.message); }
+    } catch(e) {
+      clearTimeout(alerteLente);
+      setEnregistrementEnCours(false);
+      setMsg("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")");
+    }
   };
 
   function pFrToInput(frDate){
@@ -4775,23 +5187,25 @@ function DashboardProduction({ user, userData }) {
     setPEditToken(p.id + "_" + Date.now() + "_" + Math.random().toString(36).slice(2)); // Phase 6
   }
   async function pSauvegarderEdit(){
-    if (!pEdit) return;
+    if (!pEdit || pEditMsg === "Enregistrement...") return; // anti-double-clic (point 12)
     if (!pEditType || !pEditQte) { setPEditMsg("Choisissez un produit et une quantite"); return; }
     var qte = parseInt(pEditQte);
     if (isNaN(qte) || qte <= 0) { setPEditMsg("Quantite invalide"); return; }
+    if (!enLigne) { setPEditMsg("🚫 Connexion requise — correction impossible hors connexion."); return; }
     var dateFr = pEdit.date;
     if (pEditDate) { var parts = pEditDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
     setPEditMsg("Enregistrement...");
     try {
       // Phase 6 : idem Direction — fonction metier centrale, jamais de decrementation directe.
       await corrigerProductionLot(pEdit, pEditType, qte, pEditPhase, dateFr, pEditToken, user, userData);
-      setPEditMsg("✅ Production modifiee.");
+      setPEditMsg("✓ Production modifiée.");
       setTimeout(function(){ setPEdit(null); setPEditMsg(""); }, 900);
-    } catch (e) { setPEditMsg("❌ Erreur: " + e.message); }
+    } catch (e) { setPEditMsg("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")"); }
   }
   async function pSupprimer(p){
     var okc = window.confirm("Supprimer definitivement cette production (" + getProduit(p.type).nom + ", " + (p.quantite||0) + " u, " + (p.date||"") + ") ?");
     if (!okc) return;
+    if (!enLigne) { window.alert("🚫 Connexion requise — suppression impossible hors connexion."); return; }
     var mdp = window.prompt("Pour confirmer, saisissez votre mot de passe :");
     if (!mdp) { return; }
     try {
@@ -4802,11 +5216,12 @@ function DashboardProduction({ user, userData }) {
       // Phase 6 : idem Direction — bloque si le lot a deja ete consomme, trace ANNULATION_PRODUCTION.
       await annulerProductionLot(p, user, userData);
       if (pEdit && pEdit.id === p.id) { setPEdit(null); }
-    } catch (e) { window.alert("Erreur: " + e.message); }
+    } catch (e) { window.alert("Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")"); }
   }
 
   var enregistrerPerte = async function() {
     if (!saisiePerteType||!saisiePerteQte) { setMsgPerte("Choisissez un type et une quantite"); return; }
+    if (!enLigne) { setMsgPerte("🚫 Connexion requise — perte impossible à enregistrer hors connexion."); return; }
     try {
       var qte = parseInt(saisiePerteQte);
       if (!(qte > 0)) { setMsgPerte("Quantité invalide"); return; }
@@ -4853,6 +5268,7 @@ function DashboardProduction({ user, userData }) {
           </div>
         </div>
         <div className="btp-header-right">
+          <GlobalSearch lots={lots} ouvrirObjet={ouvrirObjetProd} />
           <div className="btp-user-chip">👤 <strong>{userData.nom||user.email}</strong></div>
           <button className="btn btn-sm btn-danger" onClick={()=>auth.signOut()}>⏻ Déco.</button>
         </div>
@@ -4872,24 +5288,16 @@ function DashboardProduction({ user, userData }) {
         { tabProd === 'production' && (
           <div>
 <div style={{padding:20}}>
-        {/* Phase 7 (point 14) : entree terrain rapide — le reste de l'ecran (deja construit) reste inchange en dessous. */}
-        <div style={{ marginBottom: 18 }}>
+        {/* Phase 7/8 (points 14/16/21) : entree terrain rapide + "Mon travail" (moteur de priorites),
+            avant le reste de l'ecran (deja construit), inchange en dessous. */}
+        <div style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 10 }}>
           <BoutonScanner user={user} userData={userData} libelle="Scanner un lot" />
+          {compteurPrioritesProd > 0 && <span className="btp-badge-compteur">{compteurPrioritesProd}</span>}
         </div>
-        {(() => {
-          var enSechageActif = CATALOGUE.reduce(function (a, p) { return a + calcSechageActif(productions, p.id); }, 0);
-          var sousSeuil = typesParUrgence.filter(function (it) { return it.total < STOCK_ALERTE; }).length;
-          if (enSechageActif === 0 && sousSeuil === 0) return null;
-          return (
-            <div style={{ background: "var(--btp-card)", borderRadius: 10, padding: 12, marginBottom: 18, fontSize: 13 }}>
-              <strong style={{ color: "var(--btp-orange)" }}>À faire</strong>
-              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
-                {enSechageActif > 0 && <li>{enSechageActif.toLocaleString()} u en séchage, pas encore mature</li>}
-                {sousSeuil > 0 && <li>{sousSeuil} référence{sousSeuil > 1 ? "s" : ""} sous le seuil de stock</li>}
-              </ul>
-            </div>
-          );
-        })()}
+        <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
+        <div style={{ marginBottom: 18 }}>
+          <ModeAujourdhui donnees={prioriteDonneesProd} ouvrirObjet={ouvrirObjetProd} role="resp_production" />
+        </div>
         <h3 style={{marginBottom:6,color:"#4A235A"}}>Priorites du jour - {dateAujourdHui}</h3>
         <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Cible: {STOCK_CIBLE.toLocaleString()} u | Alerte si total inferieur a {STOCK_ALERTE.toLocaleString()} u</p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10,marginBottom:24}}>
@@ -4930,8 +5338,10 @@ function DashboardProduction({ user, userData }) {
           <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de production</label>
           <input type="date" value={saisieDate} onChange={e=>setSaisieDate(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}} />
           <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14}} />
-          {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.includes("enregistree")?"#EAFAF1":"#FFECEC",color:msg.includes("enregistree")?"#1E8449":"#C0392B"}}>{msg}</div>}
-          <button onClick={enregistrer} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer"}}>Enregistrer la production</button>
+          {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.indexOf("✓")===0?"#EAFAF1":"#FFECEC",color:msg.indexOf("✓")===0?"#1E8449":"#C0392B"}}>{msg}</div>}
+          <button onClick={enregistrer} disabled={enregistrementEnCours || !enLigne} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",opacity:(enregistrementEnCours||!enLigne)?0.6:1}}>
+            {enregistrementEnCours ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Enregistrer la production")}
+          </button>
         </div>
 
         {(function(){
@@ -4984,7 +5394,9 @@ return null;
             </select>
             {pEditMsg && <div style={{marginBottom:12,fontSize:13,color:"var(--btp-text)"}}>{pEditMsg}</div>}
             <div style={{display:"flex",gap:12}}>
-              <button onClick={pSauvegarderEdit} style={{flex:1,padding:"10px",background:"#27AE60",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:"bold"}}>Enregistrer</button>
+              <button onClick={pSauvegarderEdit} disabled={pEditMsg==="Enregistrement..." || !enLigne} style={{flex:1,padding:"10px",background:"#27AE60",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:"bold",opacity:(pEditMsg==="Enregistrement..."||!enLigne)?0.6:1}}>
+                {pEditMsg==="Enregistrement..." ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Enregistrer")}
+              </button>
               <button onClick={()=>setPEdit(null)} style={{flex:1,padding:"10px",background:"#7f8c8d",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:"bold"}}>Annuler</button>
             </div>
           </div>
@@ -7149,8 +7561,8 @@ function QseNonConformites(props) {
               <td>
                 {nc.statut !== "Cloturee" && (
                   <React.Fragment>
-                    <button className="btn btn-sm" onClick={() => qseStatuerEfficaciteNC(nc.id, true, user, userData)}>Clôturer (efficace)</button>
-                    <button className="btn btn-sm" onClick={() => qseStatuerEfficaciteNC(nc.id, false, user, userData)}>Relancer (inefficace)</button>
+                    <button className="btn btn-sm" onClick={() => { if (!navigator.onLine) { window.alert("🚫 Connexion requise — clôture impossible hors connexion."); return; } qseStatuerEfficaciteNC(nc.id, true, user, userData); }}>Clôturer (efficace)</button>
+                    <button className="btn btn-sm" onClick={() => { if (!navigator.onLine) { window.alert("🚫 Connexion requise — relance impossible hors connexion."); return; } qseStatuerEfficaciteNC(nc.id, false, user, userData); }}>Relancer (inefficace)</button>
                   </React.Fragment>
                 )}
               </td>
@@ -7241,8 +7653,10 @@ function FicheLot(props) {
   const userData = props.userData;
   const onClose = props.onClose;
   const onDeclarerNC = props.onDeclarerNC; // optionnel: fourni uniquement depuis le contexte QSE
+  const { enLigne } = useConnexion();
 
   const [lot, setLot] = React.useState(null);
+  const [depuisCache, setDepuisCache] = React.useState(false); // Phase 8 (point 9)
   const [production, setProduction] = React.useState(null);
   const [controles, setControles] = React.useState([]);
   const [ncs, setNcs] = React.useState([]);
@@ -7276,6 +7690,7 @@ function FicheLot(props) {
           if (!annule) { setErreur("Lot introuvable : " + numeroLot); setCharge(false); }
           return;
         }
+        if (!annule) setDepuisCache(!!(lotSnap.metadata && lotSnap.metadata.fromCache));
         const lotData = Object.assign({ id: lotSnap.id }, lotSnap.data());
         const [prod, controlesSnap, ncSnap, originesSnap, stockSnap, mouvementsSnap, allocationsSnap, palettesLot] = await Promise.all([
           qseRecupererProductionDuLot(lotData),
@@ -7350,6 +7765,7 @@ function FicheLot(props) {
 
   const marquerControle = async (resultat) => {
     if (!controleATraiter) return;
+    if (!enLigne) { setMsgAction("🚫 Connexion requise — contrôle impossible à enregistrer hors connexion."); return; }
     const auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
     await db.collection("qse_controles").doc(controleATraiter.id).update({
       resultat: resultat, controleur: auteur, dateControle: firebase.firestore.FieldValue.serverTimestamp()
@@ -7367,6 +7783,9 @@ function FicheLot(props) {
     if (!formPerte || formPerte.envoi) return;
     var qte = parseInt(formPerte.quantite, 10);
     if (!qte || qte <= 0) { setFormPerte(Object.assign({}, formPerte, { erreur: "Quantité invalide." })); return; }
+    // Phase 8 (points 7/8) : operation critique — jamais de tentative si hors connexion, refus
+    // immediat et explicite plutot qu'une ecriture qui resterait en attente indefiniment.
+    if (!enLigne) { setFormPerte(Object.assign({}, formPerte, { erreur: "🚫 Connexion requise — perte impossible à enregistrer hors connexion." })); return; }
     setFormPerte(Object.assign({}, formPerte, { envoi: true, erreur: "" }));
     try {
       await declarerPerteLot(lot.numeroLot, lot.type, qte, formPerte.motif || "", formPerte.token, user, userData);
@@ -7389,6 +7808,7 @@ function FicheLot(props) {
     var msg = "Annuler cette affectation (" + (alloc.quantiteReservee || 0).toLocaleString() + " u) ?";
     if (dejaLivre > 0) { msg += " La partie déjà livrée (" + dejaLivre.toLocaleString() + " u) sera également annulée (retour physique en stock)."; }
     if (!window.confirm(msg)) return;
+    if (!enLigne) { setMsgAction("🚫 Connexion requise — annulation impossible hors connexion."); return; }
     try {
       if (resteNonLivre > 0) { await annulerReservation(alloc, null, "Annulation depuis la fiche du lot", user, userData); }
       if (dejaLivre > 0) { await annulerLivraisonPhysique(alloc, dejaLivre, alloc._annulToken, user, userData); }
@@ -7438,6 +7858,7 @@ function FicheLot(props) {
       setFormCreerPalettes(Object.assign({}, formCreerPalettes, { erreur: "La répartition doit couvrir entre 1 et " + disponibleAReserver.toLocaleString() + " u (disponible à réserver)." }));
       return;
     }
+    if (!enLigne) { setFormCreerPalettes(Object.assign({}, formCreerPalettes, { erreur: "🚫 Connexion requise — création de palettes impossible hors connexion." })); return; }
     setFormCreerPalettes(Object.assign({}, formCreerPalettes, { envoi: true, erreur: "" }));
     try {
       var ids = await creerPalettesPourLot(lot, formCreerPalettes.repartition, formCreerPalettes.token, user, userData);
@@ -7470,6 +7891,12 @@ function FicheLot(props) {
           </div>
         </div>
 
+        {depuisCache && (
+          <div className="btp-alert" style={{ background: "rgba(240,165,0,.12)", border: "1px solid rgba(240,165,0,.35)", color: "#F0A500", fontSize: 12, marginBottom: 10 }}>
+            📡 Données locales — état susceptible d'avoir changé depuis la dernière synchronisation.
+          </div>
+        )}
+
         {formPerte && (
           <div className="fichelot-action" style={{ borderLeftColor: "var(--btp-red)", flexDirection: "column", alignItems: "stretch" }}>
             <strong style={{ marginBottom: 6 }}>📉 Déclarer une perte sur ce lot (max {disponibleAReserver.toLocaleString()} u disponibles à réserver)</strong>
@@ -7483,7 +7910,7 @@ function FicheLot(props) {
                 <label className="btp-label">Motif</label>
                 <input className="btp-input" placeholder="Ex: casse au déchargement" value={formPerte.motif} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { motif: e.target.value }))} />
               </div>
-              <button className="btn btn-sm btn-danger" onClick={soumettrePerte} disabled={formPerte.envoi}>{formPerte.envoi ? "Enregistrement…" : "Confirmer la perte"}</button>
+              <button className="btn btn-sm btn-danger" onClick={soumettrePerte} disabled={formPerte.envoi || !enLigne}>{formPerte.envoi ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Confirmer la perte")}</button>
               <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte(null)}>Annuler</button>
             </div>
             {formPerte.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formPerte.erreur}</div>}
@@ -7804,8 +8231,10 @@ function FichePalette(props) {
   const user = props.user;
   const userData = props.userData;
   const onClose = props.onClose;
+  const { enLigne } = useConnexion();
 
   const [palette, setPalette] = React.useState(null);
+  const [depuisCache, setDepuisCache] = React.useState(false); // Phase 8 (point 9)
   const [lot, setLot] = React.useState(null);
   const [controles, setControles] = React.useState([]);
   const [ncs, setNcs] = React.useState([]);
@@ -7828,6 +8257,7 @@ function FichePalette(props) {
     try {
       const paletteSnap = await db.collection("stock_palettes").doc(paletteId).get();
       if (!paletteSnap.exists) { setErreur("Palette introuvable : " + paletteId); setCharge(false); return; }
+      setDepuisCache(!!(paletteSnap.metadata && paletteSnap.metadata.fromCache));
       const paletteData = Object.assign({ id: paletteSnap.id }, paletteSnap.data());
       const [lotSnap, mvtSnap, allocSnap, emplSnap] = await Promise.all([
         db.collection("qse_lots").doc(paletteData.numeroLot).get(),
@@ -7903,19 +8333,24 @@ function FichePalette(props) {
   const timeline = mouvements.slice().sort(function (a, b) { return qseTsMs(a.dateCreation) - qseTsMs(b.dateCreation); });
 
   const soumettreDeplacement = async () => {
-    if (!formDeplacer) return;
+    if (!formDeplacer || formDeplacer.envoi) return; // anti-double-clic (point 12)
+    if (!enLigne) { setFormDeplacer(Object.assign({}, formDeplacer, { erreur: "🚫 Connexion requise — déplacement impossible hors connexion." })); return; }
+    setFormDeplacer(Object.assign({}, formDeplacer, { envoi: true, erreur: "" }));
     try {
       await deplacerPalette(paletteId, formDeplacer.emplacement || null, user, userData);
       setFormDeplacer(null);
-      setMsgAction("Emplacement mis à jour.");
+      setMsgAction("✓ Emplacement mis à jour : " + (formDeplacer.emplacement || "(aucun)") + ".");
       await charger();
-    } catch (e) { setMsgAction("Erreur : " + e.message); }
+    } catch (e) {
+      setFormDeplacer(Object.assign({}, formDeplacer, { envoi: false, erreur: "❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")" }));
+    }
   };
 
   const soumettrePerte = async () => {
     if (!formPerte || formPerte.envoi) return;
     var qte = parseInt(formPerte.quantite, 10);
     if (!qte || qte <= 0) { setFormPerte(Object.assign({}, formPerte, { erreur: "Quantité invalide." })); return; }
+    if (!enLigne) { setFormPerte(Object.assign({}, formPerte, { erreur: "🚫 Connexion requise — perte impossible à enregistrer hors connexion." })); return; }
     setFormPerte(Object.assign({}, formPerte, { envoi: true, erreur: "" }));
     try {
       await declarerPerteLot(palette.numeroLot, palette.typeBTC, qte, formPerte.motif || "", formPerte.token, user, userData, paletteId);
@@ -7931,6 +8366,7 @@ function FichePalette(props) {
     if (!cmd) { setFormReserver(Object.assign({}, formReserver, { erreur: "Choisissez une commande." })); return; }
     var qte = parseInt(formReserver.quantite, 10);
     if (!qte || qte <= 0 || qte > disponible) { setFormReserver(Object.assign({}, formReserver, { erreur: "Quantité invalide." })); return; }
+    if (!enLigne) { setFormReserver(Object.assign({}, formReserver, { erreur: "🚫 Connexion requise — réservation impossible hors connexion." })); return; }
     setFormReserver(Object.assign({}, formReserver, { envoi: true, erreur: "" }));
     try {
       await reserverCommandeStock(cmd, [{ numeroLot: palette.numeroLot, paletteId: paletteId, quantite: qte }], formReserver.token, user, userData);
@@ -7942,13 +8378,21 @@ function FichePalette(props) {
 
   const livrerAlloc = async (alloc) => {
     var etatForm = formsLivraison[alloc.id] || {};
+    if (etatForm.envoi) return; // anti-double-clic (point 12)
     var reste = (alloc.quantiteReservee || 0) - (alloc.quantiteLivree || 0);
     var qte = parseInt(etatForm.qte, 10) || reste;
     if (qte > reste) qte = reste;
-    setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: Object.assign({}, etatForm, { envoi: true }) }); });
+    // Phase 8 (points 7/8/45) : c'est ICI, le geste "scanner -> Livrer", que le refus hors ligne
+    // doit etre le plus clair possible — jamais de tentative, jamais d'ambiguite sur ce qui a
+    // vraiment ete enregistre.
+    if (!enLigne) {
+      setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: Object.assign({}, etatForm, { msg: "🚫 Livraison impossible hors connexion." }) }); });
+      return;
+    }
+    setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: Object.assign({}, etatForm, { envoi: true, msg: "Enregistrement..." }) }); });
     try {
       await livrerReservation(alloc, qte, alloc._token, user, userData);
-      setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: { envoi: false, msg: "✅ Livré." } }); });
+      setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: { envoi: false, msg: "✓ " + qte.toLocaleString() + " u — palette " + palette.paletteId + " livrée sur " + (alloc.chantierNom || "le chantier") + "." } }); });
       await charger();
     } catch (e) {
       setFormsLivraison(function (prev) { return Object.assign({}, prev, { [alloc.id]: Object.assign({}, etatForm, { envoi: false, msg: "❌ " + e.message }) }); });
@@ -7969,6 +8413,12 @@ function FichePalette(props) {
             <button className="btn btn-sm btn-ghost" onClick={onClose}>✕ Fermer</button>
           </div>
         </div>
+
+        {depuisCache && (
+          <div className="btp-alert" style={{ background: "rgba(240,165,0,.12)", border: "1px solid rgba(240,165,0,.35)", color: "#F0A500", fontSize: 12, marginBottom: 10 }}>
+            📡 Données locales — état susceptible d'avoir changé depuis la dernière synchronisation.
+          </div>
+        )}
 
         {lotBloque && (
           <div className="fichelot-anomalies">
@@ -8005,10 +8455,13 @@ function FichePalette(props) {
             <strong style={{ marginBottom: 6 }}>📍 Déplacer la palette</strong>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <input className="btp-input" style={{ flex: 1, minWidth: 180 }} placeholder="Ex: Zone A, Rack B-03, Extérieur 2"
-                value={formDeplacer.emplacement} onChange={(e) => setFormDeplacer({ emplacement: e.target.value })} />
-              <button className="btn btn-sm btn-success" onClick={soumettreDeplacement}>Enregistrer</button>
+                value={formDeplacer.emplacement} onChange={(e) => setFormDeplacer(Object.assign({}, formDeplacer, { emplacement: e.target.value }))} />
+              <button className="btn btn-sm btn-success" onClick={soumettreDeplacement} disabled={formDeplacer.envoi || !enLigne}>
+                {formDeplacer.envoi ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Enregistrer")}
+              </button>
               <button className="btn btn-sm btn-ghost" onClick={() => setFormDeplacer(null)}>Annuler</button>
             </div>
+            {formDeplacer.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formDeplacer.erreur}</div>}
           </div>
         )}
 
@@ -8024,7 +8477,7 @@ function FichePalette(props) {
                 <label className="btp-label">Motif</label>
                 <input className="btp-input" placeholder="Ex: casse au déchargement" value={formPerte.motif} onChange={(e) => setFormPerte(Object.assign({}, formPerte, { motif: e.target.value }))} />
               </div>
-              <button className="btn btn-sm btn-danger" onClick={soumettrePerte} disabled={formPerte.envoi}>{formPerte.envoi ? "Enregistrement…" : "Confirmer la perte"}</button>
+              <button className="btn btn-sm btn-danger" onClick={soumettrePerte} disabled={formPerte.envoi || !enLigne}>{formPerte.envoi ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Confirmer la perte")}</button>
               <button className="btn btn-sm btn-ghost" onClick={() => setFormPerte(null)}>Annuler</button>
             </div>
             {formPerte.erreur && <div style={{ color: "#F1948A", fontSize: 12, marginTop: 6 }}>⚠️ {formPerte.erreur}</div>}
@@ -8047,7 +8500,7 @@ function FichePalette(props) {
                   <label className="btp-label">Quantité</label>
                   <input type="number" min="1" max={disponible} className="btp-input" style={{ width: 100 }} value={formReserver.quantite} onChange={(e) => setFormReserver(Object.assign({}, formReserver, { quantite: e.target.value }))} />
                 </div>
-                <button className="btn btn-sm btn-success" onClick={soumettreReservation} disabled={formReserver.envoi}>{formReserver.envoi ? "…" : "Confirmer"}</button>
+                <button className="btn btn-sm btn-success" onClick={soumettreReservation} disabled={formReserver.envoi || !enLigne}>{formReserver.envoi ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Confirmer")}</button>
                 <button className="btn btn-sm btn-ghost" onClick={() => setFormReserver(null)}>Annuler</button>
               </div>
             )}
@@ -8070,7 +8523,9 @@ function FichePalette(props) {
                       <span style={{ fontSize: 12, color: "var(--btp-text2)" }}>Préparer livraison :</span>
                       <input type="number" min="1" max={reste} placeholder={String(reste)} style={{ width: 80, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--btp-border)", textAlign: "right" }}
                         value={etatForm.qte || ""} onChange={(e) => setFormsLivraison(function (prev) { return Object.assign({}, prev, { [a.id]: Object.assign({}, etatForm, { qte: e.target.value }) }); })} />
-                      <button className="btn btn-sm" style={{ background: "#1E8449", color: "white" }} onClick={() => livrerAlloc(a)} disabled={etatForm.envoi}>🚚 Confirmer livraison</button>
+                      <button className="btn btn-sm" style={{ background: "#1E8449", color: "white" }} onClick={() => livrerAlloc(a)} disabled={etatForm.envoi || !enLigne}>
+                        {etatForm.envoi ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "🚚 Confirmer livraison")}
+                      </button>
                       {etatForm.msg && <span style={{ fontSize: 11 }}>{etatForm.msg}</span>}
                     </div>
                   )}
@@ -8230,6 +8685,68 @@ function ModuleQSE(props) {
 }
 
 
+// Phase 8 (point 17) : barre de navigation basse, UNIQUEMENT visible sur petit ecran (CSS
+// @media(max-width:640px) — cf. .btp-bottomnav plus bas). N'existe que pour les roles terrain ou
+// elle apporte reellement quelque chose (Stock, exemple donne par le cahier des charges) ; pas
+// copiee mecaniquement sur les autres roles/Direction qui gardent leur interface habituelle.
+function BottomNavMobile({ items }) {
+  return (
+    <div className="btp-bottomnav">
+      {items.map(function (it, i) {
+        return (
+          <button key={i} className="btp-bottomnav-item" onClick={it.onClick}>
+            <span className="btp-bottomnav-icone">{it.icone}</span>
+            <span className="btp-bottomnav-label">{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Petit badge discret, toujours au meme endroit (point 6) : jamais de grosse banniere verte. Passe
+// simplement d'un etat a l'autre ; le message "consultation limitee" est integre au badge lui-meme
+// plutot qu'en superposition separate, pour rester peu intrusif meme quand il reste affiche longtemps.
+function IndicateurConnexion() {
+  const { enLigne } = useConnexion();
+  return (
+    <div className={"btp-indicateur-connexion " + (enLigne ? "en-ligne" : "hors-ligne")}>
+      <span className="btp-indicateur-point"></span>
+      {enLigne ? "En ligne" : "Hors connexion — consultation limitée"}
+    </div>
+  );
+}
+
+// Racine de rendu (Phase 8) : englobe App() dans le fournisseur de connectivite, et ajoute par
+// dessus les deux bandeaux transverses qui n'appartiennent a aucun role en particulier — mise a
+// jour du service worker (point 4) et invitation d'installation PWA (point 34). Ni l'un ni l'autre
+// ne bloque l'usage de l'application en dessous.
+function AppRacine() {
+  const maj = useMiseAJourServiceWorker();
+  const install = useInvitationInstallationPWA();
+  return (
+    <ConnexionProvider>
+      {maj.disponible && (
+        <div className="btp-bandeau-maj">
+          🔄 Nouvelle version disponible
+          <button onClick={maj.actualiser}>Actualiser</button>
+        </div>
+      )}
+      <IndicateurConnexion />
+      <App />
+      {install.proposer && (
+        <div className="btp-bandeau-install">
+          <span>📲 Installer BTC Manager sur cet appareil ?</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={install.installer}>Installer</button>
+            <button className="btp-bandeau-install-plustard" onClick={install.refuser}>Plus tard</button>
+          </div>
+        </div>
+      )}
+    </ConnexionProvider>
+  );
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
@@ -8319,7 +8836,7 @@ function App() {
   );
 }
 
-ReactDOM.render(<App />, document.getElementById("root"));
+ReactDOM.render(<AppRacine />, document.getElementById("root"));
 </script>
 </body>
   </html>
