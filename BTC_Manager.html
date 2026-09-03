@@ -2481,6 +2481,7 @@ var TYPES_ACTIVITES_INDUSTRIELLES = [
   { id: "PANNE", libelle: "Panne", icone: "⚠️", categorie: "subi" },
   { id: "ATTENTE_MATIERE", libelle: "Attente matière", icone: "⏳", categorie: "subi" },
   { id: "COUPURE_ELECTRIQUE", libelle: "Coupure électrique", icone: "⚡", categorie: "subi" },
+  { id: "QUALITE", libelle: "Problème qualité", icone: "🔍", categorie: "subi" },
   { id: "AUTRE", libelle: "Autre", icone: "❓", categorie: "subi" }
 ];
 function libelleActivite(typeId) { var t = TYPES_ACTIVITES_INDUSTRIELLES.find(function (x) { return x.id === typeId; }); return t ? t.libelle : typeId; }
@@ -2587,6 +2588,32 @@ async function planifierActiviteIndustrielle(champs, user, userData) {
     creePar: auteur, validePar: null, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
   });
   return ref.id;
+}
+// Phase finale (points 10-12/32-34) : declaration en UN SEUL CLIC d'une activite deja terminee
+// (duree connue directement — boutons rapides 2h/4h/journee, ou nouveau moule choisi) : plus de
+// chrono "Démarrer" -> attendre -> "Terminer" a suivre, l'operateur indique ce qu'il a fait, BTC
+// Manager fait le reste. Reutilise exactement le meme schema activites_industrielles (aucune
+// collection parallele) — id deterministe (token) -> idempotence sur double-clic.
+async function declarerActiviteTerminee(champs, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var ref = db.collection("activites_industrielles").doc(token);
+  var existe = await ref.get();
+  if (existe.exists) return token; // idempotence (double-clic)
+  var maintenant = Date.now();
+  await ref.set({
+    date: dateLocaleISO(maintenant), type: champs.type, statut: "Termine",
+    heureDebutPrevue: null, heureFinPrevue: null, dureePrevueMinutes: null,
+    heureDebutReelle: maintenant - (champs.dureeMinutes || 0) * 60000, heureFinReelle: maintenant,
+    dureeReelleMinutes: champs.dureeMinutes || 0,
+    typeBTC: champs.typeBTC || null, ancienMoule: champs.ancienMoule || null, nouveauMoule: champs.nouveauMoule || null,
+    volumeTerreConcasseeM3: champs.volumeTerreConcasseeM3 != null ? champs.volumeTerreConcasseeM3 : null,
+    motif: champs.motif || "", commentaire: champs.commentaire || "",
+    creePar: auteur, validePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  if (champs.type === "CHANGEMENT_MOULE" && champs.nouveauMoule) {
+    await db.collection("parametres_industriels").doc("global").set({ mouleActuel: champs.nouveauMoule }, { merge: true });
+  }
+  return token;
 }
 
 // ============================================================================================
@@ -4317,6 +4344,34 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
     return { horizon: horizon, besoinTotal: besoinTotal, planifieTotal: planifieTotal, capaciteDisponible: capaciteDisponible, calendrierPossible: plan.calendrierPossible, rupturesCouvertes: rupturesCouvertes };
   }, [indicateurs, commandes, productions, parametres, maintenant]);
 
+  // Phase finale (point 20/36) : une seule ligne "Aujourd'hui", comprehensible en quelques secondes,
+  // AVANT le detail. Reutilise integralement les agregats deja charges + les fonctions Phase 10B
+  // deja construites (calculerCapaciteProductionParMatieres/calculerApprovisionnementPlan) — aucune
+  // nouvelle requete lourde, juste une petite ecoute matieres_stock (4 documents).
+  const [matieresStockDir, setMatieresStockDir] = React.useState({});
+  React.useEffect(function () {
+    var u = db.collection("matieres_stock").onSnapshot(function (snap) {
+      var m = {}; snap.docs.forEach(function (d) { m[d.id] = d.data(); }); setMatieresStockDir(m);
+    });
+    return u;
+  }, []);
+  const resumeAujourdhui = React.useMemo(function () {
+    var dateFrAujourdhui = new Date().toLocaleDateString("fr-FR");
+    var productionRealisee = productions.filter(function (p) { return p.date === dateFrAujourdhui; }).reduce(function (s, p) { return s + (p.quantite || 0); }, 0);
+    var stockDisponible = CATALOGUE.reduce(function (s, prod) { var st = stocks[prod.id] || {}; return s + (st.sec || 0); }, 0);
+    var lotsEnSechage = CATALOGUE.reduce(function (s, prod) { return s + calcSechageActif(productions, prod.id); }, 0);
+    var commandesARisque = indicateurs.parType.filter(function (x) { return x.rupture.etat === "certain"; }).length;
+    var capaciteMatieres = calculerCapaciteProductionParMatieres(matieresStockDir, parametres);
+    var approvisionnement = calculerApprovisionnementPlan(resumePlanCockpit.besoinTotal, matieresStockDir, parametres);
+    var ligneTerre = approvisionnement.lignes.find(function (l) { return l.id === "terre"; });
+    return {
+      productionRealisee: productionRealisee, productionPrevue: resumePlanCockpit.planifieTotal,
+      stockDisponible: stockDisponible, lotsEnSechage: lotsEnSechage, commandesARisque: commandesARisque,
+      matiereLimitante: capaciteMatieres.matiereLimitante, camionsNecessaires: (ligneTerre && ligneTerre.camionsNecessaires) || 0,
+      ncOuvertes: indicateurs.coutNC.ouvertes
+    };
+  }, [productions, stocks, indicateurs, matieresStockDir, parametres, resumePlanCockpit]);
+
   const enregistrerParametres = async function () {
     setMsgParametres("Enregistrement...");
     try {
@@ -4358,6 +4413,18 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
 
   return (
     <div className="fade-up pilotage">
+      {/* Phase finale (point 20/36) : comprendre la situation de l'usine en moins de 30 secondes,
+          sans ouvrir d'autre ecran. */}
+      <div className="pilotage-grid pilotage-grid-4" style={{ marginBottom: 16 }}>
+        <StatTile label="Production (aujourd'hui)" valeur={resumeAujourdhui.productionRealisee.toLocaleString() + " / " + resumeAujourdhui.productionPrevue.toLocaleString() + " u"} couleur="#F39C12" />
+        <StatTile label="Stock disponible" valeur={resumeAujourdhui.stockDisponible.toLocaleString() + " u"} couleur="#5DADE2" onClick={() => ouvrirObjet("tab", "stock")} />
+        <StatTile label="Lots en séchage" valeur={resumeAujourdhui.lotsEnSechage.toLocaleString() + " u"} couleur="#E67E22" />
+        <StatTile label="Commandes à risque" valeur={String(resumeAujourdhui.commandesARisque)} couleur={resumeAujourdhui.commandesARisque > 0 ? "#EC7063" : "#2ECC71"} />
+        <StatTile label="Matière limitante" valeur={resumeAujourdhui.matiereLimitante ? getLibelleMatiere(resumeAujourdhui.matiereLimitante) : "—"} couleur="var(--btp-text2)" />
+        <StatTile label="Camions de terre nécessaires" valeur={String(resumeAujourdhui.camionsNecessaires)} couleur={resumeAujourdhui.camionsNecessaires > 0 ? "#8D6E63" : "#2ECC71"} />
+        <StatTile label="NC ouvertes" valeur={String(resumeAujourdhui.ncOuvertes)} couleur={resumeAujourdhui.ncOuvertes > 0 ? "#EC7063" : "#2ECC71"} onClick={() => ouvrirObjet("qse_onglet", "nc")} />
+      </div>
+
       {/* Barre de periode + parametres */}
       <div className="pilotage-barre-periode">
         <div className="pilotage-selecteur-periode">
@@ -4521,10 +4588,53 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
 
       {showParametres && formParametres && (
         <div className="btp-modal-overlay" onClick={() => setShowParametres(false)}>
-          <div className="btp-modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <div className="btp-modal-title" style={{ marginBottom: 12 }}>⚙️ Paramètres industriels & objectifs</div>
+          <div className="btp-modal" style={{ maxWidth: 460, maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div className="btp-modal-title" style={{ marginBottom: 4 }}>⚙️ Paramètres</div>
+            <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>Écran unique — tout ce qui est vraiment nécessaire. Les valeurs déjà validées sont préremplies mais restent modifiables.</div>
+
+            <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Production</div>
+            <label className="btp-label">Capacité journalière (u/j)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.capaciteJournaliere || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { capaciteJournaliere: e.target.value ? parseInt(e.target.value, 10) : null }))} />
+            <label className="btp-label">Heures de travail par jour</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.heuresTravailJour || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { heuresTravailJour: e.target.value ? parseFloat(e.target.value) : null }))} />
+            <label className="btp-label">Durée de séchage (jours)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.dureeSechageJours} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { dureeSechageJours: parseInt(e.target.value, 10) || formParametres.dureeSechageJours }))} />
+            <label className="btp-label">Durée de campagne préférée (jours)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.dureeCampagnePrefereeJours || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { dureeCampagnePrefereeJours: e.target.value ? parseInt(e.target.value, 10) : 3 }))} />
+            <label className="btp-label">Durée de changement de moule (h)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.dureeChangementMoulHeures || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { dureeChangementMoulHeures: e.target.value ? parseFloat(e.target.value) : 4 }))} />
+            <label className="btp-label">Moule actuel</label>
+            <select className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.mouleActuel || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { mouleActuel: e.target.value || null }))}>
+              <option value="">Non renseigné</option>
+              {CATALOGUE.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+            </select>
+
+            <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Recette</div>
+            <label className="btp-label">Terre / 100 BTC (m³)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.recetteTerreM3Pour100BTC} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { recetteTerreM3Pour100BTC: parseFloat(e.target.value) || 0 }))} />
+            <label className="btp-label">Ciment (% de la masse sèche)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.recetteTauxCimentPct * 100} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { recetteTauxCimentPct: (parseFloat(e.target.value) || 0) / 100 }))} />
+            <label className="btp-label">Sable (% de la masse sèche)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.recetteTauxSablePct * 100} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { recetteTauxSablePct: (parseFloat(e.target.value) || 0) / 100 }))} />
+            <label className="btp-label">Humidité initiale → cible (%)</label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <input type="number" className="btp-input" style={{ width: "100%" }} value={formParametres.recetteHumiditeInitialePct * 100} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { recetteHumiditeInitialePct: (parseFloat(e.target.value) || 0) / 100 }))} />
+              <input type="number" className="btp-input" style={{ width: "100%" }} value={formParametres.recetteHumiditeCiblePct * 100} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { recetteHumiditeCiblePct: (parseFloat(e.target.value) || 0) / 100 }))} />
+            </div>
+            <label className="btp-label">Densité de la terre sèche (kg/m³) — jamais inventée, à mesurer</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.densiteTerreSecheKgM3 || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { densiteTerreSecheKgM3: e.target.value ? parseFloat(e.target.value) : null }))} />
+
+            <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Logistique</div>
+            <label className="btp-label">Capacité benne par défaut (m³)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.capaciteBenneDefautM3 || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { capaciteBenneDefautM3: e.target.value ? parseFloat(e.target.value) : 15 }))} />
+
+            <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Stock</div>
             <label className="btp-label">Stock cible par défaut (u)</label>
             <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.stockCibleDefaut} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { stockCibleDefaut: parseInt(e.target.value, 10) || 0 }))} />
+            <label className="btp-label">Seuil minimum (u)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.stockMinimumDefaut} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { stockMinimumDefaut: parseInt(e.target.value, 10) || 0 }))} />
+
+            <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Objectifs</div>
             <label className="btp-label">Cadence cible (u/jour) — laisser vide si non définie</label>
             <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.cadenceCibleParJour || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { cadenceCibleParJour: e.target.value ? parseInt(e.target.value, 10) : null }))} />
             <label className="btp-label">Objectif production mensuelle (u)</label>
@@ -4533,6 +4643,7 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
             <input type="number" className="btp-input" style={{ marginBottom: 10, width: "100%" }} value={formParametres.objectifTauxPertesMaxPct || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { objectifTauxPertesMaxPct: e.target.value ? parseFloat(e.target.value) : null }))} />
             <label className="btp-label">Taux de conformité cible (%)</label>
             <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.objectifTauxConformiteMinPct || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { objectifTauxConformiteMinPct: e.target.value ? parseFloat(e.target.value) : null }))} />
+
             {msgParametres && <div style={{ fontSize: 12, marginBottom: 10, color: msgParametres.indexOf("❌") >= 0 ? "#EC7063" : "#2ECC71" }}>{msgParametres}</div>}
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} onClick={enregistrerParametres}>Enregistrer</button>
@@ -6929,6 +7040,33 @@ function DashboardStock({ user, userData }) {
   const [formReception, setFormReception] = React.useState(null);
   const [msgReception, setMsgReception] = React.useState("");
   const [receptionEnCours, setReceptionEnCours] = React.useState(false);
+  // Phase finale (point 4) : ciment/sable — quantite + prix, fournisseur facultatif. Reutilise
+  // exactement receptionnerMatierePremiere (deja construit Phase 10B, jamais expose en UI).
+  const [showReceptionMatiere, setShowReceptionMatiere] = React.useState(false);
+  const [formMatiere, setFormMatiere] = React.useState(null);
+  const [msgReceptionMatiere, setMsgReceptionMatiere] = React.useState("");
+  const [receptionMatiereEnCours, setReceptionMatiereEnCours] = React.useState(false);
+  var ouvrirReceptionMatiere = function () {
+    setFormMatiere({ matiereId: "ciment", quantite: "", prixTotal: "", fournisseur: "" });
+    setShowReceptionMatiere(true); setMsgReceptionMatiere("");
+  };
+  var validerReceptionMatiere = async function () {
+    if (receptionMatiereEnCours) return; // anti-double-clic
+    var quantite = parseFloat(formMatiere.quantite);
+    if (!(quantite > 0)) { setMsgReceptionMatiere("Quantité requise."); return; }
+    if (!enLigne) { setMsgReceptionMatiere("🚫 Connexion requise — réception impossible hors connexion."); return; }
+    setReceptionMatiereEnCours(true); setMsgReceptionMatiere("Enregistrement...");
+    var token = "matiere_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    try {
+      await receptionnerMatierePremiere(formMatiere.matiereId, quantite, "kg", formMatiere.prixTotal ? parseFloat(formMatiere.prixTotal) : null, formMatiere.fournisseur, token, user, userData);
+      setReceptionMatiereEnCours(false);
+      setMsgReceptionMatiere("✓ " + quantite.toLocaleString() + " kg de " + getLibelleMatiere(formMatiere.matiereId).toLowerCase() + " ajoutés.");
+      setTimeout(function () { setShowReceptionMatiere(false); }, 1200);
+    } catch (e) {
+      setReceptionMatiereEnCours(false);
+      setMsgReceptionMatiere("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")");
+    }
+  };
   React.useEffect(function () { chargerParametresIndustriels().then(setParametresStock); }, []);
   React.useEffect(function () {
     var u = db.collection("matieres_stock").onSnapshot(function (snap) {
@@ -6937,7 +7075,7 @@ function DashboardStock({ user, userData }) {
     return u;
   }, []);
   var ouvrirReceptionTerre = function () {
-    setFormReception({ nombreCamions: "", capaciteCamionM3: String(parametresStock.capaciteBenneDefautM3 || 15), volumeReelM3: "", origine: "", fournisseur: "", prixTotal: "" });
+    setFormReception({ nombreCamions: "", capaciteCamionM3: String(parametresStock.capaciteBenneDefautM3 || 15), volumeReelM3: "", volumeReelOuvert: false, origine: "", fournisseur: "", prixTotal: "", detailsOuvert: false });
     setShowReceptionTerre(true); setMsgReception("");
   };
   var validerReceptionTerre = async function () {
@@ -7248,6 +7386,7 @@ function DashboardStock({ user, userData }) {
         <h3 style={{marginBottom:10,color:"#145A32"}}>Matières premières (stock théorique)</h3>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
           <button className="btn btn-lg" style={{background:"#8D6E63",color:"white",fontWeight:800,fontSize:16}} onClick={ouvrirReceptionTerre} disabled={!enLigne}>🚚 Réception terre (camions)</button>
+          <button className="btn btn-lg" style={{background:"#7F8C8D",color:"white",fontWeight:800,fontSize:16}} onClick={ouvrirReceptionMatiere} disabled={!enLigne}>🧱 Réception ciment/sable</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:28}}>
           {["terre","ciment","sable","eau"].map(function(id){
@@ -7272,20 +7411,53 @@ function DashboardStock({ user, userData }) {
               <label className="btp-label">Capacité de la benne (m³)</label>
               <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.capaciteCamionM3} onChange={e=>setFormReception(Object.assign({},formReception,{capaciteCamionM3:e.target.value}))} />
               {formReception.nombreCamions && formReception.capaciteCamionM3 && (
-                <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:10}}>≈ {(parseFloat(formReception.nombreCamions||0)*parseFloat(formReception.capaciteCamionM3||0)).toLocaleString()} m³ théoriques</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#8D6E63",marginBottom:10}}>≈ {(parseFloat(formReception.nombreCamions||0)*parseFloat(formReception.capaciteCamionM3||0)).toLocaleString()} m³ ajoutés</div>
               )}
-              <label className="btp-label">Volume réel mesuré (m³, facultatif — sinon le théorique est retenu)</label>
-              <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.volumeReelM3} onChange={e=>setFormReception(Object.assign({},formReception,{volumeReelM3:e.target.value}))} />
-              <label className="btp-label">Origine / chantier</label>
-              <input type="text" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.origine} onChange={e=>setFormReception(Object.assign({},formReception,{origine:e.target.value}))} />
-              <label className="btp-label">Fournisseur</label>
-              <input type="text" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.fournisseur} onChange={e=>setFormReception(Object.assign({},formReception,{fournisseur:e.target.value}))} />
-              <label className="btp-label">Prix total (€, facultatif)</label>
-              <input type="number" className="btp-input" style={{width:"100%",marginBottom:14}} value={formReception.prixTotal} onChange={e=>setFormReception(Object.assign({},formReception,{prixTotal:e.target.value}))} />
+              {/* Phase finale (point 6) : le champ volume reel reste cache par defaut — l'utilisateur
+                  ne calcule jamais lui-meme les m³, il ne le corrige que s'il le souhaite. */}
+              <button type="button" className="btn btn-sm btn-ghost" style={{marginBottom:8}} onClick={()=>setFormReception(Object.assign({},formReception,{volumeReelOuvert:!formReception.volumeReelOuvert}))}>{formReception.volumeReelOuvert?"▾":"▸"} Volume réel différent ?</button>
+              {formReception.volumeReelOuvert && (
+                <input type="number" placeholder="Volume réel mesuré (m³)" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.volumeReelM3} onChange={e=>setFormReception(Object.assign({},formReception,{volumeReelM3:e.target.value}))} />
+              )}
+              <button type="button" className="btn btn-sm btn-ghost" style={{marginBottom:8}} onClick={()=>setFormReception(Object.assign({},formReception,{detailsOuvert:!formReception.detailsOuvert}))}>{formReception.detailsOuvert?"▾":"▸"} Plus de détails</button>
+              {formReception.detailsOuvert && (
+                <div style={{marginBottom:10}}>
+                  <label className="btp-label">Origine / chantier</label>
+                  <input type="text" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.origine} onChange={e=>setFormReception(Object.assign({},formReception,{origine:e.target.value}))} />
+                  <label className="btp-label">Fournisseur</label>
+                  <input type="text" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.fournisseur} onChange={e=>setFormReception(Object.assign({},formReception,{fournisseur:e.target.value}))} />
+                  <label className="btp-label">Prix total (€)</label>
+                  <input type="number" className="btp-input" style={{width:"100%"}} value={formReception.prixTotal} onChange={e=>setFormReception(Object.assign({},formReception,{prixTotal:e.target.value}))} />
+                </div>
+              )}
               {msgReception && <div style={{fontSize:13,marginBottom:10,fontWeight:700,color:msgReception.indexOf("✓")===0?"#1E8449":"#C0392B"}}>{msgReception}</div>}
               <div style={{display:"flex",gap:10}}>
-                <button className="btn btn-full" style={{background:"#8D6E63",color:"white"}} disabled={receptionEnCours||!enLigne} onClick={validerReceptionTerre}>{receptionEnCours?"Enregistrement…":(!enLigne?"🚫 Hors connexion":"✓ Valider la réception")}</button>
+                <button className="btn btn-full" style={{background:"#8D6E63",color:"white"}} disabled={receptionEnCours||!enLigne} onClick={validerReceptionTerre}>{receptionEnCours?"Enregistrement…":(!enLigne?"🚫 Hors connexion":"✓ Valider")}</button>
                 <button className="btn btn-ghost btn-full" onClick={()=>setShowReceptionTerre(false)}>Fermer</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showReceptionMatiere && formMatiere && (
+          <div className="btp-modal-overlay" onClick={() => setShowReceptionMatiere(false)}>
+            <div className="btp-modal" style={{maxWidth:380}} onClick={(e)=>e.stopPropagation()}>
+              <div className="btp-modal-title" style={{marginBottom:10}}>🧱 Réception matière</div>
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                {["ciment","sable"].map(function(id){
+                  return <button key={id} className={"btn btn-sm" + (formMatiere.matiereId===id?" btn-primary":"")} onClick={()=>setFormMatiere(Object.assign({},formMatiere,{matiereId:id}))}>{getLibelleMatiere(id)}</button>;
+                })}
+              </div>
+              <label className="btp-label">Quantité (kg)</label>
+              <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formMatiere.quantite} onChange={e=>setFormMatiere(Object.assign({},formMatiere,{quantite:e.target.value}))} />
+              <label className="btp-label">Prix total (€, facultatif)</label>
+              <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formMatiere.prixTotal} onChange={e=>setFormMatiere(Object.assign({},formMatiere,{prixTotal:e.target.value}))} />
+              <label className="btp-label">Fournisseur (facultatif)</label>
+              <input type="text" className="btp-input" style={{width:"100%",marginBottom:14}} value={formMatiere.fournisseur} onChange={e=>setFormMatiere(Object.assign({},formMatiere,{fournisseur:e.target.value}))} />
+              {msgReceptionMatiere && <div style={{fontSize:13,marginBottom:10,fontWeight:700,color:msgReceptionMatiere.indexOf("✓")===0?"#1E8449":"#C0392B"}}>{msgReceptionMatiere}</div>}
+              <div style={{display:"flex",gap:10}}>
+                <button className="btn btn-full" style={{background:"#7F8C8D",color:"white"}} disabled={receptionMatiereEnCours||!enLigne} onClick={validerReceptionMatiere}>{receptionMatiereEnCours?"Enregistrement…":(!enLigne?"🚫 Hors connexion":"✓ Valider")}</button>
+                <button className="btn btn-ghost btn-full" onClick={()=>setShowReceptionMatiere(false)}>Fermer</button>
               </div>
             </div>
           </div>
@@ -7453,6 +7625,7 @@ function DashboardProduction({ user, userData }) {
   const [saisieType, setSaisieType] = useState(CATALOGUE[0].id);
   const [saisieQte, setSaisieQte] = useState("");
   const [saisiePhase, setSaisiePhase] = useState("sec");
+  const [saisieDetailsOuvert, setSaisieDetailsOuvert] = useState(false);
   const [msg, setMsg] = useState("");
   const dateAujourdHui = new Date().toLocaleDateString("fr-FR");
   const [saisieDate, setSaisieDate] = React.useState(function(){ var d = new Date(); var m = String(d.getMonth()+1).padStart(2,"0"); var j = String(d.getDate()).padStart(2,"0"); return d.getFullYear()+"-"+m+"-"+j; });
@@ -7480,10 +7653,15 @@ function DashboardProduction({ user, userData }) {
   const [parametresProd, setParametresProd] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
   const [matieresStockProd, setMatieresStockProd] = React.useState({});
   const [activitesJourProd, setActivitesJourProd] = React.useState([]);
-  const [activiteEnCours, setActiviteEnCours] = React.useState(null); // activite EnCours (concassage/changement moule...) demarree par cet operateur
-  const [formActivite, setFormActivite] = React.useState(null); // { type } quand le formulaire de demarrage est ouvert
-  const [formTerminerActivite, setFormTerminerActivite] = React.useState(null); // { volumeTerreConcasseeM3, nouveauMoule, commentaire }
+  // Phase finale (points 3/10-12/17-18) : ecran "Aujourd'hui" ultra simple + 4 boutons -> une seule
+  // action rapide a la fois. Plus de chrono "Démarrer/Terminer" a suivre : l'operateur indique ce
+  // qu'il a fait (une duree connue, ou un nouveau moule), BTC Manager fait le reste.
+  const [ecranActif, setEcranActif] = React.useState(null); // null | "produire" | "concassage" | "moule" | "probleme"
+  const [formConcassage, setFormConcassage] = React.useState({ dureeMinutes: null, dureeLibre: "", volumeTerreConcasseeM3: "", detailsOuvert: false });
+  const [formMoule, setFormMoule] = React.useState({ nouveauMoule: "", dureeDifferente: false, dureeMinutes: null });
+  const [formProbleme, setFormProbleme] = React.useState({ type: "", commentaire: "" });
   const [msgActivite, setMsgActivite] = React.useState("");
+  const [activiteEnCours, setActiviteEnCours] = React.useState(false); // anti-double-clic
   React.useEffect(function () { chargerParametresIndustriels().then(setParametresProd); }, []);
   React.useEffect(function () {
     var u = db.collection("matieres_stock").onSnapshot(function (snap) {
@@ -7493,40 +7671,58 @@ function DashboardProduction({ user, userData }) {
   }, []);
   React.useEffect(function () {
     var u = db.collection("activites_industrielles").where("date", "==", dateLocaleISO(Date.now())).onSnapshot(function (snap) {
-      var liste = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-      setActivitesJourProd(liste);
-      var enCours = liste.find(function (a) { return a.statut === "EnCours"; });
-      setActiviteEnCours(enCours || null);
+      setActivitesJourProd(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
     });
     return u;
   }, []);
   var capaciteReelleAujourdhui = React.useMemo(function () {
     return calculerCapaciteReelleJour(parametresProd.capaciteJournaliere, parametresProd.heuresTravailJour, activitesJourProd);
   }, [parametresProd, activitesJourProd]);
-  var demarrerActivite = async function (typeActivite) {
+  var derniereActiviteJour = activitesJourProd.length > 0 ? activitesJourProd.slice().sort(function (a, b) { return (b.dateCreation && b.dateCreation._ms || 0) - (a.dateCreation && a.dateCreation._ms || 0); })[0] : null;
+
+  var validerConcassage = async function () {
+    if (activiteEnCours) return;
+    var minutes = formConcassage.dureeMinutes || (formConcassage.dureeLibre ? Math.round(parseFloat(formConcassage.dureeLibre) * 60) : null);
+    if (!minutes) { setMsgActivite("Choisissez une durée."); return; }
     if (!enLigne) { setMsgActivite("🚫 Connexion requise — impossible hors connexion."); return; }
-    var extra = {};
-    if (typeActivite === "CHANGEMENT_MOULE") {
-      extra.ancienMoule = parametresProd.mouleActuel || null;
-      extra.nouveauMoule = (formActivite && formActivite.nouveauMoule) || null;
-      if (!extra.nouveauMoule) { setMsgActivite("Choisissez le nouveau moule."); return; }
-    }
+    setActiviteEnCours(true);
     var token = "act_" + Date.now() + "_" + Math.random().toString(36).slice(2);
     try {
-      await demarrerActiviteIndustrielle(Object.assign({ type: typeActivite }, extra), token, user, userData);
-      setMsgActivite("✓ " + libelleActivite(typeActivite) + " démarré.");
-      setFormActivite(null);
+      await declarerActiviteTerminee({ type: "CONCASSAGE", dureeMinutes: minutes, volumeTerreConcasseeM3: formConcassage.volumeTerreConcasseeM3 ? parseFloat(formConcassage.volumeTerreConcasseeM3) : null }, token, user, userData);
+      setMsgActivite("✓ Concassage (" + (minutes / 60).toFixed(1).replace(".0", "") + " h) enregistré — capacité du jour ajustée.");
+      setFormConcassage({ dureeMinutes: null, dureeLibre: "", volumeTerreConcasseeM3: "", detailsOuvert: false });
+      setEcranActif(null);
     } catch (e) { setMsgActivite("❌ Échec — aucune modification confirmée. (" + e.message + ")"); }
+    setActiviteEnCours(false);
   };
-  var terminerActivite = async function () {
-    if (!activiteEnCours) return;
+  var validerChangementMoule = async function () {
+    if (activiteEnCours) return;
+    if (!formMoule.nouveauMoule) { setMsgActivite("Choisissez le nouveau moule."); return; }
     if (!enLigne) { setMsgActivite("🚫 Connexion requise — impossible hors connexion."); return; }
+    setActiviteEnCours(true);
+    var token = "act_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    var minutes = formMoule.dureeDifferente && formMoule.dureeMinutes ? formMoule.dureeMinutes : (parametresProd.dureeChangementMoulHeures || 4) * 60;
     try {
-      var champs = formTerminerActivite || {};
-      await terminerActiviteIndustrielle(activiteEnCours.id, { volumeTerreConcasseeM3: champs.volumeTerreConcasseeM3 ? parseFloat(champs.volumeTerreConcasseeM3) : null, commentaire: champs.commentaire || "" }, user, userData);
-      setMsgActivite("✓ " + libelleActivite(activiteEnCours.type) + " terminé.");
-      setFormTerminerActivite(null);
+      await declarerActiviteTerminee({ type: "CHANGEMENT_MOULE", dureeMinutes: minutes, ancienMoule: parametresProd.mouleActuel || null, nouveauMoule: formMoule.nouveauMoule }, token, user, userData);
+      setMsgActivite("✓ Changement de moule vers " + getProduit(formMoule.nouveauMoule).nom + " enregistré (" + (minutes / 60).toFixed(1).replace(".0", "") + " h).");
+      setFormMoule({ nouveauMoule: "", dureeDifferente: false, dureeMinutes: null });
+      setEcranActif(null);
     } catch (e) { setMsgActivite("❌ Échec — aucune modification confirmée. (" + e.message + ")"); }
+    setActiviteEnCours(false);
+  };
+  var validerProbleme = async function () {
+    if (activiteEnCours) return;
+    if (!formProbleme.type) { setMsgActivite("Choisissez un type de problème."); return; }
+    if (!enLigne) { setMsgActivite("🚫 Connexion requise — impossible hors connexion."); return; }
+    setActiviteEnCours(true);
+    var token = "act_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    try {
+      await declarerActiviteTerminee({ type: formProbleme.type, dureeMinutes: 0, commentaire: formProbleme.commentaire }, token, user, userData);
+      setMsgActivite("✓ Problème signalé : " + libelleActivite(formProbleme.type) + ".");
+      setFormProbleme({ type: "", commentaire: "" });
+      setEcranActif(null);
+    } catch (e) { setMsgActivite("❌ Échec — aucune modification confirmée. (" + e.message + ")"); }
+    setActiviteEnCours(false);
   };
   // Phase 10 (points 28/29/35/36) : lignes du dernier plan de production VALIDE. Charge une seule
   // fois au montage (requete ciblee, point 49) puis rafraichi localement apres chaque demarrage —
@@ -7540,6 +7736,7 @@ function DashboardProduction({ user, userData }) {
   var aujourdHuiISOProd = dateLocaleISO(Date.now());
   var planDuJour = planLignes.filter(function (l) { return l.statut === "Valide" && dateLocaleISO(l.dateMs) === aujourdHuiISOProd; });
   var planEnRetard = planLignes.filter(function (l) { return l.statut === "Valide" && dateLocaleISO(l.dateMs) < aujourdHuiISOProd; });
+  var objectifAujourdhui = planDuJour.reduce(function (s, l) { return s + (l.quantitePrevue || 0); }, 0);
   var prioriteDonneesProd = { stocks: stocks, lots: lots, controlesEnAttente: controlesEnAttente, ncs: [], maintenant: Date.now(), planLignes: planLignes };
   var compteurPrioritesProd = useCompteurPriorites(prioriteDonneesProd, "resp_production");
   var ouvrirObjetProd = function (type, idOuObjet) { if (type === "lot") setLotOuvert(idOuObjet); if (type === "tab" && idOuObjet === "production") setTabProd("production"); };
@@ -7771,61 +7968,69 @@ function DashboardProduction({ user, userData }) {
           {compteurPrioritesProd > 0 && <span className="btp-badge-compteur">{compteurPrioritesProd}</span>}
         </div>
 
-        {/* Phase 10B (parties C/I/BG) : "Activité du jour" — jamais lourd, un operateur doit pouvoir
-            declarer une activite en quelques secondes. Le concassage/changement de moule ne sont
-            JAMAIS classes comme une panne ou une perte (partie G) : ce sont des activites process
-            necessaires, distinctes des arrets subis. */}
+        {/* Phase finale (points 3/17/32-34) : "Aujourd'hui" — 4 informations, 4 gros boutons, rien
+            d'autre visible par defaut. Chaque action tient en un ecran, une duree ou un choix, et
+            "Valider" : jamais un chrono a suivre, jamais un formulaire long. */}
         <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 8, color: "#4A235A" }}>🏭 Activité du jour</h3>
-          <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 10 }}>
-            Moule actuel : <strong>{parametresProd.mouleActuel ? getProduit(parametresProd.mouleActuel).nom : "non renseigné"}</strong>
-            {capaciteReelleAujourdhui.calculable && (<> · Capacité BTC ajustée aujourd'hui : <strong>≈{capaciteReelleAujourdhui.capaciteReelle.toLocaleString()}</strong> ({capaciteReelleAujourdhui.heuresDisponibles.toFixed(1)} h disponibles sur {parametresProd.heuresTravailJour} h, {capaciteReelleAujourdhui.heuresIndisponibles.toFixed(1)} h mobilisées ailleurs)</>)}
+          <h3 style={{ marginBottom: 10, color: "#4A235A" }}>Aujourd'hui</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 10, marginBottom: 14, fontSize: 13 }}>
+            <div><div style={{ color: "var(--btp-text2)", fontSize: 11 }}>Moule</div><div style={{ fontWeight: 700 }}>{parametresProd.mouleActuel ? getProduit(parametresProd.mouleActuel).nom : "—"}</div></div>
+            <div><div style={{ color: "var(--btp-text2)", fontSize: 11 }}>Objectif</div><div style={{ fontWeight: 700 }}>{objectifAujourdhui > 0 ? (objectifAujourdhui.toLocaleString() + " BTC") : "—"}</div></div>
+            <div><div style={{ color: "var(--btp-text2)", fontSize: 11 }}>Activité</div><div style={{ fontWeight: 700 }}>{derniereActiviteJour ? libelleActivite(derniereActiviteJour.type) : "—"}</div></div>
+            <div><div style={{ color: "var(--btp-text2)", fontSize: 11 }}>Capacité restante</div><div style={{ fontWeight: 700 }}>{capaciteReelleAujourdhui.calculable ? ("≈" + capaciteReelleAujourdhui.capaciteReelle.toLocaleString()) : "—"}</div></div>
           </div>
 
-          {activiteEnCours ? (
-            <div style={{ background: "rgba(243,156,18,.12)", border: "1px solid rgba(243,156,18,.4)", borderRadius: 8, padding: 12 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>{TYPES_ACTIVITES_INDUSTRIELLES.find(t => t.id === activiteEnCours.type).icone} {libelleActivite(activiteEnCours.type)} en cours{activiteEnCours.nouveauMoule ? (" → " + getProduit(activiteEnCours.nouveauMoule).nom) : ""}</div>
-              {activiteEnCours.type === "CONCASSAGE" && (
-                <input type="number" placeholder="Volume de terre concassée (m³, facultatif)" value={(formTerminerActivite && formTerminerActivite.volumeTerreConcasseeM3) || ""} onChange={e => setFormTerminerActivite(Object.assign({}, formTerminerActivite, { volumeTerreConcasseeM3: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }} />
-              )}
-              <button className="btn btn-sm btn-full" style={{ background: "#1E8449", color: "white" }} disabled={!enLigne} onClick={terminerActivite}>{!enLigne ? "🚫 Hors connexion" : ("✓ Terminer " + libelleActivite(activiteEnCours.type).toLowerCase())}</button>
-            </div>
-          ) : (
-            <div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: formActivite ? 10 : 0 }}>
-                <button className="btn btn-sm" onClick={() => setFormActivite({ type: "CONCASSAGE" })}>🪨 Concassage</button>
-                <button className="btn btn-sm" onClick={() => setFormActivite({ type: "CHANGEMENT_MOULE" })}>🔧 Changement moule</button>
-                <button className="btn btn-sm" onClick={() => setFormActivite({ type: "MAINTENANCE" })}>🛠 Maintenance</button>
-                <button className="btn btn-sm btn-ghost" onClick={() => setFormActivite({ type: "ARRET" })}>⚠️ Arrêt</button>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 10 }}>
+            <button className="btn btn-lg" style={{ background: "#6C3483", color: "white", fontWeight: 800 }} onClick={() => { setEcranActif(null); setTimeout(() => { var el = document.getElementById("prod-form-saisie"); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }, 50); }}>🏭 Produire</button>
+            <button className="btn btn-lg" style={{ background: "#8D6E63", color: "white", fontWeight: 800 }} onClick={() => setEcranActif(ecranActif === "concassage" ? null : "concassage")}>🪨 Concassage</button>
+            <button className="btn btn-lg" style={{ background: "#5DADE2", color: "white", fontWeight: 800 }} onClick={() => setEcranActif(ecranActif === "moule" ? null : "moule")}>🔧 Changer moule</button>
+            <button className="btn btn-lg" style={{ background: "#EC7063", color: "white", fontWeight: 800 }} onClick={() => setEcranActif(ecranActif === "probleme" ? null : "probleme")}>⚠ Signaler problème</button>
+          </div>
+
+          {ecranActif === "concassage" && (
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--btp-border)", paddingTop: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 8 }}>Durée</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                {[["2 h", 120], ["4 h", 240], ["Journée", (parametresProd.heuresTravailJour || 8) * 60]].map(function ([libelle, minutes]) {
+                  return <button key={libelle} className={"btn btn-sm" + (formConcassage.dureeMinutes === minutes ? " btn-primary" : "")} onClick={() => setFormConcassage(Object.assign({}, formConcassage, { dureeMinutes: minutes, dureeLibre: "" }))}>{libelle}</button>;
+                })}
+                <input type="number" placeholder="Autre (h)" value={formConcassage.dureeLibre} onChange={e => setFormConcassage(Object.assign({}, formConcassage, { dureeLibre: e.target.value, dureeMinutes: null }))} style={{ width: 100, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", fontSize: 13 }} />
               </div>
-              {formActivite && formActivite.type === "ARRET" && (
-                <div style={{ marginBottom: 10 }}>
-                  <select value={formActivite.sousType || ""} onChange={e => setFormActivite(Object.assign({}, formActivite, { sousType: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }}>
-                    <option value="">Type d'arrêt…</option>
-                    <option value="PANNE">⚠️ Panne</option>
-                    <option value="ATTENTE_MATIERE">⏳ Attente matière</option>
-                    <option value="COUPURE_ELECTRIQUE">⚡ Coupure électrique</option>
-                    <option value="NETTOYAGE">🧹 Nettoyage</option>
-                    <option value="AUTRE">❓ Autre</option>
-                  </select>
-                  <button className="btn btn-sm btn-full" disabled={!formActivite.sousType || !enLigne} onClick={() => demarrerActivite(formActivite.sousType)}>Démarrer</button>
-                </div>
+              <button className="btn btn-sm btn-ghost" style={{ marginBottom: 8 }} onClick={() => setFormConcassage(Object.assign({}, formConcassage, { detailsOuvert: !formConcassage.detailsOuvert }))}>{formConcassage.detailsOuvert ? "▾" : "▸"} Plus de détails</button>
+              {formConcassage.detailsOuvert && (
+                <input type="number" placeholder="Volume de terre concassée (m³, facultatif)" value={formConcassage.volumeTerreConcasseeM3} onChange={e => setFormConcassage(Object.assign({}, formConcassage, { volumeTerreConcasseeM3: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 10, fontSize: 13 }} />
               )}
-              {formActivite && formActivite.type === "CHANGEMENT_MOULE" && (
-                <div style={{ marginBottom: 10 }}>
-                  <select value={formActivite.nouveauMoule || ""} onChange={e => setFormActivite(Object.assign({}, formActivite, { nouveauMoule: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }}>
-                    <option value="">Nouveau moule…</option>
-                    {CATALOGUE.map(p => <option key={p.id} value={p.id}>{p.nom} — {p.dim}</option>)}
-                  </select>
-                  <button className="btn btn-sm btn-full" disabled={!enLigne} onClick={() => demarrerActivite("CHANGEMENT_MOULE")}>Démarrer le changement</button>
-                </div>
-              )}
-              {formActivite && (formActivite.type === "CONCASSAGE" || formActivite.type === "MAINTENANCE") && (
-                <button className="btn btn-sm btn-full" style={{ marginBottom: 10 }} disabled={!enLigne} onClick={() => demarrerActivite(formActivite.type)}>▶️ Démarrer {libelleActivite(formActivite.type).toLowerCase()}</button>
-              )}
+              <button className="btn btn-sm btn-full" style={{ background: "#1E8449", color: "white" }} disabled={activiteEnCours || !enLigne} onClick={validerConcassage}>{!enLigne ? "🚫 Hors connexion" : "✓ Valider"}</button>
             </div>
           )}
-          {msgActivite && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: msgActivite.indexOf("✓") === 0 ? "#1E8449" : "#C0392B" }}>{msgActivite}</div>}
+
+          {ecranActif === "moule" && (
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--btp-border)", paddingTop: 12 }}>
+              <select value={formMoule.nouveauMoule} onChange={e => setFormMoule(Object.assign({}, formMoule, { nouveauMoule: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }}>
+                <option value="">Nouveau moule…</option>
+                {CATALOGUE.map(p => <option key={p.id} value={p.id}>{p.nom} — {p.dim}</option>)}
+              </select>
+              <button className="btn btn-sm btn-ghost" style={{ marginBottom: 8 }} onClick={() => setFormMoule(Object.assign({}, formMoule, { dureeDifferente: !formMoule.dureeDifferente }))}>{formMoule.dureeDifferente ? "▾" : "▸"} Durée différente ? (par défaut {parametresProd.dureeChangementMoulHeures || 4} h)</button>
+              {formMoule.dureeDifferente && (
+                <input type="number" placeholder="Durée (h)" value={formMoule.dureeMinutes ? formMoule.dureeMinutes / 60 : ""} onChange={e => setFormMoule(Object.assign({}, formMoule, { dureeMinutes: e.target.value ? Math.round(parseFloat(e.target.value) * 60) : null }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 10, fontSize: 13 }} />
+              )}
+              <button className="btn btn-sm btn-full" style={{ background: "#1E8449", color: "white" }} disabled={activiteEnCours || !enLigne} onClick={validerChangementMoule}>{!enLigne ? "🚫 Hors connexion" : "✓ Valider"}</button>
+            </div>
+          )}
+
+          {ecranActif === "probleme" && (
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--btp-border)", paddingTop: 12 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                {[["PANNE", "⚠️ Panne"], ["ATTENTE_MATIERE", "⏳ Matière manquante"], ["COUPURE_ELECTRIQUE", "⚡ Coupure électrique"], ["QUALITE", "🔍 Qualité"], ["AUTRE", "❓ Autre"]].map(function ([id, libelle]) {
+                  return <button key={id} className={"btn btn-sm" + (formProbleme.type === id ? " btn-primary" : "")} onClick={() => setFormProbleme(Object.assign({}, formProbleme, { type: id }))}>{libelle}</button>;
+                })}
+              </div>
+              <input type="text" placeholder="Commentaire (facultatif)" value={formProbleme.commentaire} onChange={e => setFormProbleme(Object.assign({}, formProbleme, { commentaire: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 10, fontSize: 13 }} />
+              <button className="btn btn-sm btn-full" style={{ background: "#1E8449", color: "white" }} disabled={activiteEnCours || !enLigne} onClick={validerProbleme}>{!enLigne ? "🚫 Hors connexion" : "✓ Signaler"}</button>
+            </div>
+          )}
+
+          {msgActivite && <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: msgActivite.indexOf("✓") === 0 ? "#1E8449" : "#C0392B" }}>{msgActivite}</div>}
         </div>
 
         {/* Phase 10 (points 28/35) : ecran simplifie "Aujourd'hui : ... -> Démarrer production" —
@@ -7903,18 +8108,27 @@ function DashboardProduction({ user, userData }) {
               <button className="btn btn-sm btn-ghost" style={{ padding: "2px 8px" }} onClick={() => setPlanLigneActive(null)}>Annuler</button>
             </div>
           )}
+          {/* Phase finale (points 3/26) : type + quantite uniquement visibles — phase (sec par
+              defaut) et date (aujourd'hui par defaut) repliees, tout le reste (lot, tracabilite,
+              sechage, matieres, cout, stock, lien planning, indicateurs) est deduit automatiquement
+              a la validation, jamais redemande. */}
           <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
             {typesParUrgence.map(function(item) {
               return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - {item.prod.dim}</option>;
             })}
           </select>
-          <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
-            <option value="sec">Stock sec (seche)</option>
-            <option value="sechage">En sechage (frais)</option>
-          </select>
-          <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de production</label>
-          <input type="date" value={saisieDate} onChange={e=>setSaisieDate(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}} />
-          <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14}} />
+          <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14}} />
+          <button type="button" className="btn btn-sm btn-ghost" style={{marginBottom:8}} onClick={()=>setSaisieDetailsOuvert(!saisieDetailsOuvert)}>{saisieDetailsOuvert?"▾":"▸"} Plus de détails</button>
+          {saisieDetailsOuvert && (
+            <div style={{marginBottom:8}}>
+              <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
+                <option value="sec">Stock sec (seche)</option>
+                <option value="sechage">En sechage (frais)</option>
+              </select>
+              <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de production</label>
+              <input type="date" value={saisieDate} onChange={e=>setSaisieDate(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",background:"var(--btp-card)",fontSize:14}} />
+            </div>
+          )}
           {/* Point AH : apercu matieres avant validation — pur, informatif, ne bloque jamais la
               saisie tant que le suivi matiere n'a pas ete explicitement active (densite configuree). */}
           {apercuMatieres && apercuMatieres.suivi && (
@@ -9882,31 +10096,40 @@ function QseTableauDeBord(props) {
     return qseFormatNombre(ratio) + " " + unite + " / 1 000 BTC";
   };
 
+  // Phase finale (point 19/35) : le responsable qualite ne doit voir que ce qui necessite reellement
+  // son attention. Un seul chiffre resume tout ; "Tout est à jour" si rien n'est en attente — jamais
+  // une liste de compteurs a zero a parcourir pour s'en rendre compte.
+  const totalATraiter = controlesAFaire + ncOuvertes.length + actionsEnRetard.length + risquesCritiques.length + productionsSansLot.length;
+
   return (
     <div className="qse-dashboard">
       <h3>Tableau de bord QSE</h3>
 
       <div className="qse-bloc-afaire">
-        <h4>À faire</h4>
-        <ul>
-          <li>Contrôles à réaliser : {controlesAFaire}</li>
-          <li>Non-conformités ouvertes : {ncOuvertes.length}</li>
-          <li>Actions en retard : {actionsEnRetard.length}</li>
-          <li>Risques critiques sans action : {risquesCritiques.length}</li>
-          <li>
-            Productions sans lot QSE : {productionsSansLot.length}
+        <h4>À traiter aujourd'hui</h4>
+        {totalATraiter === 0 ? (
+          <div className="priorite-jour-ok">🟢 Tout est à jour.</div>
+        ) : (
+          <ul>
+            {controlesAFaire > 0 && <li>Contrôles à réaliser : {controlesAFaire}</li>}
+            {ncOuvertes.length > 0 && <li>Non-conformités ouvertes : {ncOuvertes.length}</li>}
+            {actionsEnRetard.length > 0 && <li>Actions en retard : {actionsEnRetard.length}</li>}
+            {risquesCritiques.length > 0 && <li>Risques critiques sans action : {risquesCritiques.length}</li>}
             {productionsSansLot.length > 0 && (
-              <ul>
-                {productionsSansLot.map((p) => (
-                  <li key={p.id}>
-                    {p.type} - {p.quantite} - {p.date}
-                    <button className="btn btn-sm" onClick={() => reparer(p)}>Réparer</button>
-                  </li>
-                ))}
-              </ul>
+              <li>
+                Productions sans lot QSE : {productionsSansLot.length}
+                <ul>
+                  {productionsSansLot.map((p) => (
+                    <li key={p.id}>
+                      {p.type} - {p.quantite} - {p.date}
+                      <button className="btn btn-sm" onClick={() => reparer(p)}>Réparer</button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
             )}
-          </li>
-        </ul>
+          </ul>
+        )}
       </div>
 
       <div className="qse-bloc-qualite">
