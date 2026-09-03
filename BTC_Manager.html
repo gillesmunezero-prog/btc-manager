@@ -1592,7 +1592,29 @@ const PARAMETRES_INDUSTRIELS_DEFAUT = {
   // comme une donnee mesuree.
   joursTravail: [1, 2, 3, 4, 5, 6],
   horizonPlanificationDefaut: 7,
-  seuilJoursConfianceCadence: 10 // nombre mini de jours distincts de donnees pour afficher une cadence "par type" jugee fiable (point 13/14)
+  seuilJoursConfianceCadence: 10, // nombre mini de jours distincts de donnees pour afficher une cadence "par type" jugee fiable (point 13/14)
+
+  // --- Phase 10B : audit confirme qu'AUCUNE de ces donnees n'existait avant cette phase (pas
+  // d'heures de travail, pas de journal d'activites, pas de moule, pas de recette matieres, pas de
+  // camions). Tout reste explicitement configurable, jamais fabrique. Tant que heuresTravailJour est
+  // absent, le moteur de capacite reelle (heures - arrets) reste desactive et calculerPlanProduction
+  // retombe integralement sur son comportement Phase 10 d'origine (non-regression garantie).
+  heuresTravailJour: null,
+  dureeCampagnePrefereeJours: 3,   // point R : ~3 jours consecutifs sur le meme moule avant changement, preference pas obligation
+  dureeChangementMoulHeures: 4,    // point S
+  mouleActuel: null,               // point T : type BTC actuellement installe sur la presse (id du CATALOGUE), null tant que non renseigne
+
+  // Recette BTC (point AA) : ratios "recette actuelle" fournis explicitement. Seule la densite de la
+  // terre seche n'a jamais ete mesuree -> reste null (jamais inventee) tant que non configuree.
+  recetteTerreM3Pour100BTC: 2,
+  recetteTauxCimentPct: 0.08,
+  recetteTauxSablePct: 0.04,
+  recetteHumiditeInitialePct: 0.06,
+  recetteHumiditeCiblePct: 0.12,
+  densiteTerreSecheKgM3: null,
+
+  capaciteBenneDefautM3: 15,        // point AP : benne habituelle Terre et Eau, pleinement modifiable
+  suiviTerreBruteEtPreparee: false  // point K : distinction brute/preparee desactivee par defaut
 };
 async function chargerParametresIndustriels() {
   try {
@@ -2269,15 +2291,33 @@ function calculerPlanProduction(indicateurs, donnees, parametres, horizonJours, 
     .sort(function (a, b) { return comparerScoresPriorite(a.score, b.score); });
 
   var joursTravailles = genererJoursTravailles(maintenant, horizonJours, parametres.joursTravail);
-  var allocation = allouerCapacitePlanification(lignes, joursTravailles, parametres.capaciteJournaliere);
+  // Phase 10B (partie B/R-Z) : des que les heures de travail sont configurees, la capacite REELLE
+  // (heures - arrets, campagnes de moule) prend le relais. Tant qu'elles ne le sont pas, comportement
+  // Phase 10 d'origine STRICTEMENT inchange (non-regression garantie).
+  var activitesParJourISO = donnees.activitesParJourISO || {};
+  var allocation = parametres.heuresTravailJour != null
+    ? allouerCapaciteAvecCampagnes(lignes, joursTravailles, parametres, activitesParJourISO)
+    : allouerCapacitePlanification(lignes, joursTravailles, parametres.capaciteJournaliere);
   var echeancesImpossibles = detecterEcheancesImpossibles(commandes, indicateurs.parType, dureeSechageJours, parametres.capaciteJournaliere, maintenant);
+
+  // Phase 10B (partie AW/AX) : croisement avec les matieres premieres, UNIQUEMENT si un stock
+  // matieres a ete fourni par l'appelant (deja charge, aucune requete supplementaire ici — point 49).
+  var matieresStock = donnees.matieresStock || null;
+  var totalPlanifieBTC = allocation.planLignes.reduce(function (s, l) { return s + l.quantite; }, 0);
+  var capaciteMatieres = matieresStock ? calculerCapaciteProductionParMatieres(matieresStock, parametres) : null;
+  var approvisionnement = matieresStock ? calculerApprovisionnementPlan(totalPlanifieBTC, matieresStock, parametres) : null;
 
   return {
     genereLe: maintenant, horizonJours: horizonJours, joursTravailles: joursTravailles,
     lignesPrioritaires: lignes, planLignes: allocation.planLignes, calendrierPossible: allocation.calendrierPossible,
     resteNonPlanifie: allocation.resteNonPlanifie || {}, echeancesImpossibles: echeancesImpossibles,
     capaciteJournaliere: parametres.capaciteJournaliere, joursTravail: parametres.joursTravail,
-    messageSiPasDeCalendrier: allocation.calendrierPossible ? null : "Plan quantitatif disponible — calendrier impossible tant que la capacité journalière n'est pas renseignée."
+    messageSiPasDeCalendrier: allocation.calendrierPossible ? null : "Plan quantitatif disponible — calendrier impossible tant que la capacité journalière n'est pas renseignée.",
+    // Phase 10B : presents uniquement quand les donnees correspondantes sont configurees/fournies —
+    // jamais une valeur fabriquee en leur absence.
+    capaciteInfoParJour: allocation.capaciteInfoParJour || null,
+    changementsMouleProposes: allocation.changementsMouleProposes || [],
+    capaciteMatieres: capaciteMatieres, approvisionnement: approvisionnement, totalPlanifieBTC: totalPlanifieBTC
   };
 }
 
@@ -2425,6 +2465,541 @@ async function reporterLigneProductionPlan(ligne, nouvelleDateMs, user, userData
 async function annulerLigneProductionPlan(ligneId, user, userData) {
   var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
   await db.collection("plan_production_lignes").doc(ligneId).update({ statut: "Annule", annulePar: auteur, dateAnnulation: firebase.firestore.FieldValue.serverTimestamp() });
+}
+
+// ============================================================================================
+// PHASE 10B — ACTIVITES INDUSTRIELLES. Audit (partie A) : aucune notion d'arret machine ni de
+// moule n'existait avant cette phase. Principe central (partie B) : BTC Manager ne doit plus
+// confondre "temps de presence de l'usine" et "temps reellement disponible pour produire des BTC".
+// ============================================================================================
+var TYPES_ACTIVITES_INDUSTRIELLES = [
+  { id: "PRODUCTION", libelle: "Production BTC", icone: "🏭", categorie: "production" },
+  { id: "CONCASSAGE", libelle: "Concassage / broyage terre", icone: "🪨", categorie: "process" },
+  { id: "CHANGEMENT_MOULE", libelle: "Changement de moule", icone: "🔧", categorie: "process" },
+  { id: "MAINTENANCE", libelle: "Maintenance", icone: "🛠", categorie: "subi" },
+  { id: "NETTOYAGE", libelle: "Nettoyage", icone: "🧹", categorie: "process" },
+  { id: "PANNE", libelle: "Panne", icone: "⚠️", categorie: "subi" },
+  { id: "ATTENTE_MATIERE", libelle: "Attente matière", icone: "⏳", categorie: "subi" },
+  { id: "COUPURE_ELECTRIQUE", libelle: "Coupure électrique", icone: "⚡", categorie: "subi" },
+  { id: "AUTRE", libelle: "Autre", icone: "❓", categorie: "subi" }
+];
+function libelleActivite(typeId) { var t = TYPES_ACTIVITES_INDUSTRIELLES.find(function (x) { return x.id === typeId; }); return t ? t.libelle : typeId; }
+
+// Point BB : duree d'une activite en minutes — le REEL remplace toujours le PREVU dans le calcul de
+// capacite (jamais un cumul des deux). Le prevu reste conserve tel quel sur le document, uniquement
+// pour comparaison (point L/BB), jamais ecrase.
+function dureeActiviteMinutes(a) {
+  if (a.dureeReelleMinutes != null) return a.dureeReelleMinutes;
+  if (a.dureePrevueMinutes != null) return a.dureePrevueMinutes;
+  return 0;
+}
+
+// Heures indisponibles pour la production BTC un jour donne, par type d'activite process/subi —
+// jamais PRODUCTION elle-meme (qui consomme le temps restant, ce n'est pas un "arret").
+function calculerHeuresIndisponiblesJour(activitesDuJour) {
+  var parType = {}, totalMinutes = 0;
+  (activitesDuJour || []).forEach(function (a) {
+    if (a.type === "PRODUCTION" || a.statut === "Annule") return;
+    var m = dureeActiviteMinutes(a);
+    parType[a.type] = (parType[a.type] || 0) + m;
+    totalMinutes += m;
+  });
+  var parTypeHeures = {};
+  Object.keys(parType).forEach(function (t) { parTypeHeures[t] = parType[t] / 60; });
+  return { totalHeures: totalMinutes / 60, parTypeHeures: parTypeHeures };
+}
+
+// Points B/E/F : capacite REELLEMENT disponible = fonction(heures de travail − heures d'arret
+// planifiees/reelles), jamais seulement capaciteJournaliere. Repli honnete (calculable:false) tant
+// que heuresTravailJour n'est pas configure — aucune heure ni cadence n'est jamais fabriquee.
+function calculerCapaciteReelleJour(capaciteJournaliere, heuresTravailJour, activitesDuJour) {
+  if (capaciteJournaliere == null || heuresTravailJour == null || heuresTravailJour <= 0) {
+    return { calculable: false, capaciteReelle: null, capaciteTheorique: capaciteJournaliere, cadenceHoraire: null, heuresIndisponibles: 0, heuresDisponibles: null, parTypeHeures: {} };
+  }
+  var cadenceHoraire = capaciteJournaliere / heuresTravailJour;
+  var indispo = calculerHeuresIndisponiblesJour(activitesDuJour);
+  var heuresDisponibles = Math.max(0, heuresTravailJour - indispo.totalHeures);
+  var capaciteReelle = Math.round(cadenceHoraire * heuresDisponibles);
+  return { calculable: true, capaciteReelle: capaciteReelle, capaciteTheorique: capaciteJournaliere, cadenceHoraire: cadenceHoraire, heuresIndisponibles: indispo.totalHeures, heuresDisponibles: heuresDisponibles, parTypeHeures: indispo.parTypeHeures };
+}
+
+// Point P : explique automatiquement un ecart plan/reel du jour par les activites non prevues —
+// jamais presente automatiquement comme une sous-performance de l'operateur (point BF).
+function calculerEcartActiviteJour(planifieBTC, realiseBTC, activitesReellesJour, activitesPrevuesJour) {
+  var heuresPrevues = calculerHeuresIndisponiblesJour(activitesPrevuesJour || []).totalHeures;
+  var heuresReelles = calculerHeuresIndisponiblesJour(activitesReellesJour || []).totalHeures;
+  return { ecartBTC: realiseBTC - planifieBTC, heuresPrevues: heuresPrevues, heuresReelles: heuresReelles, heuresImprevues: Math.max(0, heuresReelles - heuresPrevues) };
+}
+
+// Persistance — demarrer/terminer une activite reelle (UX cible partie CP : "Démarrer concassage"
+// puis "Terminer concassage"). ID deterministe (token) pour l'idempotence (point BQ) : un double-clic
+// sur "Démarrer" ne cree jamais deux activites.
+async function demarrerActiviteIndustrielle(champs, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var ref = db.collection("activites_industrielles").doc(token);
+  var existe = await ref.get();
+  if (existe.exists) return token; // idempotence (double-clic)
+  var maintenant = Date.now();
+  await ref.set({
+    date: dateLocaleISO(maintenant), type: champs.type, statut: "EnCours",
+    heureDebutPrevue: null, heureFinPrevue: null, dureePrevueMinutes: champs.dureePrevueMinutes != null ? champs.dureePrevueMinutes : null,
+    heureDebutReelle: maintenant, heureFinReelle: null, dureeReelleMinutes: null,
+    typeBTC: champs.typeBTC || null, ancienMoule: champs.ancienMoule || null, nouveauMoule: champs.nouveauMoule || null,
+    volumeTerreConcasseeM3: null, motif: champs.motif || "", commentaire: champs.commentaire || "",
+    creePar: auteur, validePar: null, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return token;
+}
+async function terminerActiviteIndustrielle(activiteId, champs, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var ref = db.collection("activites_industrielles").doc(activiteId);
+  var snap = await ref.get();
+  if (!snap.exists) throw new Error("Activité introuvable.");
+  var a = snap.data();
+  if (a.statut === "Termine") return; // idempotence (double-clic sur "Terminer")
+  var maintenant = Date.now();
+  var debut = a.heureDebutReelle || maintenant;
+  var dureeReelleMinutes = Math.max(0, Math.round((maintenant - debut) / 60000));
+  await ref.update({
+    statut: "Termine", heureFinReelle: maintenant, dureeReelleMinutes: dureeReelleMinutes,
+    volumeTerreConcasseeM3: (champs && champs.volumeTerreConcasseeM3 != null) ? champs.volumeTerreConcasseeM3 : null,
+    commentaire: (champs && champs.commentaire) || a.commentaire || "", validePar: auteur,
+    dateModification: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  // Point T : un changement de moule termine met a jour le moule reellement installe (etat courant,
+  // au meme titre que le cache "stocks" pour le stock BTC).
+  if (a.type === "CHANGEMENT_MOULE" && a.nouveauMoule) {
+    await db.collection("parametres_industriels").doc("global").set({ mouleActuel: a.nouveauMoule }, { merge: true });
+  }
+  return dureeReelleMinutes;
+}
+// Point N : planification d'une activite future par le responsable (concassage, changement de
+// moule...) — champs PREVUS uniquement, jamais de champs reels tant qu'elle n'a pas ete demarree.
+async function planifierActiviteIndustrielle(champs, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var ref = await db.collection("activites_industrielles").add({
+    date: champs.date, type: champs.type, statut: "Planifie",
+    heureDebutPrevue: champs.heureDebutPrevue || null, heureFinPrevue: champs.heureFinPrevue || null,
+    dureePrevueMinutes: champs.dureePrevueMinutes || null,
+    heureDebutReelle: null, heureFinReelle: null, dureeReelleMinutes: null,
+    typeBTC: champs.typeBTC || null, ancienMoule: champs.ancienMoule || null, nouveauMoule: champs.nouveauMoule || null,
+    volumeTerreConcasseeM3: null, motif: champs.motif || "", commentaire: champs.commentaire || "",
+    creePar: auteur, validePar: null, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return ref.id;
+}
+
+// ============================================================================================
+// PHASE 10B — MATIERES PREMIERES. Recette centralisee (jamais dispersee), grand livre
+// matiere_mouvements + cache matieres_stock (memes principes exacts que stock_mouvements/stocks :
+// ID deterministe -> idempotence, jamais de double consommation).
+// ============================================================================================
+
+var LIBELLES_MATIERES = { terre: "Terre", ciment: "Ciment", sable: "Sable", eau: "Eau" };
+function getLibelleMatiere(id) { return LIBELLES_MATIERES[id] || id; }
+// Point AB : formule centralisee. terreM3 ne depend que de la recette (toujours calculable) ; le
+// reste depend de densiteTerreSecheKgM3, jamais inventee si absente (point AA/CO).
+function calculerConsommationMatieresProduction(quantiteBTC, parametres) {
+  var facteur = quantiteBTC / 100;
+  var terreM3 = parametres.recetteTerreM3Pour100BTC * facteur;
+  if (parametres.densiteTerreSecheKgM3 == null) {
+    return { calculable: false, terreM3: terreM3, terreSecheKg: null, cimentKg: null, sableKg: null, eauLitres: null };
+  }
+  var terreSecheKg = terreM3 * parametres.densiteTerreSecheKgM3;
+  var cimentKg = terreSecheKg * parametres.recetteTauxCimentPct;
+  var sableKg = terreSecheKg * parametres.recetteTauxSablePct;
+  var eauLitres = Math.max(0, terreSecheKg * (parametres.recetteHumiditeCiblePct - parametres.recetteHumiditeInitialePct));
+  return { calculable: true, terreM3: terreM3, terreSecheKg: terreSecheKg, cimentKg: cimentKg, sableKg: sableKg, eauLitres: eauLitres };
+}
+
+function idMouvementMatiere(sourceType, sourceId, matiereId) {
+  return (sourceType + "_" + sourceId + "_" + matiereId).replace(/[\/\s]/g, "-").slice(0, 400);
+}
+async function verifierMouvementMatiereExistant(tx, sourceType, sourceId, matiereId) {
+  var id = idMouvementMatiere(sourceType, sourceId, matiereId);
+  var snap = await tx.get(db.collection("matiere_mouvements").doc(id));
+  return { id: id, existe: snap.exists };
+}
+function ecrireMouvementMatiere(tx, id, mvt) {
+  tx.set(db.collection("matiere_mouvements").doc(id), {
+    matiereId: mvt.matiereId, type: mvt.type, quantite: mvt.quantite, unite: mvt.unite,
+    prixUnitaire: mvt.prixUnitaire != null ? mvt.prixUnitaire : null,
+    sourceType: mvt.sourceType, sourceId: mvt.sourceId, utilisateur: mvt.utilisateur || "inconnu",
+    commentaire: mvt.commentaire || "", dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+// Point AF : cout moyen pondere du stock — jamais un simple remplacement du dernier prix.
+function calculerCoutMoyenPondere(quantiteAvant, coutMoyenAvant, quantiteEntree, prixUnitaireEntree) {
+  var quantiteApres = quantiteAvant + quantiteEntree;
+  if (quantiteApres <= 0) return 0;
+  var valeurAvant = quantiteAvant * (coutMoyenAvant || 0);
+  var valeurEntree = quantiteEntree * (prixUnitaireEntree || 0);
+  return (valeurAvant + valeurEntree) / quantiteApres;
+}
+
+// Point AE/AF : reception d'une matiere premiere generique (ciment/sable, achats hors camion).
+async function receptionnerMatierePremiere(matiereId, quantite, unite, prixTotal, fournisseur, token, user, userData) {
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var prixUnitaire = (prixTotal != null && quantite > 0) ? prixTotal / quantite : null;
+  var stockRef = db.collection("matieres_stock").doc(matiereId);
+  await db.runTransaction(async function (tx) {
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementMatiereExistant(tx, "reception", token, matiereId);
+    if (chk.existe) return; // idempotence
+    var s = stockSnap.exists ? stockSnap.data() : { quantite: 0, coutMoyenPondere: 0 };
+    var nouveauCout = calculerCoutMoyenPondere(s.quantite || 0, s.coutMoyenPondere || 0, quantite, prixUnitaire);
+    ecrireMouvementMatiere(tx, chk.id, { matiereId: matiereId, type: "RECEPTION", quantite: quantite, unite: unite, prixUnitaire: prixUnitaire, sourceType: "reception", sourceId: token, utilisateur: auteur, commentaire: fournisseur ? ("Fournisseur : " + fournisseur) : "" });
+    tx.set(stockRef, { quantite: (s.quantite || 0) + quantite, unite: unite, coutMoyenPondere: nouveauCout }, { merge: true });
+  });
+}
+
+// Points AM-AS : reception de terre par camions-bennes — l'unite terrain est le camion, la source de
+// verite matiere reste le m³. volumeTheoriqueM3 (nombreCamions × capaciteCamionM3) et volumeReelM3
+// (correction eventuelle) sont TOUS DEUX conserves, jamais l'un remplace par l'autre (point AQ).
+async function receptionnerCamionsTerre(champs, token, user, userData) {
+  var nombreCamions = champs.nombreCamions, capaciteCamionM3 = champs.capaciteCamionM3;
+  var volumeTheoriqueM3 = nombreCamions * capaciteCamionM3;
+  var volumeM3 = (champs.volumeReelM3 != null && champs.volumeReelM3 > 0) ? champs.volumeReelM3 : volumeTheoriqueM3;
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  var prixUnitaire = (champs.prixTotal != null && volumeM3 > 0) ? champs.prixTotal / volumeM3 : null;
+  var stockRef = db.collection("matieres_stock").doc("terre");
+  await db.runTransaction(async function (tx) {
+    var stockSnap = await tx.get(stockRef);
+    var chk = await verifierMouvementMatiereExistant(tx, "reception_camion", token, "terre");
+    if (chk.existe) return; // idempotence
+    var s = stockSnap.exists ? stockSnap.data() : { quantite: 0, coutMoyenPondere: 0 };
+    var nouveauCout = calculerCoutMoyenPondere(s.quantite || 0, s.coutMoyenPondere || 0, volumeM3, prixUnitaire);
+    ecrireMouvementMatiere(tx, chk.id, {
+      matiereId: "terre", type: "RECEPTION_CAMION", quantite: volumeM3, unite: "m3", prixUnitaire: prixUnitaire,
+      sourceType: "reception_camion", sourceId: token, utilisateur: auteur,
+      commentaire: nombreCamions + " camion(s) × " + capaciteCamionM3 + " m³" + (champs.origine ? (" — " + champs.origine) : "")
+    });
+    tx.set(stockRef, { quantite: (s.quantite || 0) + volumeM3, unite: "m3", coutMoyenPondere: nouveauCout }, { merge: true });
+  });
+  // Tracabilite detaillee de la reception (point AO/AS), distincte du grand livre agrege.
+  await db.collection("receptions_terre").doc(token).set({
+    nombreCamions: nombreCamions, capaciteCamionM3: capaciteCamionM3, volumeTheoriqueM3: volumeTheoriqueM3,
+    volumeReelM3: champs.volumeReelM3 != null ? champs.volumeReelM3 : null, volumeRetenuM3: volumeM3,
+    origine: champs.origine || "", fournisseur: champs.fournisseur || "", prixTotal: champs.prixTotal != null ? champs.prixTotal : null,
+    prixUnitaireM3: prixUnitaire, prixParCamion: (champs.prixTotal != null && nombreCamions > 0) ? champs.prixTotal / nombreCamions : null,
+    creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+// Point AH : apercu PUR (aucune ecriture) des matieres necessaires avant validation d'une production.
+// Le suivi matiere n'est considere ACTIVE que si densiteTerreSecheKgM3 a ete explicitement configure
+// (le signal volontaire du responsable, au meme titre que capaciteJournaliere pour la planification) —
+// tant qu'il ne l'est pas, ne bloque JAMAIS la production (non-regression : l'application fonctionnait
+// sans aucun suivi matiere avant cette phase, elle continue de le faire tant que ce n'est pas active).
+function apercuMatieresProduction(quantiteBTC, matieresStock, parametres) {
+  if (parametres.densiteTerreSecheKgM3 == null) {
+    return { suivi: false, calculable: false, consommation: null, lignes: [], stocksApres: {}, suffisant: true, manques: [] };
+  }
+  var conso = calculerConsommationMatieresProduction(quantiteBTC, parametres);
+  var lignes = [
+    { id: "terre", unite: "m3", besoin: conso.terreM3 },
+    { id: "ciment", unite: "kg", besoin: conso.cimentKg },
+    { id: "sable", unite: "kg", besoin: conso.sableKg },
+    { id: "eau", unite: "L", besoin: conso.eauLitres }
+  ].filter(function (l) { return l.besoin != null; });
+  var manques = [], stocksApres = {};
+  lignes.forEach(function (l) {
+    var dispo = (matieresStock[l.id] && matieresStock[l.id].quantite) || 0;
+    stocksApres[l.id] = dispo - l.besoin;
+    if (dispo < l.besoin) manques.push({ id: l.id, manque: l.besoin - dispo, unite: l.unite });
+  });
+  return { suivi: true, calculable: conso.calculable, consommation: conso, lignes: lignes, stocksApres: stocksApres, suffisant: manques.length === 0, manques: manques };
+}
+
+// Points AG/AI/AJ/BQ/BR : verifie ET consomme les matieres en une SEULE transaction atomique —
+// jamais de demi-ecriture (production creee sans consommation, ou consommation partielle). Si le
+// stock est insuffisant, la transaction leve une erreur explicite AVANT toute ecriture. Le cout est
+// FIGE au moment de la production (cout moyen pondere courant), il ne changera jamais retroactivement
+// si le prix d'achat evolue plus tard (point AJ).
+async function consommerMatieresPourProduction(quantiteBTC, parametres, token, user, userData) {
+  var conso = calculerConsommationMatieresProduction(quantiteBTC, parametres);
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  if (!conso.calculable) {
+    // Densite non configuree (jamais inventee) : seule la terre est quantifiable -> uniquement la
+    // terre est deduite, signale explicitement plutot que de fabriquer ciment/sable/eau.
+    var refTerre = db.collection("matieres_stock").doc("terre");
+    var coutTerreSeule = null;
+    await db.runTransaction(async function (tx) {
+      var snap = await tx.get(refTerre);
+      var chk = await verifierMouvementMatiereExistant(tx, "production", token, "terre");
+      if (chk.existe) return;
+      var s = snap.exists ? snap.data() : { quantite: 0, coutMoyenPondere: 0 };
+      if ((s.quantite || 0) < conso.terreM3) throw new Error("Production impossible — matières insuffisantes (terre : manque " + (conso.terreM3 - (s.quantite || 0)).toFixed(1) + " m³).");
+      coutTerreSeule = (s.coutMoyenPondere || 0) * conso.terreM3;
+      ecrireMouvementMatiere(tx, chk.id, { matiereId: "terre", type: "CONSOMMATION_PRODUCTION", quantite: -conso.terreM3, unite: "m3", prixUnitaire: s.coutMoyenPondere || 0, sourceType: "production", sourceId: token, utilisateur: auteur });
+      tx.set(refTerre, { quantite: (s.quantite || 0) - conso.terreM3, unite: "m3", coutMoyenPondere: s.coutMoyenPondere || 0 }, { merge: true });
+    });
+    return { calculable: false, consommation: conso, coutMatieresProduction: coutTerreSeule, coutMatiereParBTC: null, avertissement: "Densité de la terre sèche non configurée — seule la terre a été déduite du stock ; ciment/sable/eau non calculés." };
+  }
+  var lignes = [
+    { id: "terre", quantite: conso.terreM3, unite: "m3" },
+    { id: "ciment", quantite: conso.cimentKg, unite: "kg" },
+    { id: "sable", quantite: conso.sableKg, unite: "kg" },
+    { id: "eau", quantite: conso.eauLitres, unite: "L" }
+  ];
+  var refs = lignes.map(function (l) { return db.collection("matieres_stock").doc(l.id); });
+  var coutMatieresProduction = 0;
+  await db.runTransaction(async function (tx) {
+    var snaps = [];
+    for (var i = 0; i < refs.length; i++) snaps.push(await tx.get(refs[i]));
+    var chks = [];
+    for (var j = 0; j < lignes.length; j++) chks.push(await verifierMouvementMatiereExistant(tx, "production", token, lignes[j].id));
+    if (chks[0].existe) { coutMatieresProduction = null; return; } // idempotence : deja consomme (double-clic)
+    var manques = [];
+    var etats = lignes.map(function (l, i) {
+      var s = snaps[i].exists ? snaps[i].data() : { quantite: 0, coutMoyenPondere: 0 };
+      if ((s.quantite || 0) < l.quantite) manques.push({ id: l.id, manque: l.quantite - (s.quantite || 0), unite: l.unite });
+      return s;
+    });
+    if (manques.length > 0) {
+      var msg = manques.map(function (m) { return m.id + " : manque " + m.manque.toFixed(1) + " " + m.unite; }).join(" · ");
+      throw new Error("Production impossible — matières insuffisantes (" + msg + ").");
+    }
+    coutMatieresProduction = 0;
+    lignes.forEach(function (l, i) {
+      var s = etats[i];
+      coutMatieresProduction += (s.coutMoyenPondere || 0) * l.quantite;
+      ecrireMouvementMatiere(tx, chks[i].id, { matiereId: l.id, type: "CONSOMMATION_PRODUCTION", quantite: -l.quantite, unite: l.unite, prixUnitaire: s.coutMoyenPondere || 0, sourceType: "production", sourceId: token, utilisateur: auteur });
+      tx.set(refs[i], { quantite: (s.quantite || 0) - l.quantite, unite: l.unite, coutMoyenPondere: s.coutMoyenPondere || 0 }, { merge: true });
+    });
+  });
+  return { calculable: true, consommation: conso, coutMatieresProduction: coutMatieresProduction, coutMatiereParBTC: (coutMatieresProduction != null && quantiteBTC > 0) ? coutMatieresProduction / quantiteBTC : null };
+}
+// Point AK/AL : correction/annulation d'une production deja consommee — cree des mouvements
+// CORRECTIFS (le delta), ne modifie ni n'efface jamais les mouvements d'origine.
+async function corrigerConsommationMatieresProduction(ancienneQuantite, nouvelleQuantite, parametres, token, user, userData) {
+  if (parametres.densiteTerreSecheKgM3 == null) return { calculable: false };
+  var consoAncienne = calculerConsommationMatieresProduction(ancienneQuantite, parametres);
+  var consoNouvelle = calculerConsommationMatieresProduction(nouvelleQuantite, parametres);
+  var deltas = { terre: consoNouvelle.terreM3 - consoAncienne.terreM3, ciment: consoNouvelle.cimentKg - consoAncienne.cimentKg, sable: consoNouvelle.sableKg - consoAncienne.sableKg, eau: consoNouvelle.eauLitres - consoAncienne.eauLitres };
+  var unites = { terre: "m3", ciment: "kg", sable: "kg", eau: "L" };
+  var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
+  await db.runTransaction(async function (tx) {
+    var ids = Object.keys(deltas);
+    var refs = ids.map(function (id) { return db.collection("matieres_stock").doc(id); });
+    var snaps = [];
+    for (var i = 0; i < refs.length; i++) snaps.push(await tx.get(refs[i]));
+    var chks = [];
+    for (var j = 0; j < ids.length; j++) chks.push(await verifierMouvementMatiereExistant(tx, "correction_production", token, ids[j]));
+    if (chks[0].existe) return; // idempotence
+    ids.forEach(function (id, i) {
+      var delta = deltas[id];
+      if (delta === 0) return;
+      var s = snaps[i].exists ? snaps[i].data() : { quantite: 0, coutMoyenPondere: 0 };
+      ecrireMouvementMatiere(tx, chks[i].id, { matiereId: id, type: "CORRECTION_PRODUCTION", quantite: -delta, unite: unites[id], prixUnitaire: s.coutMoyenPondere || 0, sourceType: "correction_production", sourceId: token, utilisateur: auteur });
+      tx.set(refs[i], { quantite: (s.quantite || 0) - delta, unite: unites[id], coutMoyenPondere: s.coutMoyenPondere || 0 }, { merge: true });
+    });
+  });
+  return { calculable: true, deltas: deltas };
+}
+
+// ============================================================================================
+// PHASE 10B — Enregistrement CENTRAL et ATOMIQUE d'une production reelle (points AG/BR) : cree la
+// production, met a jour le stock BTC ET consomme les matieres premieres dans UNE SEULE transaction
+// Firestore — jamais de production creee sans sa consommation matiere correspondante, jamais de
+// demi-ecriture. Le lot QSE est cree APRES (meme pattern deja etabli ailleurs dans l'application,
+// hors transaction, best-effort) : une production existe toujours meme si le suivi qualite echoue a
+// se declencher, mais jamais sans ses matieres. ID deterministe (token) -> idempotence totale.
+// ============================================================================================
+async function enregistrerProductionAvecConsommation(champs, parametres, token, user, userData) {
+  var auteur = champs.responsableOverride || (userData && userData.nom) || (user && user.email) || "inconnu";
+  var qte = champs.quantite;
+  // Point CO/non-regression : le suivi matiere n'est ACTIF que si densiteTerreSecheKgM3 est
+  // configure (signal volontaire explicite). Sans cela, l'application se comporte exactement comme
+  // avant Phase 10B (production + stock BTC uniquement) — jamais un blocage sur une donnee jamais
+  // renseignee.
+  var suiviMatiereActif = parametres.densiteTerreSecheKgM3 != null;
+  var conso = suiviMatiereActif ? calculerConsommationMatieresProduction(qte, parametres) : { calculable: false, terreM3: null, cimentKg: null, sableKg: null, eauLitres: null };
+  var prodRef = db.collection("productions").doc(token);
+  var stockRef = db.collection("stocks").doc(champs.type);
+  var matieresLignes = !suiviMatiereActif ? [] : (conso.calculable ? [
+    { id: "terre", quantite: conso.terreM3, unite: "m3" },
+    { id: "ciment", quantite: conso.cimentKg, unite: "kg" },
+    { id: "sable", quantite: conso.sableKg, unite: "kg" },
+    { id: "eau", quantite: conso.eauLitres, unite: "L" }
+  ] : [{ id: "terre", quantite: conso.terreM3, unite: "m3" }]);
+  var matieresRefs = matieresLignes.map(function (l) { return db.collection("matieres_stock").doc(l.id); });
+
+  var coutMatieresProduction = null, coutMatiereParBTC = null;
+  await db.runTransaction(async function (tx) {
+    var prodSnap = await tx.get(prodRef);
+    if (prodSnap.exists) return; // idempotence totale (double-clic) : rien a rejouer
+    var stockSnap = await tx.get(stockRef);
+    var matSnaps = [];
+    for (var i = 0; i < matieresRefs.length; i++) matSnaps.push(await tx.get(matieresRefs[i]));
+
+    var manques = [];
+    var etatsMatieres = matieresLignes.map(function (l, i) {
+      var s = matSnaps[i].exists ? matSnaps[i].data() : { quantite: 0, coutMoyenPondere: 0 };
+      if ((s.quantite || 0) < l.quantite) manques.push({ id: l.id, manque: l.quantite - (s.quantite || 0), unite: l.unite });
+      return s;
+    });
+    if (manques.length > 0) {
+      var msg = manques.map(function (m) { return m.id + " : manque " + m.manque.toFixed(1) + " " + m.unite; }).join(" · ");
+      throw new Error("Production impossible — matières insuffisantes (" + msg + ").");
+    }
+
+    var matieresConsommeesDoc = null;
+    if (suiviMatiereActif) {
+      coutMatieresProduction = 0;
+      matieresLignes.forEach(function (l, i) {
+        var s = etatsMatieres[i];
+        coutMatieresProduction += (s.coutMoyenPondere || 0) * l.quantite;
+        var mvtId = idMouvementMatiere("production", token, l.id);
+        tx.set(db.collection("matiere_mouvements").doc(mvtId), {
+          matiereId: l.id, type: "CONSOMMATION_PRODUCTION", quantite: -l.quantite, unite: l.unite,
+          prixUnitaire: s.coutMoyenPondere || 0, sourceType: "production", sourceId: token, utilisateur: auteur,
+          commentaire: "", dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        tx.set(matieresRefs[i], { quantite: (s.quantite || 0) - l.quantite, unite: l.unite, coutMoyenPondere: s.coutMoyenPondere || 0 }, { merge: true });
+      });
+      coutMatiereParBTC = (coutMatieresProduction != null && qte > 0) ? coutMatieresProduction / qte : null;
+      matieresConsommeesDoc = conso.calculable ? { terreM3: conso.terreM3, cimentKg: conso.cimentKg, sableKg: conso.sableKg, eauLitres: conso.eauLitres } : { terreM3: conso.terreM3 };
+    }
+
+    tx.set(prodRef, {
+      type: champs.type, quantite: qte, phase: champs.phase, date: champs.date,
+      responsable: auteur, responsableUid: user.uid, statut: "Valide",
+      coutMatieresProduction: coutMatieresProduction, coutMatiereParBTC: coutMatiereParBTC,
+      matieresConsommees: matieresConsommeesDoc,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    var s2 = stockSnap.exists ? stockSnap.data() : {};
+    var upd = { sec: s2.sec || 0, sechage: s2.sechage || 0 };
+    var champStock = champs.phase === "sec" ? "sec" : "sechage";
+    upd[champStock] = (upd[champStock] || 0) + qte;
+    tx.set(stockRef, upd, { merge: true });
+  });
+
+  return { productionId: token, coutMatieresProduction: coutMatieresProduction, coutMatiereParBTC: coutMatiereParBTC, matieresSuivies: suiviMatiereActif, matieresCalculables: conso.calculable };
+}
+
+// Point AW : matiere limitante — quel volume de production les stocks matiere permettent au maximum,
+// matiere par matiere, sans jamais inventer de rendement (eau volontairement exclue, comme dans
+// l'exemple du cahier des charges : jamais une contrainte logistique reelle a Terre et Eau).
+function calculerCapaciteProductionParMatieres(matieresStock, parametres) {
+  if (parametres.densiteTerreSecheKgM3 == null) {
+    var terreDispo = (matieresStock.terre && matieresStock.terre.quantite) || 0;
+    var capaciteTerre = parametres.recetteTerreM3Pour100BTC > 0 ? Math.floor(terreDispo / parametres.recetteTerreM3Pour100BTC * 100) : null;
+    return { calculable: false, capaciteBTC: capaciteTerre, matiereLimitante: "terre", parMatiere: { terre: capaciteTerre }, avertissement: "Densité de la terre sèche non configurée — capacité ciment/sable non calculable." };
+  }
+  var conso100 = {
+    terre: parametres.recetteTerreM3Pour100BTC,
+    ciment: parametres.recetteTerreM3Pour100BTC * parametres.densiteTerreSecheKgM3 * parametres.recetteTauxCimentPct,
+    sable: parametres.recetteTerreM3Pour100BTC * parametres.densiteTerreSecheKgM3 * parametres.recetteTauxSablePct
+  };
+  var parMatiere = {};
+  Object.keys(conso100).forEach(function (id) {
+    var dispo = (matieresStock[id] && matieresStock[id].quantite) || 0;
+    parMatiere[id] = conso100[id] > 0 ? Math.floor(dispo / conso100[id] * 100) : null;
+  });
+  var matiereLimitante = null, capaciteBTC = null;
+  Object.keys(parMatiere).forEach(function (id) {
+    if (parMatiere[id] == null) return;
+    if (capaciteBTC == null || parMatiere[id] < capaciteBTC) { capaciteBTC = parMatiere[id]; matiereLimitante = id; }
+  });
+  return { calculable: true, capaciteBTC: capaciteBTC, matiereLimitante: matiereLimitante, parMatiere: parMatiere };
+}
+// Point AU/AV : besoin logistique de terre pour un manque donne, arrondi au camion SUPERIEUR — le
+// stock et la consommation matiere restent exacts en m³, seul le nombre de camions a commander l'est.
+function calculerBesoinCamionsTerre(manqueM3, capaciteCamionM3) {
+  if (manqueM3 <= 0 || !capaciteCamionM3) return 0;
+  return Math.ceil(manqueM3 / capaciteCamionM3);
+}
+// Point AX/AY : besoins d'approvisionnement matieres pour couvrir un besoin total de production (en
+// BTC, deja calcule par le moteur de planification) — jamais un delai fournisseur invente.
+function calculerApprovisionnementPlan(besoinTotalBTC, matieresStock, parametres) {
+  var conso = calculerConsommationMatieresProduction(besoinTotalBTC, parametres);
+  var capaciteCamion = parametres.capaciteBenneDefautM3;
+  var lignes = [
+    { id: "terre", unite: "m3", besoin: conso.terreM3 },
+    { id: "ciment", unite: "kg", besoin: conso.cimentKg },
+    { id: "sable", unite: "kg", besoin: conso.sableKg }
+  ].filter(function (l) { return l.besoin != null; });
+  var resultats = lignes.map(function (l) {
+    var dispo = (matieresStock[l.id] && matieresStock[l.id].quantite) || 0;
+    var manque = Math.max(0, l.besoin - dispo);
+    var res = { id: l.id, unite: l.unite, besoin: l.besoin, disponible: dispo, manque: manque };
+    if (l.id === "terre" && manque > 0) res.camionsNecessaires = calculerBesoinCamionsTerre(manque, capaciteCamion);
+    return res;
+  });
+  return { calculable: conso.calculable, lignes: resultats, capaciteCamionM3: capaciteCamion };
+}
+
+// ============================================================================================
+// PHASE 10B — Allocation JOUR PAR JOUR avec capacite REELLE (heures − arrets) et preference de
+// campagne (points R-Z, BA, BB). Utilisee UNIQUEMENT si heuresTravailJour est configure ; sinon
+// repli integral sur allouerCapacitePlanification (comportement Phase 10 d'origine INCHANGE — non-
+// regression garantie tant que ce nouveau parametre n'est pas explicitement renseigne). Regle
+// deliberement simple et conservatrice (point Z) : au plus un changement de moule par jour, jamais
+// deux types differents produits le meme jour sauf le jour du changement lui-meme.
+function allouerCapaciteAvecCampagnes(lignesPrioritaires, joursTravailles, parametres, activitesParJourISO) {
+  var restant = {}, ordreTypes = [], ligneParType = {};
+  lignesPrioritaires.forEach(function (l) {
+    restant[l.typeBTC] = l.besoin.besoin; ligneParType[l.typeBTC] = l;
+    if (ordreTypes.indexOf(l.typeBTC) === -1) ordreTypes.push(l.typeBTC);
+  });
+  var typeCourant = parametres.mouleActuel || null;
+  // Le moule est deja en place depuis un temps inconnu -> pas de contrainte artificielle le 1er jour.
+  var joursConsecutifs = typeCourant ? parametres.dureeCampagnePrefereeJours : 0;
+  var planLignes = [], capaciteInfoParJour = {}, changementsProposes = [];
+
+  joursTravailles.forEach(function (jourMs) {
+    var jourISO = dateLocaleISO(jourMs);
+    var activitesJour = (activitesParJourISO && activitesParJourISO[jourISO]) || [];
+    var capaciteInfo = calculerCapaciteReelleJour(parametres.capaciteJournaliere, parametres.heuresTravailJour, activitesJour);
+    capaciteInfoParJour[jourMs] = capaciteInfo;
+    var capaciteRestante = capaciteInfo.capaciteReelle || 0;
+
+    var typesAvecBesoin = ordreTypes.filter(function (t) { return restant[t] > 0; });
+    if (typesAvecBesoin.length === 0) return;
+    var typePrioritaire = typesAvecBesoin[0];
+    var typeDuJour = typePrioritaire;
+    if (typeCourant && restant[typeCourant] > 0 && typeCourant !== typePrioritaire) {
+      var tierCourant = ligneParType[typeCourant] ? ligneParType[typeCourant].score.tier : 4;
+      var tierPrioritaire = ligneParType[typePrioritaire] ? ligneParType[typePrioritaire].score.tier : 4;
+      // Preference de campagne (point R/U) : on continue le meme moule tant que la campagne n'est
+      // pas terminee ET que rien de plus urgent (tier plus bas = plus prioritaire) ne l'impose.
+      if (joursConsecutifs < parametres.dureeCampagnePrefereeJours && tierPrioritaire >= tierCourant) {
+        typeDuJour = typeCourant;
+      }
+    }
+
+    var changement = typeCourant != null && typeDuJour !== typeCourant;
+    if (changement) {
+      var unitesPerdues = capaciteInfo.cadenceHoraire ? Math.round(capaciteInfo.cadenceHoraire * parametres.dureeChangementMoulHeures) : 0;
+      capaciteRestante = Math.max(0, capaciteRestante - unitesPerdues);
+      // Point V : signale une urgence commerciale si le changement est declenche par un tier1 avant
+      // la fin de la campagne preferee (plutot que de la masquer derriere une simple ligne de plan).
+      var urgence = ligneParType[typeDuJour] && ligneParType[typeDuJour].score.tier === 1 && joursConsecutifs < parametres.dureeCampagnePrefereeJours;
+      changementsProposes.push({ dateMs: jourMs, ancienMoule: typeCourant, nouveauMoule: typeDuJour, dureeHeures: parametres.dureeChangementMoulHeures, unitesPerdues: unitesPerdues, urgence: !!urgence });
+    }
+
+    var aAllouer = Math.min(restant[typeDuJour], capaciteRestante);
+    if (aAllouer > 0) {
+      var l = ligneParType[typeDuJour];
+      planLignes.push({
+        dateMs: jourMs, typeBTC: typeDuJour, quantite: aAllouer, tier: l.score.tier, libelleTier: l.score.libelleTier,
+        motif: l.motif, dateMaturiteTheorique: jourMs + parametres.dureeSechageJours * MS_PAR_JOUR, changementMoule: changement
+      });
+      restant[typeDuJour] -= aAllouer;
+    }
+    joursConsecutifs = (typeDuJour === typeCourant) ? (joursConsecutifs + 1) : 1;
+    typeCourant = typeDuJour;
+  });
+
+  var resteNonPlanifie = {};
+  Object.keys(restant).forEach(function (t) { if (restant[t] > 0) resteNonPlanifie[t] = restant[t]; });
+  return {
+    planLignes: planLignes, resteNonPlanifie: resteNonPlanifie,
+    calendrierPossible: parametres.capaciteJournaliere != null && parametres.heuresTravailJour != null,
+    capaciteInfoParJour: capaciteInfoParJour, changementsMouleProposes: changementsProposes, mouleFinal: typeCourant
+  };
 }
 
 // Navigation centrale : un seul point d'entree pour ouvrir n'importe quel objet metier depuis
@@ -3377,6 +3952,27 @@ function PanneauPlanification({ indicateurs, commandes, productions, parametres,
   const [showSimForm, setShowSimForm] = React.useState(false);
   const [formSim, setFormSim] = React.useState(null);
   const [statutValidation, setStatutValidation] = React.useState({ etat: "idle", texte: "" });
+  // Phase 10B : matieres (petite collection, 4 docs — meme cout qu'un ecouteur "stocks") et activites
+  // industrielles deja PLANIFIEES sur l'horizon (requete ciblee, point 49 — jamais tout l'historique).
+  const [matieresStockPlan, setMatieresStockPlan] = React.useState({});
+  const [activitesHorizon, setActivitesHorizon] = React.useState([]);
+  React.useEffect(function () {
+    var u = db.collection("matieres_stock").onSnapshot(function (snap) {
+      var m = {}; snap.docs.forEach(function (d) { m[d.id] = d.data(); }); setMatieresStockPlan(m);
+    });
+    return u;
+  }, []);
+  React.useEffect(function () {
+    var debutISO = dateLocaleISO(maintenant);
+    db.collection("activites_industrielles").where("date", ">=", debutISO).limit(500).get()
+      .then(function (snap) { setActivitesHorizon(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); })); })
+      .catch(function () { setActivitesHorizon([]); });
+  }, [maintenant]);
+  const activitesParJourISO = React.useMemo(function () {
+    var m = {};
+    activitesHorizon.forEach(function (a) { (m[a.date] = m[a.date] || []).push(a); });
+    return m;
+  }, [activitesHorizon]);
 
   React.useEffect(function () {
     chargerDernierPlanProduction().then(function (p) { setDernierPlan(p); setChargementDernierPlan(false); }).catch(function () { setChargementDernierPlan(false); });
@@ -3386,9 +3982,19 @@ function PanneauPlanification({ indicateurs, commandes, productions, parametres,
     return simulation ? Object.assign({}, parametres, simulation) : parametres;
   }, [parametres, simulation]);
 
+  // Point BO : simulation "camions supplementaires" — n'affecte QUE le calcul en memoire du plan
+  // simule, jamais matieres_stock reellement lu/ecrit en base.
+  const matieresStockEffectif = React.useMemo(function () {
+    var camionsSup = simulation && simulation.terreSupplementaireCamions;
+    if (!camionsSup) return matieresStockPlan;
+    var volumeSup = camionsSup * (parametres.capaciteBenneDefautM3 || 15);
+    var terreActuelle = matieresStockPlan.terre || { quantite: 0, unite: "m3", coutMoyenPondere: 0 };
+    return Object.assign({}, matieresStockPlan, { terre: Object.assign({}, terreActuelle, { quantite: (terreActuelle.quantite || 0) + volumeSup }) });
+  }, [matieresStockPlan, simulation, parametres.capaciteBenneDefautM3]);
+
   const planCalcule = React.useMemo(function () {
-    return calculerPlanProduction(indicateurs, { commandes: commandes, productions: productions }, parametresEffectifs, horizon, maintenant);
-  }, [indicateurs, commandes, productions, parametresEffectifs, horizon, maintenant]);
+    return calculerPlanProduction(indicateurs, { commandes: commandes, productions: productions, matieresStock: matieresStockEffectif, activitesParJourISO: activitesParJourISO }, parametresEffectifs, horizon, maintenant);
+  }, [indicateurs, commandes, productions, matieresStockEffectif, activitesParJourISO, parametresEffectifs, horizon, maintenant]);
 
   // Jamais de diff / de bouton de validation actif en mode simulation (point 17 : aucune donnee
   // reelle n'est modifiee ; comparer une simulation au plan reel serait trompeur).
@@ -3539,6 +4145,43 @@ function PanneauPlanification({ indicateurs, commandes, productions, parametres,
           </div>
         )}
 
+        {/* Phase 10B (parties R-V) : changements de moule proposes par le moteur — jamais decides
+            silencieusement, toujours expliques (echeance, duree, unites perdues). */}
+        {planCalcule.changementsMouleProposes && planCalcule.changementsMouleProposes.length > 0 && (
+          <div className="pilotage-section" style={{ marginTop: 16 }}>
+            <div className="pilotage-section-titre">🔧 Changements de moule proposés</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+              {planCalcule.changementsMouleProposes.map(function (c, i) {
+                return (
+                  <li key={i}>
+                    {new Date(c.dateMs).toLocaleDateString("fr-FR")} : {getProduit(c.ancienMoule).nom} → {getProduit(c.nouveauMoule).nom} ({c.dureeHeures} h, ≈{c.unitesPerdues.toLocaleString()} u de capacité perdue){c.urgence ? " — ⚠️ changement anticipé recommandé pour sécuriser une commande urgente" : ""}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {/* Points AW/AX : matiere limitante et approvisionnement necessaire pour ce plan — n'apparait
+            que si un stock matieres a ete charge (jamais une valeur fabriquee). */}
+        {planCalcule.capaciteMatieres && (
+          <div className="pilotage-section" style={{ marginTop: 16 }}>
+            <div className="pilotage-section-titre">🧱 Matières premières</div>
+            {!planCalcule.capaciteMatieres.calculable && <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 6 }}>{planCalcule.capaciteMatieres.avertissement}</div>}
+            <div style={{ fontSize: 13, marginBottom: 6 }}>Capacité de production permise par les matières : <strong>{planCalcule.capaciteMatieres.capaciteBTC != null ? planCalcule.capaciteMatieres.capaciteBTC.toLocaleString() + " u" : "—"}</strong>{planCalcule.capaciteMatieres.matiereLimitante ? (" — matière limitante : " + getLibelleMatiere(planCalcule.capaciteMatieres.matiereLimitante)) : ""}</div>
+            {planCalcule.approvisionnement && planCalcule.approvisionnement.lignes.some(function (l) { return l.manque > 0; }) && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>À approvisionner pour ce plan ({planCalcule.totalPlanifieBTC.toLocaleString()} u planifiés) :</div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+                  {planCalcule.approvisionnement.lignes.filter(function (l) { return l.manque > 0; }).map(function (l, i) {
+                    return <li key={i}>{getLibelleMatiere(l.id)} : manque {l.manque.toFixed(1)} {l.unite}{l.camionsNecessaires ? (" — soit " + l.camionsNecessaires + " camion(s) de " + planCalcule.approvisionnement.capaciteCamionM3 + " m³") : ""}</li>;
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {diff && diff.length > 0 && (
           <div className="pilotage-section" style={{ marginTop: 16 }}>
             <div className="pilotage-section-titre">Différences par rapport au dernier plan validé (v{dernierPlan.version})</div>
@@ -3578,7 +4221,11 @@ function PanneauPlanification({ indicateurs, commandes, productions, parametres,
             <label className="btp-label">Stock cible par défaut (u)</label>
             <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 10 }} value={formSim.stockCibleDefaut || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { stockCibleDefaut: parseInt(e.target.value, 10) || 0 }))} />
             <label className="btp-label">Durée de séchage (jours)</label>
-            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 14 }} value={formSim.dureeSechageJours || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { dureeSechageJours: parseInt(e.target.value, 10) || parametres.dureeSechageJours }))} />
+            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 10 }} value={formSim.dureeSechageJours || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { dureeSechageJours: parseInt(e.target.value, 10) || parametres.dureeSechageJours }))} />
+            <label className="btp-label">Heures de travail / jour (point BX-CA)</label>
+            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 10 }} value={formSim.heuresTravailJour || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { heuresTravailJour: e.target.value ? parseFloat(e.target.value) : null }))} />
+            <label className="btp-label">🚚 Camions de terre supplémentaires (point BO)</label>
+            <input type="number" className="btp-input" style={{ width: "100%", marginBottom: 14 }} value={formSim.terreSupplementaireCamions || ""} onChange={(e) => setFormSim(Object.assign({}, formSim, { terreSupplementaireCamions: e.target.value ? parseInt(e.target.value, 10) : 0 }))} />
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-full" style={{ background: "#5DADE2", color: "white" }} onClick={() => { setSimulation(formSim); setShowSimForm(false); }}>Appliquer la simulation</button>
               <button className="btn btn-ghost btn-full" onClick={() => setShowSimForm(false)}>Annuler</button>
@@ -4095,21 +4742,18 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     if (isNaN(qte) || qte <= 0) { setDirSaisieMsg("Quantite invalide"); return; }
     try {
       var dateFrDir = new Date().toLocaleDateString("fr-FR");
-      var refProdDir = await db.collection("productions").add({
-        type: dirSaisieType, quantite: qte, phase: dirSaisiePhase,
-        date: dateFrDir,
-        responsable: (userData.nom || user.email) + " (Admin)",
-        responsableUid: user.uid, statut: "Valide",
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      qseCreerLotEtControlePourProduction(refProdDir.id, {
+      var tokenDir = "prod_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+      var paramsDir = await chargerParametresIndustriels();
+      // Phase 10B : meme fonction centrale que le formulaire Production — production + stock BTC +
+      // consommation matieres en une seule transaction atomique, jamais dispersee/dupliquee.
+      var resultatDir = await enregistrerProductionAvecConsommation({
+        type: dirSaisieType, quantite: qte, phase: dirSaisiePhase, date: dateFrDir,
+        responsableOverride: (userData.nom || user.email) + " (Admin)"
+      }, paramsDir, tokenDir, user, userData);
+      qseCreerLotEtControlePourProduction(resultatDir.productionId, {
         type: dirSaisieType, quantite: qte, phase: dirSaisiePhase, date: dateFrDir
       }, user, userData).catch(function(e){ console.error("Erreur creation lot QSE", e); });
-      var st = stocks[dirSaisieType] || {};
-      var upd = {};
-      if (dirSaisiePhase === "sec") { upd.sec = (st.sec || 0) + qte; } else { upd.sechage = (st.sechage || 0) + qte; }
-      await db.collection("stocks").doc(dirSaisieType).set(upd, { merge: true });
-      setDirSaisieMsg("✅ Production enregistree ! Stock mis a jour.");
+      setDirSaisieMsg("✅ Production enregistree ! Stock mis a jour." + (!resultatDir.matieresSuivies || resultatDir.matieresCalculables ? "" : " (densité terre non configurée — seule la terre a été déduite)"));
       setDirSaisieQte("");
     } catch (e) { setDirSaisieMsg("❌ Erreur: " + e.message); }
   }
@@ -6277,6 +6921,48 @@ function DashboardStock({ user, userData }) {
   const [lots, setLots] = React.useState([]);
   const [palettesList, setPalettesList] = React.useState([]);
   const [showScannerAccueil, setShowScannerAccueil] = React.useState(false); // Phase 8 (point 17) : bouton "Scanner" de la barre basse mobile
+  // Phase 10B (parties AM-AS/CQ) : reception de terre par camions-bennes — unite terrain = camion,
+  // source de verite matiere = m3.
+  const [parametresStock, setParametresStock] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  const [matieresStockRes, setMatieresStockRes] = React.useState({});
+  const [showReceptionTerre, setShowReceptionTerre] = React.useState(false);
+  const [formReception, setFormReception] = React.useState(null);
+  const [msgReception, setMsgReception] = React.useState("");
+  const [receptionEnCours, setReceptionEnCours] = React.useState(false);
+  React.useEffect(function () { chargerParametresIndustriels().then(setParametresStock); }, []);
+  React.useEffect(function () {
+    var u = db.collection("matieres_stock").onSnapshot(function (snap) {
+      var m = {}; snap.docs.forEach(function (d) { m[d.id] = d.data(); }); setMatieresStockRes(m);
+    });
+    return u;
+  }, []);
+  var ouvrirReceptionTerre = function () {
+    setFormReception({ nombreCamions: "", capaciteCamionM3: String(parametresStock.capaciteBenneDefautM3 || 15), volumeReelM3: "", origine: "", fournisseur: "", prixTotal: "" });
+    setShowReceptionTerre(true); setMsgReception("");
+  };
+  var validerReceptionTerre = async function () {
+    if (receptionEnCours) return; // anti-double-clic
+    var nombreCamions = parseInt(formReception.nombreCamions, 10);
+    var capaciteCamionM3 = parseFloat(formReception.capaciteCamionM3);
+    if (!(nombreCamions > 0) || !(capaciteCamionM3 > 0)) { setMsgReception("Nombre de camions et capacité de benne requis."); return; }
+    if (!enLigne) { setMsgReception("🚫 Connexion requise — réception impossible hors connexion."); return; }
+    setReceptionEnCours(true); setMsgReception("Enregistrement...");
+    var token = "camion_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    try {
+      await receptionnerCamionsTerre({
+        nombreCamions: nombreCamions, capaciteCamionM3: capaciteCamionM3,
+        volumeReelM3: formReception.volumeReelM3 ? parseFloat(formReception.volumeReelM3) : null,
+        origine: formReception.origine, fournisseur: formReception.fournisseur,
+        prixTotal: formReception.prixTotal ? parseFloat(formReception.prixTotal) : null
+      }, token, user, userData);
+      setReceptionEnCours(false);
+      setMsgReception("✓ " + (nombreCamions * capaciteCamionM3).toLocaleString() + " m³ ajoutés au stock de terre.");
+      setTimeout(function () { setShowReceptionTerre(false); }, 1200);
+    } catch (e) {
+      setReceptionEnCours(false);
+      setMsgReception("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")");
+    }
+  };
 
   useEffect(() => {
     var u1 = db.collection("commandes").where("status","==","Validee").onSnapshot(snap => {
@@ -6555,6 +7241,56 @@ function DashboardStock({ user, userData }) {
             );
           })}
         </div>
+
+        {/* Phase 10B (parties AM-AS/CQ) : reception de terre par camions-bennes — stock theorique
+            issu du grand livre matiere_mouvements, DISTINCT de l'inventaire physique periodique
+            existant ("Matières 1ères" côté Direction) qui reste un comptage manuel bihebdomadaire. */}
+        <h3 style={{marginBottom:10,color:"#145A32"}}>Matières premières (stock théorique)</h3>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+          <button className="btn btn-lg" style={{background:"#8D6E63",color:"white",fontWeight:800,fontSize:16}} onClick={ouvrirReceptionTerre} disabled={!enLigne}>🚚 Réception terre (camions)</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:28}}>
+          {["terre","ciment","sable","eau"].map(function(id){
+            var m = matieresStockRes[id] || {};
+            return (
+              <div key={id} style={{background:"var(--btp-card)",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)"}}>
+                <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>{getLibelleMatiere(id)}</div>
+                <div style={{fontSize:16,fontWeight:800}}>{(m.quantite||0).toLocaleString()} {m.unite||(id==="terre"?"m³":id==="eau"?"L":"kg")}</div>
+                {id==="terre" && parametresStock.capaciteBenneDefautM3 && <div style={{fontSize:11,color:"var(--btp-text2)",marginTop:2}}>≈ {((m.quantite||0)/parametresStock.capaciteBenneDefautM3).toFixed(1)} bennes</div>}
+                {m.coutMoyenPondere>0 && <div style={{fontSize:11,color:"var(--btp-text2)",marginTop:2}}>Coût moyen : {m.coutMoyenPondere.toFixed(2)} €/{m.unite||"u"}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {showReceptionTerre && formReception && (
+          <div className="btp-modal-overlay" onClick={() => setShowReceptionTerre(false)}>
+            <div className="btp-modal" style={{maxWidth:420}} onClick={(e)=>e.stopPropagation()}>
+              <div className="btp-modal-title" style={{marginBottom:10}}>🚚 Réception terre</div>
+              <label className="btp-label">Nombre de camions</label>
+              <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.nombreCamions} onChange={e=>setFormReception(Object.assign({},formReception,{nombreCamions:e.target.value}))} />
+              <label className="btp-label">Capacité de la benne (m³)</label>
+              <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.capaciteCamionM3} onChange={e=>setFormReception(Object.assign({},formReception,{capaciteCamionM3:e.target.value}))} />
+              {formReception.nombreCamions && formReception.capaciteCamionM3 && (
+                <div style={{fontSize:12,color:"var(--btp-text2)",marginBottom:10}}>≈ {(parseFloat(formReception.nombreCamions||0)*parseFloat(formReception.capaciteCamionM3||0)).toLocaleString()} m³ théoriques</div>
+              )}
+              <label className="btp-label">Volume réel mesuré (m³, facultatif — sinon le théorique est retenu)</label>
+              <input type="number" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.volumeReelM3} onChange={e=>setFormReception(Object.assign({},formReception,{volumeReelM3:e.target.value}))} />
+              <label className="btp-label">Origine / chantier</label>
+              <input type="text" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.origine} onChange={e=>setFormReception(Object.assign({},formReception,{origine:e.target.value}))} />
+              <label className="btp-label">Fournisseur</label>
+              <input type="text" className="btp-input" style={{width:"100%",marginBottom:10}} value={formReception.fournisseur} onChange={e=>setFormReception(Object.assign({},formReception,{fournisseur:e.target.value}))} />
+              <label className="btp-label">Prix total (€, facultatif)</label>
+              <input type="number" className="btp-input" style={{width:"100%",marginBottom:14}} value={formReception.prixTotal} onChange={e=>setFormReception(Object.assign({},formReception,{prixTotal:e.target.value}))} />
+              {msgReception && <div style={{fontSize:13,marginBottom:10,fontWeight:700,color:msgReception.indexOf("✓")===0?"#1E8449":"#C0392B"}}>{msgReception}</div>}
+              <div style={{display:"flex",gap:10}}>
+                <button className="btn btn-full" style={{background:"#8D6E63",color:"white"}} disabled={receptionEnCours||!enLigne} onClick={validerReceptionTerre}>{receptionEnCours?"Enregistrement…":(!enLigne?"🚫 Hors connexion":"✓ Valider la réception")}</button>
+                <button className="btn btn-ghost btn-full" onClick={()=>setShowReceptionTerre(false)}>Fermer</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <h3 style={{marginBottom:10,color:"#145A32"}}>Commandes a preparer ({commandes.length})</h3>
         {commandes.length===0?<p style={{color:"var(--btp-text2)"}}>Aucune commande validee en attente.</p>:
           commandes.map(cmd=>{
@@ -6739,6 +7475,59 @@ function DashboardProduction({ user, userData }) {
   const [lotOuvert, setLotOuvert] = React.useState(null);
   const [lots, setLots] = React.useState([]);
   const [controlesEnAttente, setControlesEnAttente] = React.useState([]);
+  // Phase 10B : parametres industriels (recette matieres, capacite reelle) et cache matieres_stock —
+  // charges une fois (parametres) / en ecoute legere (4 docs, meme cout qu'un ecouteur "stocks").
+  const [parametresProd, setParametresProd] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  const [matieresStockProd, setMatieresStockProd] = React.useState({});
+  const [activitesJourProd, setActivitesJourProd] = React.useState([]);
+  const [activiteEnCours, setActiviteEnCours] = React.useState(null); // activite EnCours (concassage/changement moule...) demarree par cet operateur
+  const [formActivite, setFormActivite] = React.useState(null); // { type } quand le formulaire de demarrage est ouvert
+  const [formTerminerActivite, setFormTerminerActivite] = React.useState(null); // { volumeTerreConcasseeM3, nouveauMoule, commentaire }
+  const [msgActivite, setMsgActivite] = React.useState("");
+  React.useEffect(function () { chargerParametresIndustriels().then(setParametresProd); }, []);
+  React.useEffect(function () {
+    var u = db.collection("matieres_stock").onSnapshot(function (snap) {
+      var m = {}; snap.docs.forEach(function (d) { m[d.id] = d.data(); }); setMatieresStockProd(m);
+    });
+    return u;
+  }, []);
+  React.useEffect(function () {
+    var u = db.collection("activites_industrielles").where("date", "==", dateLocaleISO(Date.now())).onSnapshot(function (snap) {
+      var liste = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+      setActivitesJourProd(liste);
+      var enCours = liste.find(function (a) { return a.statut === "EnCours"; });
+      setActiviteEnCours(enCours || null);
+    });
+    return u;
+  }, []);
+  var capaciteReelleAujourdhui = React.useMemo(function () {
+    return calculerCapaciteReelleJour(parametresProd.capaciteJournaliere, parametresProd.heuresTravailJour, activitesJourProd);
+  }, [parametresProd, activitesJourProd]);
+  var demarrerActivite = async function (typeActivite) {
+    if (!enLigne) { setMsgActivite("🚫 Connexion requise — impossible hors connexion."); return; }
+    var extra = {};
+    if (typeActivite === "CHANGEMENT_MOULE") {
+      extra.ancienMoule = parametresProd.mouleActuel || null;
+      extra.nouveauMoule = (formActivite && formActivite.nouveauMoule) || null;
+      if (!extra.nouveauMoule) { setMsgActivite("Choisissez le nouveau moule."); return; }
+    }
+    var token = "act_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    try {
+      await demarrerActiviteIndustrielle(Object.assign({ type: typeActivite }, extra), token, user, userData);
+      setMsgActivite("✓ " + libelleActivite(typeActivite) + " démarré.");
+      setFormActivite(null);
+    } catch (e) { setMsgActivite("❌ Échec — aucune modification confirmée. (" + e.message + ")"); }
+  };
+  var terminerActivite = async function () {
+    if (!activiteEnCours) return;
+    if (!enLigne) { setMsgActivite("🚫 Connexion requise — impossible hors connexion."); return; }
+    try {
+      var champs = formTerminerActivite || {};
+      await terminerActiviteIndustrielle(activiteEnCours.id, { volumeTerreConcasseeM3: champs.volumeTerreConcasseeM3 ? parseFloat(champs.volumeTerreConcasseeM3) : null, commentaire: champs.commentaire || "" }, user, userData);
+      setMsgActivite("✓ " + libelleActivite(activiteEnCours.type) + " terminé.");
+      setFormTerminerActivite(null);
+    } catch (e) { setMsgActivite("❌ Échec — aucune modification confirmée. (" + e.message + ")"); }
+  };
   // Phase 10 (points 28/29/35/36) : lignes du dernier plan de production VALIDE. Charge une seule
   // fois au montage (requete ciblee, point 49) puis rafraichi localement apres chaque demarrage —
   // jamais un abonnement temps reel supplementaire pour un ecran qui n'en a pas besoin.
@@ -6824,39 +7613,41 @@ function DashboardProduction({ user, userData }) {
     try {
       var dateFr = dateAujourdHui;
       if (saisieDate) { var parts = saisieDate.split("-"); if (parts.length === 3) { dateFr = parts[2] + "/" + parts[1] + "/" + parts[0]; } }
-      const refProductionQSE = await db.collection("productions").add({
-        type:saisieType, quantite:qte, phase:saisiePhase,
-        date:dateFr, responsable:userData.nom||user.email,
-        responsableUid:user.uid, statut:"Valide",
-        timestamp:firebase.firestore.FieldValue.serverTimestamp()
-      });
-      qseCreerLotEtControlePourProduction(refProductionQSE.id, {
+      var token = "prod_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+      // Phase 10B (points AG/BR) : production + stock BTC + consommation matieres premieres, dans
+      // UNE SEULE transaction atomique — refuse explicitement si les matieres sont insuffisantes,
+      // AVANT toute ecriture (jamais de production enregistree sans sa consommation matiere).
+      var resultatProd = await enregistrerProductionAvecConsommation({ type: saisieType, quantite: qte, phase: saisiePhase, date: dateFr }, parametresProd, token, user, userData);
+      qseCreerLotEtControlePourProduction(resultatProd.productionId, {
         type: saisieType, quantite: qte, phase: saisiePhase, date: dateFr
       }, user, userData).catch(function(e){ console.error("Erreur creation lot QSE", e); });
-      var s = stocks[saisieType]||{};
-      var upd = {};
-      if (saisiePhase==="sec") { upd.sec=(s.sec||0)+qte; } else { upd.sechage=(s.sechage||0)+qte; }
-      await db.collection("stocks").doc(saisieType).set(upd, { merge:true });
       // Phase 10 (points 28/33) : si cette production demarre une ligne planifiee, on la relie a la
       // production REELLEMENT enregistree (quantite reelle, jamais la quantite prevue) pour que la
       // projection future ne compte jamais planifie + realise en double. Echec de liaison = simple
       // avertissement console (la production, elle, est deja bien enregistree) — jamais un blocage.
       if (planLigneActive) {
-        terminerLigneProductionPlan(planLigneActive.id, refProductionQSE.id, qte, user, userData)
+        terminerLigneProductionPlan(planLigneActive.id, resultatProd.productionId, qte, user, userData)
           .then(rafraichirPlan)
           .catch(function (e) { console.error("Erreur liaison plan/production", e); });
         setPlanLigneActive(null);
       }
       clearTimeout(alerteLente);
       setEnregistrementEnCours(false);
-      setMsg("✓ " + qte.toLocaleString() + " u — production enregistrée, stock mis à jour.");
+      setMsg("✓ " + qte.toLocaleString() + " u — production enregistrée, stock mis à jour." + (!resultatProd.matieresSuivies ? "" : (resultatProd.matieresCalculables ? " Matières déduites (" + resultatProd.coutMatieresProduction.toFixed(2) + " € de matières)." : " Densité terre non configurée — seule la terre a été déduite.")));
       setSaisieQte("");
     } catch(e) {
       clearTimeout(alerteLente);
       setEnregistrementEnCours(false);
-      setMsg("❌ Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")");
+      setMsg("❌ " + (e.message && e.message.indexOf("matières insuffisantes") !== -1 ? e.message : ("Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")")));
     }
   };
+  // Point AH : apercu matieres avant validation — pur, ne se declenche que si une quantite valide
+  // est saisie, ne bloque jamais la saisie elle-meme (juste informatif tant que non enregistre).
+  var apercuMatieres = React.useMemo(function () {
+    var qte = parseInt(saisieQte, 10);
+    if (!(qte > 0)) return null;
+    return apercuMatieresProduction(qte, matieresStockProd, parametresProd);
+  }, [saisieQte, matieresStockProd, parametresProd]);
 
   function pFrToInput(frDate){
     if (frDate && typeof frDate === "string" && frDate.indexOf("/") !== -1){
@@ -6979,6 +7770,64 @@ function DashboardProduction({ user, userData }) {
           <BoutonScanner user={user} userData={userData} libelle="Scanner un lot" />
           {compteurPrioritesProd > 0 && <span className="btp-badge-compteur">{compteurPrioritesProd}</span>}
         </div>
+
+        {/* Phase 10B (parties C/I/BG) : "Activité du jour" — jamais lourd, un operateur doit pouvoir
+            declarer une activite en quelques secondes. Le concassage/changement de moule ne sont
+            JAMAIS classes comme une panne ou une perte (partie G) : ce sont des activites process
+            necessaires, distinctes des arrets subis. */}
+        <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", marginBottom: 20 }}>
+          <h3 style={{ marginBottom: 8, color: "#4A235A" }}>🏭 Activité du jour</h3>
+          <div style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 10 }}>
+            Moule actuel : <strong>{parametresProd.mouleActuel ? getProduit(parametresProd.mouleActuel).nom : "non renseigné"}</strong>
+            {capaciteReelleAujourdhui.calculable && (<> · Capacité BTC ajustée aujourd'hui : <strong>≈{capaciteReelleAujourdhui.capaciteReelle.toLocaleString()}</strong> ({capaciteReelleAujourdhui.heuresDisponibles.toFixed(1)} h disponibles sur {parametresProd.heuresTravailJour} h, {capaciteReelleAujourdhui.heuresIndisponibles.toFixed(1)} h mobilisées ailleurs)</>)}
+          </div>
+
+          {activiteEnCours ? (
+            <div style={{ background: "rgba(243,156,18,.12)", border: "1px solid rgba(243,156,18,.4)", borderRadius: 8, padding: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>{TYPES_ACTIVITES_INDUSTRIELLES.find(t => t.id === activiteEnCours.type).icone} {libelleActivite(activiteEnCours.type)} en cours{activiteEnCours.nouveauMoule ? (" → " + getProduit(activiteEnCours.nouveauMoule).nom) : ""}</div>
+              {activiteEnCours.type === "CONCASSAGE" && (
+                <input type="number" placeholder="Volume de terre concassée (m³, facultatif)" value={(formTerminerActivite && formTerminerActivite.volumeTerreConcasseeM3) || ""} onChange={e => setFormTerminerActivite(Object.assign({}, formTerminerActivite, { volumeTerreConcasseeM3: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }} />
+              )}
+              <button className="btn btn-sm btn-full" style={{ background: "#1E8449", color: "white" }} disabled={!enLigne} onClick={terminerActivite}>{!enLigne ? "🚫 Hors connexion" : ("✓ Terminer " + libelleActivite(activiteEnCours.type).toLowerCase())}</button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: formActivite ? 10 : 0 }}>
+                <button className="btn btn-sm" onClick={() => setFormActivite({ type: "CONCASSAGE" })}>🪨 Concassage</button>
+                <button className="btn btn-sm" onClick={() => setFormActivite({ type: "CHANGEMENT_MOULE" })}>🔧 Changement moule</button>
+                <button className="btn btn-sm" onClick={() => setFormActivite({ type: "MAINTENANCE" })}>🛠 Maintenance</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => setFormActivite({ type: "ARRET" })}>⚠️ Arrêt</button>
+              </div>
+              {formActivite && formActivite.type === "ARRET" && (
+                <div style={{ marginBottom: 10 }}>
+                  <select value={formActivite.sousType || ""} onChange={e => setFormActivite(Object.assign({}, formActivite, { sousType: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }}>
+                    <option value="">Type d'arrêt…</option>
+                    <option value="PANNE">⚠️ Panne</option>
+                    <option value="ATTENTE_MATIERE">⏳ Attente matière</option>
+                    <option value="COUPURE_ELECTRIQUE">⚡ Coupure électrique</option>
+                    <option value="NETTOYAGE">🧹 Nettoyage</option>
+                    <option value="AUTRE">❓ Autre</option>
+                  </select>
+                  <button className="btn btn-sm btn-full" disabled={!formActivite.sousType || !enLigne} onClick={() => demarrerActivite(formActivite.sousType)}>Démarrer</button>
+                </div>
+              )}
+              {formActivite && formActivite.type === "CHANGEMENT_MOULE" && (
+                <div style={{ marginBottom: 10 }}>
+                  <select value={formActivite.nouveauMoule || ""} onChange={e => setFormActivite(Object.assign({}, formActivite, { nouveauMoule: e.target.value }))} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--btp-border)", marginBottom: 8, fontSize: 13 }}>
+                    <option value="">Nouveau moule…</option>
+                    {CATALOGUE.map(p => <option key={p.id} value={p.id}>{p.nom} — {p.dim}</option>)}
+                  </select>
+                  <button className="btn btn-sm btn-full" disabled={!enLigne} onClick={() => demarrerActivite("CHANGEMENT_MOULE")}>Démarrer le changement</button>
+                </div>
+              )}
+              {formActivite && (formActivite.type === "CONCASSAGE" || formActivite.type === "MAINTENANCE") && (
+                <button className="btn btn-sm btn-full" style={{ marginBottom: 10 }} disabled={!enLigne} onClick={() => demarrerActivite(formActivite.type)}>▶️ Démarrer {libelleActivite(formActivite.type).toLowerCase()}</button>
+              )}
+            </div>
+          )}
+          {msgActivite && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: msgActivite.indexOf("✓") === 0 ? "#1E8449" : "#C0392B" }}>{msgActivite}</div>}
+        </div>
+
         {/* Phase 10 (points 28/35) : ecran simplifie "Aujourd'hui : ... -> Démarrer production" —
             issu du dernier plan VALIDE (jamais calcule a la volee ici, jamais une decision automatique :
             juste un pre-remplissage du formulaire existant, que le responsable verifie et valide). */}
@@ -7066,9 +7915,19 @@ function DashboardProduction({ user, userData }) {
           <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de production</label>
           <input type="date" value={saisieDate} onChange={e=>setSaisieDate(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}} />
           <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14}} />
+          {/* Point AH : apercu matieres avant validation — pur, informatif, ne bloque jamais la
+              saisie tant que le suivi matiere n'a pas ete explicitement active (densite configuree). */}
+          {apercuMatieres && apercuMatieres.suivi && (
+            <div style={{ background: apercuMatieres.suffisant ? "rgba(93,173,226,.08)" : "rgba(236,112,99,.12)", border: "1px solid " + (apercuMatieres.suffisant ? "rgba(93,173,226,.3)" : "rgba(236,112,99,.4)"), borderRadius: 8, padding: "8px 10px", marginBottom: 12, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Matières nécessaires</div>
+              {apercuMatieres.lignes.map(function (l, i) { return <div key={i}>{getLibelleMatiere(l.id)} : {l.besoin.toFixed(1)} {l.unite}</div>; })}
+              {!apercuMatieres.calculable && <div style={{ marginTop: 4, color: "var(--btp-text2)" }}>Densité terre non configurée — seule la terre est calculée.</div>}
+              {!apercuMatieres.suffisant && <div style={{ marginTop: 4, fontWeight: 700, color: "#C0392B" }}>⚠️ Insuffisant : {apercuMatieres.manques.map(function (m) { return getLibelleMatiere(m.id) + " (manque " + m.manque.toFixed(1) + " " + m.unite + ")"; }).join(", ")}</div>}
+            </div>
+          )}
           {msg&&<div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,background:msg.indexOf("✓")===0?"#EAFAF1":"#FFECEC",color:msg.indexOf("✓")===0?"#1E8449":"#C0392B"}}>{msg}</div>}
-          <button onClick={enregistrer} disabled={enregistrementEnCours || !enLigne} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",opacity:(enregistrementEnCours||!enLigne)?0.6:1}}>
-            {enregistrementEnCours ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "Enregistrer la production")}
+          <button onClick={enregistrer} disabled={enregistrementEnCours || !enLigne || (apercuMatieres && apercuMatieres.suivi && !apercuMatieres.suffisant)} style={{width:"100%",padding:"10px",background:"#6C3483",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",opacity:(enregistrementEnCours||!enLigne||(apercuMatieres && apercuMatieres.suivi && !apercuMatieres.suffisant))?0.6:1}}>
+            {enregistrementEnCours ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : (apercuMatieres && apercuMatieres.suivi && !apercuMatieres.suffisant ? "Matières insuffisantes" : "Enregistrer la production"))}
           </button>
         </div>
 
@@ -8251,6 +9110,7 @@ async function corrigerProductionLot(production, nouveauType, nouvelleQuantite, 
   var lotRef = lotDoc.ref;
   var typeBTC = lotDoc.data().type;
   var stockRef = db.collection("stocks").doc(typeBTC);
+  var ancienneProdPourMatieres = null;
 
   await db.runTransaction(async function (tx) {
     var lotSnap = await tx.get(lotRef);
@@ -8262,6 +9122,7 @@ async function corrigerProductionLot(production, nouveauType, nouvelleQuantite, 
     if (chk.existe) return; // deja applique (double clic/retry)
 
     var ancienneProd = prodSnap.data();
+    ancienneProdPourMatieres = ancienneProd;
     var delta = qte - (ancienneProd.quantite || 0);
     var lot = lotSnap.data();
     var dispoAvant = lot.disponibleCache != null ? lot.disponibleCache : 0;
@@ -8289,6 +9150,15 @@ async function corrigerProductionLot(production, nouveauType, nouvelleQuantite, 
     }
     tx.set(stockRef, upd, { merge: true });
   });
+  // Point AK : correction des matieres premieres par le DELTA de quantite (jamais un effacement des
+  // mouvements d'origine) — uniquement pour les productions passees par le suivi matiere (point BP :
+  // jamais de retro-invention pour une production anterieure a l'activation du suivi).
+  if (ancienneProdPourMatieres && (ancienneProdPourMatieres.coutMatieresProduction != null || ancienneProdPourMatieres.matieresConsommees != null) && (ancienneProdPourMatieres.quantite || 0) !== qte) {
+    try {
+      var paramsCorrection = await chargerParametresIndustriels();
+      await corrigerConsommationMatieresProduction(ancienneProdPourMatieres.quantite || 0, qte, paramsCorrection, token, user, userData);
+    } catch (e) { console.error("Erreur correction matieres", e); }
+  }
   return { tracable: true };
 }
 
@@ -8348,6 +9218,14 @@ async function annulerProductionLot(production, user, userData) {
     upd[champ] = Math.max(0, (upd[champ] || 0) - quantiteProduite);
     tx.set(stockRef, upd, { merge: true });
   });
+  // Point AL : une annulation restitue les matieres premieres consommees (mouvements inverses,
+  // jamais un effacement) — uniquement pour les productions passees par le suivi matiere.
+  if (production.coutMatieresProduction != null || production.matieresConsommees != null) {
+    try {
+      var paramsAnnulation = await chargerParametresIndustriels();
+      await corrigerConsommationMatieresProduction(production.quantite || 0, 0, paramsAnnulation, "annulation_" + production.id, user, userData);
+    } catch (e) { console.error("Erreur restitution matieres", e); }
+  }
   return { tracable: true };
 }
 
@@ -9707,6 +10585,19 @@ function FicheLot(props) {
         {tracable
           ? <div className="fichelot-caveat">Quantités calculées à partir du grand livre de mouvements de stock (traçabilité par lot active pour ce lot).</div>
           : <div className="fichelot-caveat">* Lot créé avant l'activation du suivi de stock par lot — estimation basée sur les NC uniquement. Utilisez "Initialiser le suivi par lot" (Direction &gt; Inventaire) pour activer le suivi précis de ce lot.</div>}
+
+        {/* Phase 10B (point BI) : matieres consommees + cout, uniquement si la production associee est
+            passee par le suivi matiere — jamais de retro-invention pour un lot anterieur (point BP). */}
+        {production && (production.matieresConsommees || production.coutMatieresProduction != null) && (
+          <div className="fichelot-grid" style={{ marginTop: 12 }}>
+            <div className="fichelot-fait"><div className="fichelot-fait-label">Terre consommée</div><div className="fichelot-fait-valeur">{production.matieresConsommees && production.matieresConsommees.terreM3 != null ? production.matieresConsommees.terreM3.toFixed(1) + " m³" : "—"}</div></div>
+            <div className="fichelot-fait"><div className="fichelot-fait-label">Ciment consommé</div><div className="fichelot-fait-valeur">{production.matieresConsommees && production.matieresConsommees.cimentKg != null ? production.matieresConsommees.cimentKg.toFixed(1) + " kg" : "—"}</div></div>
+            <div className="fichelot-fait"><div className="fichelot-fait-label">Sable consommé</div><div className="fichelot-fait-valeur">{production.matieresConsommees && production.matieresConsommees.sableKg != null ? production.matieresConsommees.sableKg.toFixed(1) + " kg" : "—"}</div></div>
+            <div className="fichelot-fait"><div className="fichelot-fait-label">Eau consommée</div><div className="fichelot-fait-valeur">{production.matieresConsommees && production.matieresConsommees.eauLitres != null ? production.matieresConsommees.eauLitres.toFixed(1) + " L" : "—"}</div></div>
+            <div className="fichelot-fait"><div className="fichelot-fait-label">Coût matière</div><div className="fichelot-fait-valeur">{production.coutMatieresProduction != null ? production.coutMatieresProduction.toFixed(2) + " €" : "—"}</div></div>
+            <div className="fichelot-fait"><div className="fichelot-fait-label">Coût matière / BTC</div><div className="fichelot-fait-valeur">{production.coutMatiereParBTC != null ? production.coutMatiereParBTC.toFixed(3) + " €/u" : "—"}</div></div>
+          </div>
+        )}
 
         <div className="fichelot-section">
           <h4>Historique du lot</h4>
