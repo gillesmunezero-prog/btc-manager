@@ -772,6 +772,31 @@ const db = firebase.firestore();
 // fonctionner normalement, simplement sans persistance longue duree (best-effort, jamais bloquant).
 try { db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
 
+// Point 5 (retours utilisateur) : journal d'audit unique cote Direction. Toute creation/modification
+// significative, quel que soit le module, doit y apparaitre — "qui a fait quoi, qui a modifie quoi".
+// Reutilise la collection "evenements" deja affichee dans le "Journal de tracabilite" de Direction
+// (point 5 du meme retour), en ajoutant un champ "categorie" pour filtrer par domaine. Fire-and-forget
+// volontaire (comme tous les writes evenements existants) : un echec de journalisation ne doit jamais
+// bloquer l'action metier qu'il decrit.
+function journaliserEvenement(params) {
+  try {
+    db.collection("evenements").add({
+      categorie: params.categorie || "Général",
+      numBC: params.numBC || "",
+      chantier: params.chantier || "",
+      action: params.action || "",
+      acteur: params.acteur || "Utilisateur inconnu",
+      role: params.role || "",
+      details: params.details || "",
+      statut: params.statut || "",
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) {}
+}
+function libelleActeurCourant(user, userData) {
+  return (userData && (userData.nom || userData.email)) || (user && user.email) || "Utilisateur inconnu";
+}
+
 // ============================================================================================
 // PHASE 8 — Infrastructure partagee : version d'app, etat de connexion reel, execution harmonisee
 // des operations critiques (jamais de confirmation avant que Firestore ait reellement repondu),
@@ -978,6 +1003,17 @@ const CATALOGUE = [
   { id: "BTC Bloc Remplissage 30x22", nom: "BTC Bloc Remplissage (grand)", dim: "30x22x9,5 cm", prix: 2.83, usage: "Murs porteurs, cloisons et elevations diverses" },
   { id: "BTC Bloc a Maconner", nom: "BTC Bloc a Maconner", dim: "29x14x9,5 cm", prix: 1.35, usage: "Maconnerie speciale, passage ou beton arme" }
 ];
+
+// Point 6 (retours utilisateur) : affichage en palettes — Stock et Production (hors Direction) ne
+// voient que des palettes, jamais l'unite brute ; Direction voit les deux (palettes ET unites).
+// Fonction pure d'affichage uniquement : la source de verite (quantite) reste toujours en unites.
+function formatQuantitePalette(qte, capPalette) {
+  var cap = capPalette || 100;
+  var q = qte || 0;
+  var pal = Math.floor(q / cap);
+  var reste = q - pal * cap;
+  return pal.toLocaleString() + " palette" + (pal !== 1 ? "s" : "") + (reste > 0 ? (" + " + reste.toLocaleString() + " u") : "");
+}
 
 const FOURNITURES = [
   { id: "Hydrofuge", nom: "Hydrofuge", cond: "Bidon 20L", prix: 250, usage: "Traitement hydrofuge de facade" },
@@ -1614,7 +1650,13 @@ const PARAMETRES_INDUSTRIELS_DEFAUT = {
   densiteTerreSecheKgM3: null,
 
   capaciteBenneDefautM3: 15,        // point AP : benne habituelle Terre et Eau, pleinement modifiable
-  suiviTerreBruteEtPreparee: false  // point K : distinction brute/preparee desactivee par defaut
+  suiviTerreBruteEtPreparee: false, // point K : distinction brute/preparee desactivee par defaut
+
+  // Point 6 (retours utilisateur) : nombre de BTC par palette standard — sert de facteur de
+  // conversion pour les saisies en palettes (commandes chef de chantier, production), sans changer
+  // la source de verite interne (toujours en unites). La taille reelle d'une palette au moment de
+  // l'emballage (proposerRepartitionPalettes) reste, elle, entierement libre et n'est pas affectee.
+  capacitePaletteDefaut: 100
 };
 async function chargerParametresIndustriels() {
   try {
@@ -1627,6 +1669,7 @@ async function enregistrerParametresIndustriels(champs, user, userData) {
   await db.collection("parametres_industriels").doc("global").set(Object.assign({}, champs, {
     modifiePar: auteur, dateModification: firebase.firestore.FieldValue.serverTimestamp()
   }), { merge: true });
+  journaliserEvenement({ categorie: "Paramètres", action: "Paramètres modifiés", acteur: auteur, role: "direction", details: Object.keys(champs).join(", ") });
 }
 
 // --- B. Periodes (point 3) : DEFINITION UNIQUE, reutilisee partout — jamais de calcul de date
@@ -2613,6 +2656,15 @@ async function declarerActiviteTerminee(champs, token, user, userData) {
   if (champs.type === "CHANGEMENT_MOULE" && champs.nouveauMoule) {
     await db.collection("parametres_industriels").doc("global").set({ mouleActuel: champs.nouveauMoule }, { merge: true });
   }
+  journaliserEvenement({
+    categorie: "Production", action: libelleActivite(champs.type) + " déclaré(e)", acteur: auteur, role: "resp_production",
+    details: (champs.dureeMinutes ? (champs.dureeMinutes + " min") : "") +
+      (champs.typeBTC ? (" | BTC : " + champs.typeBTC) : "") +
+      (champs.nouveauMoule ? (" | Nouveau moule : " + champs.nouveauMoule) : "") +
+      (champs.volumeTerreConcasseeM3 != null ? (" | Volume concassé : " + champs.volumeTerreConcasseeM3 + " m³") : "") +
+      (champs.motif ? (" | Motif : " + champs.motif) : "") +
+      (champs.commentaire ? (" | " + champs.commentaire) : "")
+  });
   return token;
 }
 
@@ -2678,6 +2730,7 @@ async function receptionnerMatierePremiere(matiereId, quantite, unite, prixTotal
     ecrireMouvementMatiere(tx, chk.id, { matiereId: matiereId, type: "RECEPTION", quantite: quantite, unite: unite, prixUnitaire: prixUnitaire, sourceType: "reception", sourceId: token, utilisateur: auteur, commentaire: fournisseur ? ("Fournisseur : " + fournisseur) : "" });
     tx.set(stockRef, { quantite: (s.quantite || 0) + quantite, unite: unite, coutMoyenPondere: nouveauCout }, { merge: true });
   });
+  journaliserEvenement({ categorie: "Matières", action: "Réception " + getLibelleMatiere(matiereId), acteur: auteur, role: "resp_stock", details: quantite + " " + unite + (fournisseur ? (" | Fournisseur : " + fournisseur) : "") + (prixTotal != null ? (" | " + prixTotal.toFixed(2) + "€") : "") });
 }
 
 // Points AM-AS : reception de terre par camions-bennes — l'unite terrain est le camion, la source de
@@ -2711,6 +2764,7 @@ async function receptionnerCamionsTerre(champs, token, user, userData) {
     prixUnitaireM3: prixUnitaire, prixParCamion: (champs.prixTotal != null && nombreCamions > 0) ? champs.prixTotal / nombreCamions : null,
     creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
   });
+  journaliserEvenement({ categorie: "Matières", action: "Réception terre (camions)", acteur: auteur, role: "resp_stock", details: nombreCamions + " camion(s) — " + volumeM3 + " m³" + (champs.origine ? (" | Origine : " + champs.origine) : "") });
 }
 
 // Point AH : apercu PUR (aucune ecriture) des matieres necessaires avant validation d'une production.
@@ -2903,6 +2957,7 @@ async function enregistrerProductionAvecConsommation(champs, parametres, token, 
     tx.set(stockRef, upd, { merge: true });
   });
 
+  journaliserEvenement({ categorie: "Production", action: "Production enregistrée", acteur: auteur, role: "resp_production", details: qte + " " + champs.type + " (" + (champs.phase === "sec" ? "sec" : "séchage") + ") le " + champs.date });
   return { productionId: token, coutMatieresProduction: coutMatieresProduction, coutMatiereParBTC: coutMatiereParBTC, matieresSuivies: suiviMatiereActif, matieresCalculables: conso.calculable };
 }
 
@@ -3436,6 +3491,83 @@ function InventaireParScan({ user, userData, onFermer }) {
         <ModaleScanner titre="Scanner les palettes" continu={true} dejaVus={dejaVus}
           onFermer={() => setShowScanner(false)} onObjetReconnu={surObjetScanne} />
       )}
+    </div>
+  );
+}
+
+// Point 3 (retours utilisateur) : methode d'enregistrement classique, sans scanner — inventaire
+// manuel par quantite totale comptee par type de BTC (meme logique/journalisation que l'inventaire
+// Direction existant : ecart journalise en AJUSTEMENT_INVENTAIRE, jamais de fausse precision par
+// lot). Ouvert depuis Stock, en complement de l'inventaire par scan (le scanner n'est pas encore
+// utilise sur le terrain).
+function InventaireManuel({ stocks, user, userData, onFermer }) {
+  const [invSec, setInvSec] = React.useState({});
+  const [invSechage, setInvSechage] = React.useState({});
+  const [invMsg, setInvMsg] = React.useState("");
+  const [enCours, setEnCours] = React.useState(false);
+  const enregistrer = async () => {
+    if (enCours) return;
+    setEnCours(true); setInvMsg("");
+    try {
+      var auteurInv = (userData && (userData.nom || userData.email)) || (user && user.email) || "inconnu";
+      var lignesInv = CATALOGUE.map(function (prod) {
+        var ns = invSec[prod.id] !== undefined ? parseInt(invSec[prod.id]) || 0 : (stocks[prod.id] || {}).sec || 0;
+        var ng = invSechage[prod.id] !== undefined ? parseInt(invSechage[prod.id]) || 0 : (stocks[prod.id] || {}).sechage || 0;
+        var ancienTotal = ((stocks[prod.id] || {}).sec || 0) + ((stocks[prod.id] || {}).sechage || 0);
+        return { prod: prod, ns: ns, ng: ng, ecart: (ns + ng) - ancienTotal };
+      });
+      await db.runTransaction(async function (tx) {
+        var checks = [];
+        for (var i = 0; i < lignesInv.length; i++) {
+          var l = lignesInv[i];
+          if (l.ecart === 0) { checks.push(null); continue; }
+          var mvt = { type: "AJUSTEMENT_INVENTAIRE", numeroLot: null, typeBTC: l.prod.id, quantite: l.ecart, sourceType: "inventaire", sourceId: l.prod.id + "_" + Date.now(), utilisateur: auteurInv, commentaire: "Inventaire manuel (sans scanner)" };
+          checks.push(await verifierMouvementExistant(tx, mvt));
+        }
+        lignesInv.forEach(function (l, i) {
+          tx.set(db.collection("stocks").doc(l.prod.id), { sec: l.ns, sechage: l.ng }, { merge: true });
+          if (l.ecart !== 0 && checks[i] && !checks[i].existe) {
+            ecrireMouvementStock(tx, checks[i].id, { type: "AJUSTEMENT_INVENTAIRE", numeroLot: null, typeBTC: l.prod.id, quantite: l.ecart, sourceType: "inventaire", sourceId: l.prod.id + "_" + Date.now(), utilisateur: auteurInv, commentaire: "Inventaire manuel (sans scanner)" });
+          }
+        });
+      });
+      setInvMsg("✓ Stock mis à jour. Le " + new Date().toLocaleDateString("fr-FR") + " à " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      setInvSec({}); setInvSechage({});
+    } catch (e) { setInvMsg("❌ Erreur : " + e.message); }
+    finally { setEnCours(false); }
+  };
+  return (
+    <div className="btp-modal-overlay" onClick={onFermer}>
+      <div className="btp-modal" style={{ maxWidth: 520, maxHeight: "88vh", overflowY: "auto" }} onClick={function (e) { e.stopPropagation(); }}>
+        <div className="btp-modal-title" style={{ marginBottom: 6 }}>📝 Inventaire manuel</div>
+        <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>Comptez à la main et saisissez les quantités réelles par type de BTC — pas besoin de scanner. Les valeurs actuelles sont pré-remplies.</p>
+        {CATALOGUE.map(function (prod) {
+          var s = stocks[prod.id] || {};
+          return (
+            <div key={prod.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--btp-border)", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{prod.nom}</div>
+                <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>{prod.dim}</div>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--btp-text2)", display: "block", marginBottom: 2 }}>Stock sec</label>
+                <input type="number" min="0" value={invSec[prod.id] !== undefined ? invSec[prod.id] : (s.sec || 0)}
+                  onChange={function (e) { var v = e.target.value; setInvSec(function (prev) { var n = Object.assign({}, prev); n[prod.id] = v === "" ? "" : (parseInt(v) || 0); return n; }); }}
+                  style={{ width: 80, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--btp-border)", fontSize: 14, textAlign: "right", background: "var(--btp-card)", color: "var(--btp-text)" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: "var(--btp-text2)", display: "block", marginBottom: 2 }}>En séchage</label>
+                <input type="number" min="0" value={invSechage[prod.id] !== undefined ? invSechage[prod.id] : (s.sechage || 0)}
+                  onChange={function (e) { var v = e.target.value; setInvSechage(function (prev) { var n = Object.assign({}, prev); n[prod.id] = v === "" ? "" : (parseInt(v) || 0); return n; }); }}
+                  style={{ width: 80, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--btp-border)", fontSize: 14, textAlign: "right", background: "var(--btp-card)", color: "var(--btp-text)" }} />
+              </div>
+            </div>
+          );
+        })}
+        {invMsg && <div style={{ padding: "8px 12px", borderRadius: 8, margin: "12px 0", fontSize: 13, fontWeight: 600, background: invMsg.indexOf("✓") === 0 ? "#EAFAF1" : "#FFECEC", color: invMsg.indexOf("✓") === 0 ? "#1E8449" : "#C0392B" }}>{invMsg}</div>}
+        <button className="btn btn-primary btn-full" style={{ marginTop: 12 }} onClick={enregistrer} disabled={enCours}>{enCours ? "Enregistrement…" : "✅ Enregistrer l'inventaire"}</button>
+        <button className="btn btn-ghost btn-full" style={{ marginTop: 8 }} onClick={onFermer}>Fermer</button>
+      </div>
     </div>
   );
 }
@@ -4627,6 +4759,8 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
             <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Logistique</div>
             <label className="btp-label">Capacité benne par défaut (m³)</label>
             <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.capaciteBenneDefautM3 || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { capaciteBenneDefautM3: e.target.value ? parseFloat(e.target.value) : 15 }))} />
+            <label className="btp-label">BTC par palette standard (u) — sert aux saisies en palettes (commandes, production)</label>
+            <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.capacitePaletteDefaut || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { capacitePaletteDefaut: e.target.value ? parseInt(e.target.value, 10) : 100 }))} />
 
             <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Stock</div>
             <label className="btp-label">Stock cible par défaut (u)</label>
@@ -4664,6 +4798,19 @@ function DashboardDirection({ user, userData }) {
   const [stocks, setStocks] = useState({});
   const [productions, setProductions] = useState([]);
   const [commandes, setCommandes] = useState([]);
+  // Point 6 (retours utilisateur) : Direction est le seul role qui voit le stock/la production a la
+  // fois en palettes ET en unites — les autres roles (Stock/Production) ne voient que les palettes.
+  const [parametresDir, setParametresDir] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  React.useEffect(function () { chargerParametresIndustriels().then(setParametresDir); }, []);
+  // Point 6 (retours utilisateur) : suivi des livreurs — Direction voit tous les mouvements (dates,
+  // heures, quantites) de chaque livraison, en lecture seule (jamais d'action ici).
+  const [livraisonsDir, setLivraisonsDir] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("livraisons").onSnapshot(function (snap) {
+      setLivraisonsDir(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
   const [dirSaisieType, setDirSaisieType] = React.useState(CATALOGUE[0].id);
   const [dirSaisieQte, setDirSaisieQte] = React.useState("");
   const [dirSaisiePhase, setDirSaisiePhase] = React.useState("sec");
@@ -4709,7 +4856,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
   const [paletteOuverteProd, setPaletteOuverteProd] = React.useState(null); // Phase 7
   const [qseOngletDemande, setQseOngletDemande] = React.useState(null);
 
-  const [evenements, setEvenements] = React.useState([]); const [showNewChantier, setShowNewChantier] = React.useState(false); const [dirNomChantier, setDirNomChantier] = React.useState(""); const [dirClientChantier, setDirClientChantier] = React.useState(""); const [dirAdresseChantier, setDirAdresseChantier] = React.useState(""); const [dirMsgChantier, setDirMsgChantier] = React.useState(""); const creerChantierDirection = async () => { if(!dirNomChantier||!dirClientChantier){ setDirMsgChantier("Remplissez le nom et le client"); return; } try { await db.collection("chantiers").add({ nom:dirNomChantier, client:dirClientChantier, adresse:dirAdresseChantier, besoins:{}, chefUid:user.uid, chefNom:userData.nom||user.email, createdAt:firebase.firestore.FieldValue.serverTimestamp() }); setDirNomChantier(""); setDirClientChantier(""); setDirAdresseChantier(""); setDirMsgChantier("Chantier cree avec succes !"); setTimeout(()=>{setShowNewChantier(false); setDirMsgChantier("");},1200); } catch(e){ setDirMsgChantier("Erreur: "+e.message); } }; const supprimerChantierDirection = async (ch) => { if(window.confirm('Supprimer definitivement le chantier "'+ch.nom+'" ?')){ try { await db.collection("chantiers").doc(ch.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } }; const supprimerEvenement = async (ev) => { if(window.confirm("Supprimer cette action du journal de tracabilite ?")){ try { await db.collection("evenements").doc(ev.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } };
+  const [evenements, setEvenements] = React.useState([]); const [filtreCategorieJournal, setFiltreCategorieJournal] = React.useState(""); const [showNewChantier, setShowNewChantier] = React.useState(false); const [dirNomChantier, setDirNomChantier] = React.useState(""); const [dirClientChantier, setDirClientChantier] = React.useState(""); const [dirAdresseChantier, setDirAdresseChantier] = React.useState(""); const [dirMsgChantier, setDirMsgChantier] = React.useState(""); const creerChantierDirection = async () => { if(!dirNomChantier||!dirClientChantier){ setDirMsgChantier("Remplissez le nom et le client"); return; } try { await db.collection("chantiers").add({ nom:dirNomChantier, client:dirClientChantier, adresse:dirAdresseChantier, besoins:{}, chefUid:user.uid, chefNom:userData.nom||user.email, createdAt:firebase.firestore.FieldValue.serverTimestamp() }); journaliserEvenement({ categorie:"Chantiers", action:"Chantier créé", acteur:libelleActeurCourant(user,userData), role:"direction", chantier:dirNomChantier, details:"Client : "+dirClientChantier+(dirAdresseChantier?(" | Adresse : "+dirAdresseChantier):"") }); setDirNomChantier(""); setDirClientChantier(""); setDirAdresseChantier(""); setDirMsgChantier("Chantier cree avec succes !"); setTimeout(()=>{setShowNewChantier(false); setDirMsgChantier("");},1200); } catch(e){ setDirMsgChantier("Erreur: "+e.message); } }; const supprimerChantierDirection = async (ch) => { if(window.confirm('Supprimer definitivement le chantier "'+ch.nom+'" ?')){ try { await db.collection("chantiers").doc(ch.id).delete(); journaliserEvenement({ categorie:"Chantiers", action:"Chantier supprimé", acteur:libelleActeurCourant(user,userData), role:"direction", chantier:ch.nom, details:"Chantier "+ch.nom+" supprimé définitivement" }); } catch(e){ alert("Erreur: "+e.message); } } }; const supprimerEvenement = async (ev) => { if(window.confirm("Supprimer cette action du journal de tracabilite ?")){ try { await db.collection("evenements").doc(ev.id).delete(); } catch(e){ alert("Erreur: "+e.message); } } };
   useEffect(() => {
     var u5 = db.collection("chantiers").onSnapshot(snap => {
       var allCh = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
@@ -4968,6 +5115,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
     try {
       var res = await auth.createUserWithEmailAndPassword(newEmail, newPassword);
       await db.collection("users").doc(res.user.uid).set({ email:newEmail, nom:newNom, role:newRole, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+      journaliserEvenement({ categorie:"Utilisateurs", action:"Compte créé", acteur:libelleActeurCourant(user,userData), role:"direction", details:newNom+" ("+newEmail+") — rôle : "+newRole });
       setMsgUser("Compte cree !"); setNewEmail(""); setNewPassword(""); setNewNom("");
     } catch(e) { setMsgUser("Erreur: "+e.message); }
   };
@@ -5118,6 +5266,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
           {key:"chantiers",icon:"🏗️",label:"Chantiers"},
           {key:"utilisateurs",icon:"👥",label:"Utilisateurs"},
           {key:"inventaire",icon:"📊",label:"Inventaire"},
+          {key:"livreurs",icon:"🚚",label:"Livreurs"},
           {key:"historique",icon:"🕐",label:"Historique"},
           {key:"comptabilite",icon:"💼",label:"Comptabilité"},
           {key:"qse",icon:"✅",label:"QSE"},
@@ -5168,7 +5317,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                       </span>
                     </div>
                     <div className="kpi-card-value" style={{color:statusColor}}>{total.toLocaleString()}</div>
-                    <div className="kpi-card-label">Unités disponibles</div>
+                    <div className="kpi-card-label">Unités disponibles · {formatQuantitePalette(total,parametresDir.capacitePaletteDefaut)}</div>
                     <div style={{marginTop:12}}>
                       <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--btp-text2)',marginBottom:4}}>
                         <span>Progression</span><span style={{color:statusColor,fontWeight:700}}>{pct}%</span>
@@ -5460,7 +5609,7 @@ return(
 <div style={{flex:1,minWidth:140}}>
 <div style={{fontWeight:700,fontSize:13}}>{prod.nom}</div>
 <div style={{fontSize:11,color:"#BDC3C7"}}>{prod.dim}</div>
-<div style={{fontSize:11,color:couleur,fontWeight:600,marginTop:2}}>Actuel: {((s.sec||0)+(s.sechage||0)).toLocaleString()} u</div>
+<div style={{fontSize:11,color:couleur,fontWeight:600,marginTop:2}}>Actuel: {((s.sec||0)+(s.sechage||0)).toLocaleString()} u <span style={{fontWeight:400,color:"var(--btp-text2)"}}>({formatQuantitePalette((s.sec||0)+(s.sechage||0),parametresDir.capacitePaletteDefaut)})</span></div>
 </div>
 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
 <div>
@@ -5527,10 +5676,11 @@ setInvSec({});setInvSechage({});
               <input placeholder="Nom complet" value={newNom} onChange={e=>setNewNom(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
               <input placeholder="Email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
               <input type="password" placeholder="Mot de passe" value={newPassword} onChange={e=>setNewPassword(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,fontSize:14}} />
-              <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,background:"var(--btp-card)"}}>
+              <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,background:"var(--btp-card)",color:"var(--btp-text)"}}>
                 <option value="chef_chantier">Chef de chantier</option>
                 <option value="resp_stock">Responsable Stock</option>
                 <option value="resp_production">Responsable Production</option>
+                <option value="livreur">Livreur</option>
                 <option value="direction">Direction</option>
                 <option value="comptable">Comptable</option>
               </select>
@@ -5544,10 +5694,11 @@ setInvSec({});setInvSechage({});
               <input placeholder="Adresse email" value={editUserEmail} onChange={e=>setEditUserEmail(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14}} />
                 <p style={{fontSize:11,color:"var(--btp-text2)",marginTop:-4,marginBottom:4}}>Email de contact/affichage (modifiable librement). Le mot de passe sera changé à la prochaine connexion de l'utilisateur.</p>
                 <input placeholder="Nom complet" value={editUserNom} onChange={e=>setEditUserNom(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14}} />
-                <select value={editUserRole} onChange={e=>setEditUserRole(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14,background:"var(--btp-card)"}}>
+                <select value={editUserRole} onChange={e=>setEditUserRole(e.target.value)} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14,background:"var(--btp-card)",color:"var(--btp-text)"}}>
                   <option value="chef_chantier">Chef de chantier</option>
                   <option value="resp_stock">Responsable Stock</option>
                   <option value="resp_production">Responsable Production</option>
+                  <option value="livreur">Livreur</option>
                   <option value="direction">Direction</option>
                   <option value="comptable">Comptable</option>
                 </select>
@@ -5560,6 +5711,7 @@ setInvSec({});setInvSechage({});
                       var updateData2 = Object.assign({nom:editUserNom,role:editUserRole},editUserPwd?{pendingPassword:editUserPwd}:{});
                       if(editUserEmail && editUserEmail.trim()){updateData2.email=editUserEmail.trim();}
 await db.collection("users").doc(editUserTarget.id).update(updateData2);
+                      journaliserEvenement({ categorie:"Utilisateurs", action:"Compte modifié", acteur:libelleActeurCourant(user,userData), role:"direction", details:(editUserTarget.nom||editUserTarget.email)+" — nom: "+editUserNom+", rôle: "+editUserRole+(editUserEmail&&editUserEmail.trim()?(", email: "+editUserEmail.trim()):"")+(editUserPwd?", mot de passe modifié":"") });
                       setUserEditMsg("Modifications enregistrees !");
                       setTimeout(()=>{setEditUserTarget(null);setUserEditMsg("");},1500);
                     } catch(e){setUserEditMsg("Erreur: "+e.message);}
@@ -5568,8 +5720,8 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
               </div>
             )}
             {utilisateurs.map(function(u){
-              var roleLabel={direction:"Direction",chef_chantier:"Chef chantier",resp_stock:"Resp. Stock",resp_production:"Resp. Production"};
-              var roleColor={direction:"#8B1A10",chef_chantier:"#2980B9",resp_stock:"#145A32",resp_production:"#4A235A"};
+              var roleLabel={direction:"Direction",chef_chantier:"Chef chantier",resp_stock:"Resp. Stock",resp_production:"Resp. Production",comptable:"Comptable",livreur:"Livreur"};
+              var roleColor={direction:"#8B1A10",chef_chantier:"#2980B9",resp_stock:"#145A32",resp_production:"#4A235A",comptable:"#6C3483",livreur:"#117864"};
               var rColor=roleColor[u.role]||"#888";
               return(
                 <div key={u.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"12px 14px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",border:"1px solid #EEE"}}>
@@ -5595,6 +5747,49 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
             })}
           </div>
         )}
+                {tab==="livreurs"&&(
+          <div className="fade-in">
+            <h3 style={{color:"var(--btp-orange)",marginBottom:4}}>🚚 Suivi des livreurs</h3>
+            <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>Chaque étape (départ entrepôt, arrivée chantier, départ chantier, arrivée entrepôt) est horodatée automatiquement par le livreur — aucune saisie manuelle de date/heure.</p>
+            {livraisonsDir.length===0 ? (
+              <p style={{color:"var(--btp-text2)"}}>Aucune livraison planifiée pour le moment.</p>
+            ) : (
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+                  <thead>
+                    <tr style={{background:"#117864",color:"white"}}>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>Livreur</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>Chantier / Adresse</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>BTC</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>Statut</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>🚚 Départ entrepôt</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>📍 Arrivée chantier</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>🔙 Départ chantier</th>
+                      <th style={{padding:"8px 10px",textAlign:"left"}}>🏁 Arrivée entrepôt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {livraisonsDir.slice().sort(function(a,b){return qseTsMs(b.dateCreation)-qseTsMs(a.dateCreation);}).map(function(liv,idx){
+                      var fmt = function(ts){ if(!ts) return "—"; var ms=qseTsMs(ts); if(!ms) return "—"; var d=new Date(ms); return d.toLocaleDateString("fr-FR")+" "+d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); };
+                      return (
+                        <tr key={liv.id} style={{background:idx%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
+                          <td style={{padding:"7px 10px",fontWeight:700}}>{liv.livreurNom||"-"}</td>
+                          <td style={{padding:"7px 10px"}}>{liv.chantierNom||"-"}{liv.adresse?<div style={{fontSize:10,color:"var(--btp-text2)"}}>{liv.adresse}</div>:null}</td>
+                          <td style={{padding:"7px 10px"}}>{getProduit(liv.typeBTC).nom}<div style={{fontSize:10,color:"var(--btp-text2)"}}>{(liv.quantite||0).toLocaleString()} u</div></td>
+                          <td style={{padding:"7px 10px"}}><span style={{background:"#117864",color:"white",padding:"2px 7px",borderRadius:8,fontSize:11,whiteSpace:"nowrap"}}>{libelleStatutLivraison(liv.statut)}</span></td>
+                          <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>{fmt(liv.horaireDepartEntrepot)}</td>
+                          <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>{fmt(liv.horaireArriveeChantier)}</td>
+                          <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>{fmt(liv.horaireDepartChantier)}</td>
+                          <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>{fmt(liv.horaireArriveeEntrepot)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
                 {tab==="historique"&&(
           <div>
             <div style={{background:"var(--btp-card)",borderRadius:14,padding:"16px 20px",boxShadow:"0 2px 10px rgba(0,0,0,0.10)",borderLeft:"5px solid var(--btp-gold)",marginBottom:18}}>
@@ -5612,37 +5807,53 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
 </div>
 </div>
             <h3 style={{color:"var(--btp-orange)",marginBottom:4}}>📋 Journal de traçabilité — Toutes les actions</h3>
-            <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Chaque action sur un bon de commande est enregistrée ici en temps réel.</p>
+            <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Chaque création ou modification, dans tous les modules, est enregistrée ici en temps réel : qui a fait quoi, et quand.</p>
+            {(function(){
+              var categories = Array.from(new Set(evenements.map(function(e){return e.categorie||"Commandes";}))).sort();
+              return categories.length>1 ? (
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
+                  <span style={{fontSize:12,color:"var(--btp-text2)"}}>Filtrer :</span>
+                  <button className="btn btn-sm" style={{background:filtreCategorieJournal===""?"#8B1A10":"#EEE",color:filtreCategorieJournal===""?"white":"#333"}} onClick={()=>setFiltreCategorieJournal("")}>Tout</button>
+                  {categories.map(function(c){ return <button key={c} className="btn btn-sm" style={{background:filtreCategorieJournal===c?"#8B1A10":"#EEE",color:filtreCategorieJournal===c?"white":"#333"}} onClick={()=>setFiltreCategorieJournal(c)}>{c}</button>; })}
+                </div>
+              ) : null;
+            })()}
             <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:760}}>
                 <thead>
                   <tr style={{background:"#8B1A10",color:"white",position:"sticky",top:0}}>
                     <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>🕐 Date / Heure</th>
+                    <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>🗂️ Catégorie</th>
                     <th style={{padding:"8px 10px",textAlign:"left",whiteSpace:"nowrap"}}>📄 N° BC</th>
                     <th style={{padding:"8px 10px",textAlign:"left"}}>🏗️ Chantier</th>
                     <th style={{padding:"8px 10px",textAlign:"left"}}>👤 Intervenant</th>
                     <th style={{padding:"8px 10px",textAlign:"left"}}>🎭 Rôle</th>
                     <th style={{padding:"8px 10px",textAlign:"left"}}>⚡ Action</th>
                     <th style={{padding:"8px 10px",textAlign:"left"}}>📝 Détails</th>
-                    <th style={{padding:"8px 10px",textAlign:"left"}}>📊 Statut</th> <th style={{padding:"8px 10px",textAlign:"center"}}>🗑</th>
+                    <th style={{padding:"8px 10px",textAlign:"left"}}>📊 Statut</th>
+                    <th style={{padding:"8px 10px",textAlign:"center"}}>🗑</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {evenements.length===0&&<tr><td colSpan={9} style={{padding:16,textAlign:"center",color:"#aaa"}}>Aucune action enregistrée. Les actions apparaîtront ici en temps réel.</td></tr>}
-                  {evenements.map((ev,idx)=>{
+                  {(function(){
+                    var evenementsFiltres = filtreCategorieJournal ? evenements.filter(function(e){return (e.categorie||"Commandes")===filtreCategorieJournal;}) : evenements;
+                    if (evenementsFiltres.length===0) return <tr><td colSpan={10} style={{padding:16,textAlign:"center",color:"#aaa"}}>Aucune action enregistrée. Les actions apparaîtront ici en temps réel.</td></tr>;
+                    return evenementsFiltres.map((ev,idx)=>{
                     const ts = ev.timestamp ? new Date(ev.timestamp.seconds ? ev.timestamp.seconds*1000 : ev.timestamp) : null;
                     const dateStr = ts ? ts.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"}) : "-";
                     const timeStr = ts ? ts.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : "-";
-                    const roleColors = {direction:"#8B1A10",chef_chantier:"#1a5276",resp_stock:"#145a32",resp_production:"#784212",comptable:"#4a235a"};
+                    const roleColors = {direction:"#8B1A10",chef_chantier:"#1a5276",resp_stock:"#145a32",resp_production:"#784212",comptable:"#4a235a",qualite:"#7d6608",livreur:"#117864"};
                     const roleColor = roleColors[ev.role] || "#555";
-                    const actionIcons = {"Commande créée":"📝","Commande validée par Direction":"✅","Commande refusée":"❌","Livraison effectuée":"🚚","Réception confirmée par chef":"📦","Ristourne validée":"🎁","Perte enregistrée":"📉"};
-                    const icon = actionIcons[ev.action] || "⚡";
+                    const actionIcons = {"Commande créée":"📝","Commande validée par Direction":"✅","Commande refusée":"❌","Commande modifiée":"✏️","Livraison effectuée":"🚚","Réception confirmée par chef":"📦","Ristourne validée":"🎁","Perte enregistrée":"📉","Chantier créé":"🏗️","Chantier supprimé":"🗑️","Compte créé":"👤","Compte modifié":"✏️","Production enregistrée":"🏭","Production corrigée":"✏️","Production annulée":"🚫","Réservation annulée":"↩️","Livraison annulée":"↩️","Contrôle qualité enregistré":"🔍","Non-conformité créée":"⚠️","Non-conformité modifiée":"✏️","Paramètres modifiés":"⚙️","Réception terre (camions)":"🚚"};
+                    var activiteCorrespondante = (TYPES_ACTIVITES_INDUSTRIELLES||[]).find(function(t){ return ev.action && ev.action.indexOf(t.libelle+" déclaré") === 0; });
+                    const icon = actionIcons[ev.action] || (activiteCorrespondante && activiteCorrespondante.icone) || (ev.action&&ev.action.indexOf("Réception")===0?"🧱":"⚡");
                     return (
                       <tr key={ev.id} style={{background:idx%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
                         <td style={{padding:"7px 10px",whiteSpace:"nowrap",color:"var(--btp-text2)"}}>
                           <div style={{fontWeight:600,color:"var(--btp-text)"}}>{dateStr}</div>
                           <div style={{fontSize:11,color:"var(--btp-text2)"}}>{timeStr}</div>
                         </td>
+                        <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}><span style={{background:"var(--btp-card2)",border:"1px solid var(--btp-border)",padding:"2px 7px",borderRadius:8,fontSize:11}}>{ev.categorie||"Commandes"}</span></td>
                         <td style={{padding:"7px 10px",fontFamily:"monospace",fontWeight:"bold",color:"var(--btp-orange)",whiteSpace:"nowrap"}}>{ev.numBC||"-"}</td>
                         <td style={{padding:"7px 10px",maxWidth:120}}>{ev.chantier||"-"}</td>
                         <td style={{padding:"7px 10px",fontWeight:600}}>{ev.acteur||"-"}</td>
@@ -5656,7 +5867,8 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
                         </td>
                       </tr>
                     );
-                  })}
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -5677,7 +5889,7 @@ await db.collection("users").doc(editUserTarget.id).update(updateData2);
   var retard=(dernier===null)||(dernier>3);
   return(
 <div>
-<div style={{background:retard?"#FDEBEA":"#EAF7EE",border:"1px solid "+(retard?"#E74C3C":"#1DB954"),borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13}}>
+<div style={{background:retard?"#FDEBEA":"#EAF7EE",color:retard?"#7B241C":"#145A32",border:"1px solid "+(retard?"#E74C3C":"#1DB954"),borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,fontWeight:600}}>
 {retard?("⚠️ Inventaire à refaire — "+(dernier===null?"aucun inventaire enregistré":("dernier inventaire il y a "+dernier+" j"))+". Pensez à compter 2 fois/semaine."):("✅ Dernier inventaire il y a "+dernier+" j. Prochain conseillé sous "+Math.max(0,3-dernier)+" j.")}
 </div>
 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12,marginBottom:16}}>
@@ -5776,7 +5988,13 @@ return(
 function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   const [tabFiche, setTabFiche] = useState("suivi");
   const [cmdType, setCmdType] = useState("");
-  const [cmdQte, setCmdQte] = useState("");
+  // Point 6 (retours utilisateur) : le chef de chantier commande en PALETTES, jamais a l'unite —
+  // la conversion se fait via le parametre capacitePaletteDefaut, la commande reste stockee en
+  // unites (quantite) exactement comme avant, aucun autre module n'est affecte.
+  const [cmdPalettes, setCmdPalettes] = useState("");
+  const [paramsChef, setParamsChef] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  React.useEffect(function () { chargerParametresIndustriels().then(setParamsChef); }, []);
+  const capPalette = paramsChef.capacitePaletteDefaut || 100;
   const [cmdNotes, setCmdNotes] = useState("");
   const [cmdDateBesoin, setCmdDateBesoin] = useState(""); // Phase 10 (point 11/19) : echeance optionnelle, jamais inventee si absente
   const [msgCmd, setMsgCmd] = useState("");
@@ -5796,7 +6014,10 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   });
 
   var passerCommande = async function() {
-    if (!cmdType||!cmdQte) { setMsgCmd("Choisissez un type et entrez la quantite"); return; }
+    if (!cmdType||!cmdPalettes) { setMsgCmd("Choisissez un type et entrez le nombre de palettes"); return; }
+    var nbPalettes = parseInt(cmdPalettes, 10);
+    if (!(nbPalettes > 0)) { setMsgCmd("Nombre de palettes invalide."); return; }
+    var qteCmd = nbPalettes * capPalette;
     try {
       // Générer numéro BC unique
       var now = new Date();
@@ -5807,7 +6028,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
       var catItem = CATALOGUE.find(function(p){return p.id===cmdType;})||{};
       await db.collection("commandes").add({
         numBC: numBC,
-        type: cmdType, typNom: catItem.nom||cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        type: cmdType, typNom: catItem.nom||cmdType, quantite: qteCmd, nombrePalettes: nbPalettes, notes: cmdNotes,
         dateBesoin: cmdDateBesoin || null,
         chantierId: chantier.id, chantierNom: chantier.nom, client: chantier.client,
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
@@ -5815,9 +6036,9 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
         prixUnit: catItem.prix||0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantier.nom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+(chantier.nom||""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
-      setMsgCmd("Commande envoyée ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
-      setCmdQte(""); setCmdNotes(""); setCmdType(""); setCmdDateBesoin("");
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: chantier.nom||"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | "+nbPalettes+" palette(s) ("+qteCmd+" u) | Chantier: "+(chantier.nom||""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
+      setMsgCmd("Commande envoyée ! Bon de commande "+numBC+" créé ("+nbPalettes+" palette(s) = "+qteCmd+" u). En attente de validation Direction.");
+      setCmdPalettes(""); setCmdNotes(""); setCmdType(""); setCmdDateBesoin("");
       setTabFiche("suivi");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
@@ -5943,16 +6164,17 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                 <p style={{color:"var(--btp-text2)",padding:12,background:"#FFF3CD",borderRadius:8}}>Aucun type de BTC renseigne. Modifiez la fiche chantier d'abord.</p>:
                 <div style={{maxWidth:440}}>
                   <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Type de BTC du chantier</label>
-                  <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"var(--btp-card)",fontSize:14,marginBottom:12}}>
+                  <select value={cmdType} onChange={e=>setCmdType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14,marginBottom:12}}>
                     <option value="">-- Choisir le type --</option>
                     {typesChantier.map(function(p){
                       var l = lignes.find(function(x){return x.prod.id===p.id;});
                       var reste = l ? l.reste : (besoins[p.id]||0);
-                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste a livrer: {reste.toLocaleString()}</option>;
+                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste a livrer: ≈{Math.ceil(reste/capPalette)} palette(s)</option>;
                     })}
                   </select>
-                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Quantite a commander</label>
-                  <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:12}} />
+                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nombre de palettes à commander</label>
+                  <input type="number" min="1" placeholder="Ex : 3" value={cmdPalettes} onChange={e=>setCmdPalettes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:4}} />
+                  <p style={{fontSize:11,color:"var(--btp-text2)",marginBottom:12}}>1 palette = {capPalette} BTC{cmdPalettes?(" — soit "+(parseInt(cmdPalettes,10)||0)*capPalette+" u au total"):""}.</p>
                   <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de besoin sur chantier (optionnel)</label>
                   <input type="date" value={cmdDateBesoin} onChange={e=>setCmdDateBesoin(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:12,boxSizing:"border-box"}} />
                   <textarea placeholder="Notes pour la Direction (optionnel)" value={cmdNotes} onChange={e=>setCmdNotes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,resize:"vertical",minHeight:50,marginBottom:12}} />
@@ -6619,6 +6841,108 @@ function DashboardComptable({ user, userData }) {
   )
   );
 }
+// Point 6 (retours utilisateur) : tableau de bord Livreur. Le livreur ne choisit ni l'ordre ni le
+// contenu de ses livraisons (imposes par le responsable stock) — il execute une sequence stricte de
+// 4 etapes a un seul bouton chacune, sans jamais saisir de date/heure (le serveur horodate). Chaque
+// livraison affichee porte deja toutes les infos dont le livreur a besoin (adresse, type, quantite).
+function DashboardLivreur({ user, userData }) {
+  const { enLigne } = useConnexion();
+  const [livraisons, setLivraisons] = React.useState([]);
+  const [enCoursId, setEnCoursId] = React.useState(null);
+  const [msgParLivraison, setMsgParLivraison] = React.useState({});
+
+  React.useEffect(function () {
+    var unsub = db.collection("livraisons").where("livreurUid", "==", user.uid).onSnapshot(function (snap) {
+      setLivraisons(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, [user.uid]);
+
+  var aFaire = livraisons.filter(function (l) { return l.statut !== "Terminee"; })
+    .sort(function (a, b) { return (a.datePrevue || "9999") < (b.datePrevue || "9999") ? -1 : 1; }); // ordre impose par le responsable stock (date prevue), jamais choisi par le livreur
+  var terminees = livraisons.filter(function (l) { return l.statut === "Terminee"; })
+    .sort(function (a, b) { return qseTsMs(b.horaireArriveeEntrepot) - qseTsMs(a.horaireArriveeEntrepot); }).slice(0, 15);
+
+  var avancer = async function (liv, etapeCible) {
+    if (enCoursId) return; // anti-double-clic
+    if (!enLigne) { setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "🚫 Connexion requise." }); }); return; }
+    setEnCoursId(liv.id);
+    try {
+      await avancerEtapeLivraison(liv.id, etapeCible, user, userData);
+      setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "" }); });
+    } catch (e) {
+      setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "❌ " + e.message }); });
+    } finally {
+      setEnCoursId(null);
+    }
+  };
+
+  var formatHeure = function (ts) {
+    if (!ts) return null;
+    var ms = qseTsMs(ts);
+    if (!ms) return null;
+    var d = new Date(ms);
+    return d.toLocaleDateString("fr-FR") + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  var CarteLivraison = function (props) {
+    var liv = props.liv;
+    var etapeSuivante = prochaineEtapeLivraison(liv.statut);
+    return (
+      <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginBottom: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderLeft: "4px solid #117864" }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>{getProduit(liv.typeBTC).nom} — {(liv.quantite || 0).toLocaleString()} u</div>
+        <div style={{ fontSize: 13, color: "var(--btp-text)", marginTop: 4 }}>🏗️ {liv.chantierNom || "-"}</div>
+        {liv.adresse && <div style={{ fontSize: 13, color: "var(--btp-text2)", marginTop: 2 }}>📍 {liv.adresse}</div>}
+        {liv.datePrevue && <div style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 2 }}>📅 Prévue le {liv.datePrevue}</div>}
+        <div style={{ marginTop: 8, fontSize: 12, color: "var(--btp-text2)" }}>
+          Statut : <span style={{ fontWeight: 700, color: "#117864" }}>{libelleStatutLivraison(liv.statut)}</span>
+        </div>
+        {formatHeure(liv.horaireDepartEntrepot) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🚚 Départ entrepôt : {formatHeure(liv.horaireDepartEntrepot)}</div>}
+        {formatHeure(liv.horaireArriveeChantier) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>📍 Arrivée chantier : {formatHeure(liv.horaireArriveeChantier)}</div>}
+        {formatHeure(liv.horaireDepartChantier) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🔙 Départ chantier : {formatHeure(liv.horaireDepartChantier)}</div>}
+        {formatHeure(liv.horaireArriveeEntrepot) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🏁 Arrivée entrepôt : {formatHeure(liv.horaireArriveeEntrepot)}</div>}
+        {msgParLivraison[liv.id] && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#C0392B" }}>{msgParLivraison[liv.id]}</div>}
+        {etapeSuivante && (
+          <button className="btn btn-lg btn-full" style={{ marginTop: 12, background: "#117864", color: "white", fontWeight: 800 }}
+            disabled={enCoursId === liv.id || !enLigne} onClick={() => avancer(liv, etapeSuivante)}>
+            {enCoursId === liv.id ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : libelleStatutLivraison(etapeSuivante))}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="btp-app">
+      <div className="btp-header">
+        <div className="btp-header-logo">
+          <div className="btp-header-logo-icon">🚚</div>
+          <div>
+            <div className="btp-header-title">BTC Manager</div>
+            <div className="btp-header-sub">Livreur · Terre et Eau</div>
+          </div>
+        </div>
+        <div className="btp-header-right">
+          <div className="btp-user-chip">👤 <strong>{userData.nom || user.email}</strong></div>
+          <button className="btn btn-sm btn-danger" onClick={() => auth.signOut()}>⏻ Déco.</button>
+        </div>
+      </div>
+      <div className="btp-content">
+        <h3 style={{ marginBottom: 10, color: "var(--btp-orange)" }}>Livraisons à réaliser ({aFaire.length})</h3>
+        {aFaire.length === 0 && <p style={{ color: "var(--btp-text2)" }}>Aucune livraison à réaliser pour le moment.</p>}
+        {aFaire.map(function (liv) { return <CarteLivraison key={liv.id} liv={liv} />; })}
+
+        {terminees.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <h3 style={{ marginBottom: 10, color: "var(--btp-text2)" }}>Livraisons terminées récemment</h3>
+            {terminees.map(function (liv) { return <CarteLivraison key={liv.id} liv={liv} />; })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DashboardChef({ user, userData }) {
   const [tabChef, setTabChef] = useState("chantiers");
   const [commandes, setCommandes] = useState([]);
@@ -7005,6 +7329,63 @@ function DashboardChef({ user, userData }) {
 }
 
 
+// Point 1 (retours utilisateur) : historique des mouvements (entrees/sorties) pour un type de BTC
+// donne, ouvert au clic depuis la carte "Etat du stock". Lecture seule sur stock_mouvements,
+// filtree par typeBTC, triee par date d'ecriture decroissante.
+var LIBELLES_MOUVEMENT = {
+  ENTREE_PRODUCTION: { label: "Production", icone: "🏭", couleur: "#1E8449" },
+  SORTIE_LIVRAISON: { label: "Livraison", icone: "🚚", couleur: "#C0392B" },
+  ANNULATION_LIVRAISON: { label: "Annulation livraison", icone: "↩️", couleur: "#1E8449" },
+  PERTE: { label: "Perte", icone: "📉", couleur: "#C0392B" },
+  AJUSTEMENT_INVENTAIRE: { label: "Ajustement inventaire", icone: "🧮", couleur: "#5DADE2" },
+  CORRECTION: { label: "Correction", icone: "✏️", couleur: "#8E44AD" }
+};
+function HistoriqueMouvementsType({ prod, onClose }) {
+  const [mouvements, setMouvements] = React.useState(null);
+  React.useEffect(function () {
+    var annule = false;
+    // Pas de orderBy combine ici (evite d'exiger un index compose Firestore) : tri fait cote client.
+    db.collection("stock_mouvements").where("typeBTC", "==", prod.id).limit(500).get()
+      .then(function (snap) {
+        if (annule) return;
+        var liste = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+        liste.sort(function (a, b) { var ta = a.dateCreation && a.dateCreation.toMillis ? a.dateCreation.toMillis() : 0; var tb = b.dateCreation && b.dateCreation.toMillis ? b.dateCreation.toMillis() : 0; return tb - ta; });
+        setMouvements(liste.slice(0, 150));
+      })
+      .catch(function () { if (!annule) setMouvements([]); });
+    return function () { annule = true; };
+  }, [prod.id]);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 22, width: "92%", maxWidth: 560, maxHeight: "80vh", overflowY: "auto", boxShadow: "0 8px 30px rgba(0,0,0,0.3)" }} onClick={function (e) { e.stopPropagation(); }}>
+        <h3 style={{ margin: "0 0 4px", color: "var(--btp-orange)" }}>📜 Historique — {prod.nom}</h3>
+        <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>{prod.dim}</p>
+        {mouvements === null && <p style={{ color: "var(--btp-text2)" }}>Chargement…</p>}
+        {mouvements !== null && mouvements.length === 0 && <p style={{ color: "var(--btp-text2)" }}>Aucun mouvement enregistré pour ce type de BTC.</p>}
+        {mouvements !== null && mouvements.length > 0 && (
+          <div>
+            {mouvements.map(function (m) {
+              var info = LIBELLES_MOUVEMENT[m.type] || { label: m.type || "Mouvement", icone: "•", couleur: "var(--btp-text)" };
+              var positif = (m.quantite || 0) >= 0;
+              return (
+                <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--btp-border)" }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{info.icone} {info.label}</div>
+                    <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>{m.date}{m.numeroLot ? " · lot " + m.numeroLot : ""}{m.utilisateur ? " · " + m.utilisateur : ""}</div>
+                    {m.commentaire && <div style={{ fontSize: 11, color: "var(--btp-text2)", marginTop: 2 }}>{m.commentaire}</div>}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: positif ? "#1E8449" : "#C0392B", whiteSpace: "nowrap" }}>{positif ? "+" : ""}{(m.quantite || 0).toLocaleString()} u</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button className="btn" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>Fermer</button>
+      </div>
+    </div>
+  );
+}
+
 function DashboardStock({ user, userData }) {
   const { enLigne } = useConnexion();
   const [commandes, setCommandes] = useState([]);
@@ -7023,12 +7404,58 @@ function DashboardStock({ user, userData }) {
   const [msgEditCmd, setMsgEditCmd] = React.useState("");
   // Phase 7 : inventaire par scan (points 22/23/25) et verification par scan a la preparation (points 26/27).
   const [showInventaire, setShowInventaire] = React.useState(false);
+  const [showInventaireManuel, setShowInventaireManuel] = React.useState(false); // point 3 : methode classique sans scanner
+  // Point 6 (retours utilisateur) : planification de livraison — le responsable stock choisit le
+  // livreur, la date, la quantite et l'adresse ; le livreur ne choisit jamais lui-meme sa tournee.
+  const [livreurs, setLivreurs] = React.useState([]);
+  const [planifLivraisonCmd, setPlanifLivraisonCmd] = React.useState(null); // commande en cours de planification
+  const [formPlanifLivraison, setFormPlanifLivraison] = React.useState(null);
+  const [msgPlanifLivraison, setMsgPlanifLivraison] = React.useState("");
+  const [planifLivraisonEnCours, setPlanifLivraisonEnCours] = React.useState(false);
+  React.useEffect(function () {
+    var unsub = db.collection("users").where("role", "==", "livreur").onSnapshot(function (snap) {
+      setLivreurs(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
+  var ouvrirPlanifLivraison = function (cmd) {
+    var chantierCmd = chantiers.find(function (c) { return c.id === cmd.chantierId; });
+    var resteCmd2 = Math.max(0, (cmd.quantite || 0) - (cmd.quantiteLivree || 0));
+    setFormPlanifLivraison({ livreurUid: "", quantite: String(resteCmd2), datePrevue: "", adresse: (chantierCmd && chantierCmd.adresse) || "" });
+    setPlanifLivraisonCmd(cmd); setMsgPlanifLivraison("");
+  };
+  var validerPlanifLivraison = async function () {
+    if (planifLivraisonEnCours) return;
+    if (!formPlanifLivraison.livreurUid) { setMsgPlanifLivraison("Choisissez un livreur."); return; }
+    var qte = parseInt(formPlanifLivraison.quantite, 10);
+    if (!(qte > 0)) { setMsgPlanifLivraison("Quantité invalide."); return; }
+    if (!enLigne) { setMsgPlanifLivraison("🚫 Connexion requise."); return; }
+    setPlanifLivraisonEnCours(true); setMsgPlanifLivraison("Enregistrement...");
+    var cmd = planifLivraisonCmd;
+    var livreurChoisi = livreurs.find(function (l) { return l.id === formPlanifLivraison.livreurUid; });
+    var token = "livraison_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    try {
+      await planifierLivraison({
+        commandeId: cmd.id, numBC: cmd.numBC || "", chantierId: cmd.chantierId || null, chantierNom: cmd.chantierNom || "",
+        adresse: formPlanifLivraison.adresse, typeBTC: cmd.type, quantite: qte,
+        livreurUid: formPlanifLivraison.livreurUid, livreurNom: (livreurChoisi && (livreurChoisi.nom || livreurChoisi.email)) || "Livreur",
+        datePrevue: formPlanifLivraison.datePrevue || null
+      }, token, user, userData);
+      setPlanifLivraisonEnCours(false);
+      setMsgPlanifLivraison("✓ Livraison planifiée pour " + (livreurChoisi && (livreurChoisi.nom || livreurChoisi.email)));
+      setTimeout(function () { setPlanifLivraisonCmd(null); }, 1200);
+    } catch (e) {
+      setPlanifLivraisonEnCours(false);
+      setMsgPlanifLivraison("❌ Échec — " + e.message);
+    }
+  };
   const [scanVerifPourCmd, setScanVerifPourCmd] = React.useState(null); // cmdId en cours de verification
   const [resultatsScanCmd, setResultatsScanCmd] = React.useState({}); // cmdId -> [{texte, ok}]
   // Phase 8 (points 15/21/22) : Stock est une page unique (pas d'onglets comme Direction) — la
   // recherche universelle et le moteur de priorites ouvrent directement une fiche par-dessus.
   const [lotOuvertPrio, setLotOuvertPrio] = React.useState(null);
   const [paletteOuvertePrio, setPaletteOuvertePrio] = React.useState(null);
+  const [historiqueTypeOuvert, setHistoriqueTypeOuvert] = React.useState(null); // point 1 : historique mouvements par type de BTC
   const [lots, setLots] = React.useState([]);
   const [palettesList, setPalettesList] = React.useState([]);
   const [showScannerAccueil, setShowScannerAccueil] = React.useState(false); // Phase 8 (point 17) : bouton "Scanner" de la barre basse mobile
@@ -7350,7 +7777,10 @@ function DashboardStock({ user, userData }) {
             stock. Rien n'est retire : le reste de l'ecran reste entierement accessible plus bas. */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
           <BoutonScanner user={user} userData={userData} />
-          <button className="btn btn-lg" style={{ background: "#5DADE2", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowInventaire(true)}>📋 Inventaire</button>
+          <button className="btn btn-lg" style={{ background: "#5DADE2", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowInventaire(true)}>📋 Inventaire par scan</button>
+          {/* Point 3 (retours utilisateur) : le scanner n'est pas encore utilise sur le terrain —
+              methode classique toujours accessible en parallele, sans dependre de la camera. */}
+          <button className="btn btn-lg" style={{ background: "#7F8C8D", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowInventaireManuel(true)}>📝 Inventaire manuel</button>
           {compteurPrioritesStock > 0 && <span className="btp-badge-compteur">{compteurPrioritesStock}</span>}
         </div>
 
@@ -7365,15 +7795,15 @@ function DashboardStock({ user, userData }) {
             var s=stocks[prod.id]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
             var couleur=couleurUrgence(total);
             return(
-              <div key={prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur}}>
+              <div key={prod.id} onClick={()=>setHistoriqueTypeOuvert(prod)} title="Voir l'historique des mouvements" style={{background:"var(--btp-card)",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,cursor:"pointer"}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
 <div style={{fontSize:11,color:"#BDC3C7",marginBottom:4}}>{prod.dim}</div>
 <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
-<span style={{color:"var(--btp-green)"}}>Mature: <strong>{sec.toLocaleString()}</strong></span>
-<span style={{color:"#E67E22"}}>Sechage: <strong>{sechage.toLocaleString()}</strong></span>
+<span style={{color:"var(--btp-green)"}}>Mature: <strong>{formatQuantitePalette(sec,parametresStock.capacitePaletteDefaut)}</strong></span>
+<span style={{color:"#E67E22"}}>Sechage: <strong>{formatQuantitePalette(sechage,parametresStock.capacitePaletteDefaut)}</strong></span>
 </div>
-{calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {calcSechageActif(productions,prod.id).toLocaleString()} u pas encore matures</div>}
-<div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:2}}>Total: {total.toLocaleString()}</div>
+{calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {formatQuantitePalette(calcSechageActif(productions,prod.id),parametresStock.capacitePaletteDefaut)} pas encore matures</div>}
+<div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:2}}>Total: {formatQuantitePalette(total,parametresStock.capacitePaletteDefaut)}</div>
 {(s.historiqueReserve||0) > 0 && <div style={{fontSize:10,color:"var(--btp-text2)",marginTop:2}}>dont {(s.historiqueReserve||0).toLocaleString()} u historique réservées</div>}
               </div>
             );
@@ -7483,7 +7913,10 @@ function DashboardStock({ user, userData }) {
                     <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>{getProduit(cmd.type).dim}</div>
                     <div style={{fontSize:13,color:"var(--btp-text)",marginTop:4}}>Chantier: <strong>{cmd.chantierNom||cmd.client||"-"}</strong></div>
                     <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Valide par: {cmd.validePar||"Direction"}</div>
-                    <button className="btn btn-sm btn-ghost" style={{marginTop:6}} onClick={()=>ouvrirEditCmd(cmd)}>✏️ Modifier la commande</button>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                      <button className="btn btn-sm btn-ghost" onClick={()=>ouvrirEditCmd(cmd)}>✏️ Modifier la commande</button>
+                      {livreurs.length>0 && <button className="btn btn-sm" style={{background:"#117864",color:"white"}} onClick={()=>ouvrirPlanifLivraison(cmd)}>🚚 Planifier une livraison</button>}
+                    </div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <div style={{fontSize:13,color:"var(--btp-text2)"}}>Demandé: <strong>{total.toLocaleString()} u</strong></div>
@@ -7609,6 +8042,30 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
       {showScannerAccueil && (
         <ModaleScanner onFermer={() => setShowScannerAccueil(false)} onObjetReconnu={(o) => { setShowScannerAccueil(false); ouvrirObjetStock(o.type, o.id); }} />
       )}
+      {historiqueTypeOuvert && <HistoriqueMouvementsType prod={historiqueTypeOuvert} onClose={() => setHistoriqueTypeOuvert(null)} />}
+      {showInventaireManuel && <InventaireManuel stocks={stocks} user={user} userData={userData} onFermer={() => setShowInventaireManuel(false)} />}
+      {planifLivraisonCmd && (
+        <div className="btp-modal-overlay" onClick={()=>setPlanifLivraisonCmd(null)}>
+          <div className="btp-modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
+            <div className="btp-modal-title" style={{marginBottom:4}}>🚚 Planifier une livraison</div>
+            <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>{getProduit(planifLivraisonCmd.type).nom} — {planifLivraisonCmd.chantierNom||planifLivraisonCmd.client||"-"}</p>
+            <label className="btp-label">Livreur</label>
+            <select className="btp-select" value={formPlanifLivraison.livreurUid} onChange={e=>setFormPlanifLivraison(Object.assign({},formPlanifLivraison,{livreurUid:e.target.value}))} style={{marginBottom:10}}>
+              <option value="">-- Choisir --</option>
+              {livreurs.map(function(l){ return <option key={l.id} value={l.id}>{l.nom||l.email}</option>; })}
+            </select>
+            <label className="btp-label">Quantité à livrer (u)</label>
+            <input type="number" min="1" className="btp-input" value={formPlanifLivraison.quantite} onChange={e=>setFormPlanifLivraison(Object.assign({},formPlanifLivraison,{quantite:e.target.value}))} style={{marginBottom:10,width:"100%"}} />
+            <label className="btp-label">Date de livraison prévue</label>
+            <input type="date" className="btp-input" value={formPlanifLivraison.datePrevue} onChange={e=>setFormPlanifLivraison(Object.assign({},formPlanifLivraison,{datePrevue:e.target.value}))} style={{marginBottom:10,width:"100%"}} />
+            <label className="btp-label">Adresse de livraison</label>
+            <input type="text" className="btp-input" placeholder="Adresse du chantier" value={formPlanifLivraison.adresse} onChange={e=>setFormPlanifLivraison(Object.assign({},formPlanifLivraison,{adresse:e.target.value}))} style={{marginBottom:10,width:"100%"}} />
+            {msgPlanifLivraison && <div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,fontWeight:600,background:msgPlanifLivraison.indexOf("✓")===0?"#EAFAF1":"#FFECEC",color:msgPlanifLivraison.indexOf("✓")===0?"#1E8449":"#C0392B"}}>{msgPlanifLivraison}</div>}
+            <button className="btn btn-primary btn-full" onClick={validerPlanifLivraison} disabled={planifLivraisonEnCours || !enLigne}>{planifLivraisonEnCours?"Enregistrement…":(!enLigne?"🚫 Hors connexion":"Planifier")}</button>
+            <button className="btn btn-ghost btn-full" style={{marginTop:8}} onClick={()=>setPlanifLivraisonCmd(null)}>Fermer</button>
+          </div>
+        </div>
+      )}
       <BottomNavMobile items={[
         { icone: "🏠", label: "Accueil", onClick: () => window.scrollTo({ top: 0, behavior: "smooth" }) },
         { icone: "📷", label: "Scanner", onClick: () => setShowScannerAccueil(true) },
@@ -7624,6 +8081,13 @@ function DashboardProduction({ user, userData }) {
   const [productions, setProductions] = useState([]);
   const [saisieType, setSaisieType] = useState(CATALOGUE[0].id);
   const [saisieQte, setSaisieQte] = useState("");
+  // Point 6 (retours utilisateur) : l'operateur enregistre en PALETTES completes, avec un complement
+  // optionnel quand la derniere palette n'est pas pleine — saisieQte (le total, en unites) reste la
+  // seule source utilisee par le calcul des matieres et l'enregistrement, deduite automatiquement de
+  // ces deux champs, jamais retapee.
+  const [saisiePalettes, setSaisiePalettes] = useState("");
+  const [saisieComplement, setSaisieComplement] = useState("");
+  const [saisieComplementOuvert, setSaisieComplementOuvert] = useState(false);
   const [saisiePhase, setSaisiePhase] = useState("sec");
   const [saisieDetailsOuvert, setSaisieDetailsOuvert] = useState(false);
   const [msg, setMsg] = useState("");
@@ -7798,7 +8262,7 @@ function DashboardProduction({ user, userData }) {
 
   var enregistrer = async function() {
     if (enregistrementEnCours) return; // anti-double-clic (point 12)
-    if (!saisieType||!saisieQte) { setMsg("Choisissez un type et entrez la quantite"); return; }
+    if (!saisieType||!saisieQte) { setMsg("Choisissez un type et entrez au moins une palette produite"); return; }
     var qte = parseInt(saisieQte);
     if (isNaN(qte)||qte<=0) { setMsg("Quantite invalide"); return; }
     // Phase 8 (points 7/8) : la production modifie physiquement le stock — jamais de tentative si
@@ -7831,13 +8295,22 @@ function DashboardProduction({ user, userData }) {
       clearTimeout(alerteLente);
       setEnregistrementEnCours(false);
       setMsg("✓ " + qte.toLocaleString() + " u — production enregistrée, stock mis à jour." + (!resultatProd.matieresSuivies ? "" : (resultatProd.matieresCalculables ? " Matières déduites (" + resultatProd.coutMatieresProduction.toFixed(2) + " € de matières)." : " Densité terre non configurée — seule la terre a été déduite.")));
-      setSaisieQte("");
+      setSaisieQte(""); setSaisiePalettes(""); setSaisieComplement(""); setSaisieComplementOuvert(false);
     } catch(e) {
       clearTimeout(alerteLente);
       setEnregistrementEnCours(false);
       setMsg("❌ " + (e.message && e.message.indexOf("matières insuffisantes") !== -1 ? e.message : ("Échec de l'enregistrement — aucune modification confirmée. (" + e.message + ")")));
     }
   };
+  // Point 6 (retours utilisateur) : saisieQte (le total, source unique pour le reste du formulaire)
+  // est deduite automatiquement des palettes + complement — jamais retapee par l'operateur.
+  var capPaletteProd = parametresProd.capacitePaletteDefaut || 100;
+  React.useEffect(function () {
+    var nbPal = parseInt(saisiePalettes, 10) || 0;
+    var comp = parseInt(saisieComplement, 10) || 0;
+    var total = nbPal * capPaletteProd + comp;
+    setSaisieQte(total > 0 ? String(total) : "");
+  }, [saisiePalettes, saisieComplement, capPaletteProd]);
   // Point AH : apercu matieres avant validation — pur, ne se declenche que si une quantite valide
   // est saisie, ne bloque jamais la saisie elle-meme (juste informatif tant que non enregistre).
   var apercuMatieres = React.useMemo(function () {
@@ -8086,17 +8559,17 @@ function DashboardProduction({ user, userData }) {
                 <div style={{position:"absolute",top:10,right:10,background:couleur,color:"white",borderRadius:16,padding:"2px 8px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:2,paddingRight:40}}>{item.prod.nom}</div>
                 <div style={{fontSize:11,color:"#BDC3C7",marginBottom:6}}>{item.prod.dim}</div>
-                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sec: <strong>{item.sec.toLocaleString()}</strong></div>
-                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sechage: <strong>{item.sechage.toLocaleString()}</strong></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sec: <strong>{formatQuantitePalette(item.sec,parametresProd.capacitePaletteDefaut)}</strong></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sechage: <strong>{formatQuantitePalette(item.sechage,parametresProd.capacitePaletteDefaut)}</strong></div>
                 <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
                   <div style={{height:6,borderRadius:4,background:couleur,width:pct+"%"}}></div>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
-                  <span style={{fontSize:12,fontWeight:700,color:couleur}}>{item.total.toLocaleString()} / {STOCK_CIBLE.toLocaleString()}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:couleur}}>{formatQuantitePalette(item.total,parametresProd.capacitePaletteDefaut)} / {formatQuantitePalette(STOCK_CIBLE,parametresProd.capacitePaletteDefaut)}</span>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</span>
                 </div>
-                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>A produire: <strong style={{color:couleur}}>{manque.toLocaleString()}</strong></div>}
-{(function(){var sa=calcSechageActif(productions,item.prod.id);if(sa>0)return<div style={{fontSize:10,color:"#B7770D",marginTop:2}}>⏳ {sa.toLocaleString()} u en sechage actif</div>;return null;})()}
+                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>A produire: <strong style={{color:couleur}}>{formatQuantitePalette(manque,parametresProd.capacitePaletteDefaut)}</strong></div>}
+{(function(){var sa=calcSechageActif(productions,item.prod.id);if(sa>0)return<div style={{fontSize:10,color:"#B7770D",marginTop:2}}>⏳ {formatQuantitePalette(sa,parametresProd.capacitePaletteDefaut)} en sechage actif</div>;return null;})()}
               </div>
             );
           })}
@@ -8112,16 +8585,21 @@ function DashboardProduction({ user, userData }) {
               defaut) et date (aujourd'hui par defaut) repliees, tout le reste (lot, tracabilite,
               sechage, matieres, cout, stock, lien planning, indicateurs) est deduit automatiquement
               a la validation, jamais redemande. */}
-          <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
+          <select value={saisieType} onChange={e=>setSaisieType(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14}}>
             {typesParUrgence.map(function(item) {
               return <option key={item.prod.id} value={item.prod.id}>{item.prod.nom} - {item.prod.dim}</option>;
             })}
           </select>
-          <input type="number" placeholder="Quantite produite" value={saisieQte} onChange={e=>setSaisieQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:8,fontSize:14}} />
+          <input type="number" min="0" placeholder={"Palettes complètes (1 palette = " + capPaletteProd + " BTC)"} value={saisiePalettes} onChange={e=>setSaisiePalettes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:6,fontSize:14}} />
+          <button type="button" className="btn btn-sm btn-ghost" style={{marginBottom:6}} onClick={()=>setSaisieComplementOuvert(!saisieComplementOuvert)}>{saisieComplementOuvert?"▾":"▸"} Compléter (dernière palette pas pleine)</button>
+          {saisieComplementOuvert && (
+            <input type="number" min="0" placeholder="Unités supplémentaires (palette incomplète)" value={saisieComplement} onChange={e=>setSaisieComplement(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:6,fontSize:14}} />
+          )}
+          {saisieQte && <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:8}}>Total : <strong>{parseInt(saisieQte,10).toLocaleString()} u</strong></p>}
           <button type="button" className="btn btn-sm btn-ghost" style={{marginBottom:8}} onClick={()=>setSaisieDetailsOuvert(!saisieDetailsOuvert)}>{saisieDetailsOuvert?"▾":"▸"} Plus de détails</button>
           {saisieDetailsOuvert && (
             <div style={{marginBottom:8}}>
-              <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",fontSize:14}}>
+              <select value={saisiePhase} onChange={e=>setSaisiePhase(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:10,background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14}}>
                 <option value="sec">Stock sec (seche)</option>
                 <option value="sechage">En sechage (frais)</option>
               </select>
@@ -8214,7 +8692,7 @@ return(
 <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
               <div>
                 <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"var(--btp-text2)"}}>({p.phase==="sec"?"Sec":"Sechage"})</span></div>
-                <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?p.quantite.toLocaleString():"-"} u</div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?formatQuantitePalette(p.quantite,parametresProd.capacitePaletteDefaut):"-"}</div>
                 {p.phase==="sechage"&&jrR>0&&<div style={{fontSize:11,color:"#B7770D",marginTop:2}}>⏳ Mature dans {jrR} jour{jrR>1?"s":""}</div>}
                 {p.phase==="sechage"&&jrR===0&&<div style={{fontSize:11,color:"var(--btp-green)",marginTop:2}}>✅ Mature (seche)</div>}
                 {qseLotsParProdId[p.id] && <div style={{marginTop:4}}><button className="btn btn-sm btn-ghost" onClick={()=>setLotOuvert(qseLotsParProdId[p.id])}>🏷️ {qseLotsParProdId[p.id]}</button></div>}
@@ -9318,6 +9796,7 @@ async function corrigerProductionLot(production, nouveauType, nouvelleQuantite, 
       }
       tx.update(prodRef, { type: nouveauType, quantite: qte, phase: nouvellePhase, date: nouvelleDate });
     });
+    journaliserEvenement({ categorie: "Production", action: "Production corrigée", acteur: auteur, role: "resp_production", details: production.type + " " + production.quantite + " → " + nouveauType + " " + qte });
     return { tracable: false };
   }
 
@@ -9373,6 +9852,7 @@ async function corrigerProductionLot(production, nouveauType, nouvelleQuantite, 
       await corrigerConsommationMatieresProduction(ancienneProdPourMatieres.quantite || 0, qte, paramsCorrection, token, user, userData);
     } catch (e) { console.error("Erreur correction matieres", e); }
   }
+  journaliserEvenement({ categorie: "Production", action: "Production corrigée", acteur: auteur, role: "resp_production", details: typeBTC + " " + (ancienneProdPourMatieres ? ancienneProdPourMatieres.quantite : "?") + " → " + qte + " u (lot " + lotDoc.id + ")" });
   return { tracable: true };
 }
 
@@ -9400,6 +9880,7 @@ async function annulerProductionLot(production, user, userData) {
       tx.set(stockRef, upd, { merge: true });
       tx.delete(prodRef);
     });
+    journaliserEvenement({ categorie: "Production", action: "Production annulée", acteur: auteur, role: "resp_production", details: (production.quantite || 0) + " " + production.type + " du " + production.date });
     return { tracable: false };
   }
 
@@ -9440,6 +9921,7 @@ async function annulerProductionLot(production, user, userData) {
       await corrigerConsommationMatieresProduction(production.quantite || 0, 0, paramsAnnulation, "annulation_" + production.id, user, userData);
     } catch (e) { console.error("Erreur restitution matieres", e); }
   }
+  journaliserEvenement({ categorie: "Production", action: "Production annulée", acteur: auteur, role: "resp_production", details: (production.quantite || 0) + " " + typeBTC + " du " + production.date + " (lot " + lotDoc.id + ")" });
   return { tracable: true };
 }
 
@@ -9802,6 +10284,7 @@ async function livrerReservation(alloc, quantiteALivrer, token, user, userData) 
 async function annulerReservation(alloc, quantiteALiberer, motif, user, userData) {
   var auteur = (userData && userData.nom) || (user && user.email) || "inconnu";
   var allocRef = db.collection("stock_allocations").doc(alloc.id);
+  var libereeEffective = 0;
   await db.runTransaction(async function (tx) {
     var allocSnap = await tx.get(allocRef);
     if (!allocSnap.exists) throw new Error("Réservation introuvable.");
@@ -9809,6 +10292,7 @@ async function annulerReservation(alloc, quantiteALiberer, motif, user, userData
     var resteAvant = (allocData.quantiteReservee || 0) - (allocData.quantiteLivree || 0);
     var aLiberer = quantiteALiberer != null ? Math.min(quantiteALiberer, resteAvant) : resteAvant;
     if (aLiberer <= 0) return; // deja entierement livree/annulee : aucun effet (idempotent)
+    libereeEffective = aLiberer;
 
     var cmdRef = db.collection("commandes").doc(allocData.commandeId);
     var cmdSnap = await tx.get(cmdRef);
@@ -9843,6 +10327,9 @@ async function annulerReservation(alloc, quantiteALiberer, motif, user, userData
       tx.update(cmdRef, { quantiteReservee: Math.max(0, (cmdData.quantiteReservee || 0) - aLiberer) });
     }
   });
+  if (libereeEffective > 0) {
+    journaliserEvenement({ categorie: "Stock", action: "Réservation annulée", acteur: auteur, role: "resp_stock", numBC: alloc.commandeId || "", details: libereeEffective.toLocaleString() + " u libérées" + (motif ? (" — " + motif) : "") });
+  }
 }
 
 // Annule une livraison DEJA EFFECTUEE (physique) sur une reservation (point 14/31) : cree un
@@ -9888,6 +10375,7 @@ async function annulerLivraisonPhysique(alloc, quantiteAAnnuler, token, user, us
       tx.update(cmdRef, { quantiteLivree: Math.max(0, (cmdData.quantiteLivree || 0) - qte), quantiteReservee: (cmdData.quantiteReservee || 0) + qte, status: "Validee" });
     }
   });
+  journaliserEvenement({ categorie: "Stock", action: "Livraison annulée", acteur: auteur, role: "resp_stock", numBC: alloc.commandeId || "", details: qte.toLocaleString() + " u remises en stock" });
 }
 
 // Point 12 : quand la quantite d'une commande diminue en dessous de ce qui est deja reserve, libere
@@ -9929,6 +10417,73 @@ async function modifierCommandeStock(cmd, nouveauType, nouvelleQuantite, nouveau
   await db.collection("commandes").doc(cmd.id).update({
     type: nouveauType, quantite: qte, chantierId: nouveauChantierId || null, chantierNom: nouveauChantierNom || ""
   });
+  journaliserEvenement({ categorie: "Commandes", action: "Commande modifiée", acteur: libelleActeurCourant(user, userData), role: (userData && userData.role) || "", numBC: cmd.numBC || cmd.id, chantier: nouveauChantierNom || cmd.chantierNom || "", details: cmd.type + " " + cmd.quantite + " → " + nouveauType + " " + qte });
+}
+
+// ============================================================================================
+// PHASE 11 — LIVRAISONS (retour utilisateur, point 6). Le responsable stock planifie une livraison
+// (livreur, date, type/quantite, adresse) en affectant un compte "livreur" ; le livreur ne choisit
+// jamais lui-meme ni l'ordre ni le contenu de ses livraisons — il execute, dans l'ordre impose, une
+// sequence stricte de 4 etapes a un seul bouton chacune (aucune saisie de date/heure manuelle, le
+// serveur horodate). Direction suit tout depuis le meme document, en lecture seule.
+// ============================================================================================
+var ETAPES_LIVRAISON = ["Planifiee", "DepartEntrepot", "ArriveeChantier", "DepartChantier", "Terminee"];
+var CHAMP_HORAIRE_PAR_ETAPE = { DepartEntrepot: "horaireDepartEntrepot", ArriveeChantier: "horaireArriveeChantier", DepartChantier: "horaireDepartChantier", Terminee: "horaireArriveeEntrepot" };
+var LIBELLE_ETAPE_LIVRAISON = { Planifiee: "Planifiée", DepartEntrepot: "🚚 Départ entrepôt Kaweni", ArriveeChantier: "📍 Arrivée chantier", DepartChantier: "🔙 Départ chantier", Terminee: "🏁 Arrivée entrepôt" };
+function libelleStatutLivraison(statut) { return LIBELLE_ETAPE_LIVRAISON[statut] || statut; }
+// Etape suivante attendue pour une livraison au vu de son statut courant (null si deja terminee).
+function prochaineEtapeLivraison(statutActuel) {
+  var idx = ETAPES_LIVRAISON.indexOf(statutActuel);
+  if (idx < 0 || idx >= ETAPES_LIVRAISON.length - 1) return null;
+  return ETAPES_LIVRAISON[idx + 1];
+}
+
+// Cree la livraison planifiee par le responsable stock — jamais choisie par le livreur (point 6).
+// "token" = id du document, garantit l'idempotence sur double-clic.
+async function planifierLivraison(champs, token, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(token);
+  var existe = await ref.get();
+  if (existe.exists) return token; // idempotence (double-clic)
+  await ref.set({
+    commandeId: champs.commandeId || null, numBC: champs.numBC || "",
+    chantierId: champs.chantierId || null, chantierNom: champs.chantierNom || "", adresse: champs.adresse || "",
+    typeBTC: champs.typeBTC, quantite: champs.quantite,
+    livreurUid: champs.livreurUid, livreurNom: champs.livreurNom,
+    datePrevue: champs.datePrevue || null,
+    statut: "Planifiee",
+    horaireDepartEntrepot: null, horaireArriveeChantier: null, horaireDepartChantier: null, horaireArriveeEntrepot: null,
+    creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  journaliserEvenement({ categorie: "Livraisons", action: "Livraison planifiée", acteur: auteur, role: "resp_stock", numBC: champs.numBC || "", chantier: champs.chantierNom || "", details: (champs.quantite || 0).toLocaleString() + " u " + champs.typeBTC + " → " + champs.livreurNom + (champs.datePrevue ? (" le " + champs.datePrevue) : "") + (champs.adresse ? (" | " + champs.adresse) : "") });
+  return token;
+}
+
+// Fait avancer une livraison d'UNE seule etape (jamais de saut, jamais de retour arriere). Le livreur
+// ne saisit ni date ni heure : le serveur horodate au moment de l'appel (point 6). Idempotent : un
+// double-clic sur le meme bouton, une fois l'etape deja enregistree, ne fait rien.
+async function avancerEtapeLivraison(livraisonId, etapeCible, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(livraisonId);
+  var dejaFait = false, livraisonApres = null;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Livraison introuvable.");
+    var liv = snap.data();
+    var idxActuel = ETAPES_LIVRAISON.indexOf(liv.statut);
+    var idxCible = ETAPES_LIVRAISON.indexOf(etapeCible);
+    if (idxActuel >= idxCible) { dejaFait = true; livraisonApres = liv; return; } // deja passee cette etape (idempotence)
+    if (idxCible !== idxActuel + 1) throw new Error("Étape invalide : impossible de passer directement de " + libelleStatutLivraison(liv.statut) + " à " + libelleStatutLivraison(etapeCible) + ".");
+    var champHoraire = CHAMP_HORAIRE_PAR_ETAPE[etapeCible];
+    var upd = { statut: etapeCible };
+    upd[champHoraire] = firebase.firestore.FieldValue.serverTimestamp();
+    tx.update(ref, upd);
+    livraisonApres = Object.assign({}, liv, upd);
+  });
+  if (!dejaFait) {
+    journaliserEvenement({ categorie: "Livraisons", action: libelleStatutLivraison(etapeCible), acteur: auteur, role: "livreur", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "", details: (livraisonApres ? ((livraisonApres.quantite || 0).toLocaleString() + " u " + livraisonApres.typeBTC) : "") });
+  }
+  return livraisonApres;
 }
 
 async function qseCreerLotEtControlePourProduction(productionId, production, user, userData) {
@@ -10185,6 +10740,7 @@ function QseControlesAFaire(props) {
       controleur: auteur,
       dateControle: firebase.firestore.FieldValue.serverTimestamp()
     });
+    journaliserEvenement({ categorie: "Qualité", action: "Contrôle qualité enregistré", acteur: auteur, role: "qualite", details: "Lot " + (controle.numeroLot || "?") + " — " + resultat });
   };
 
   if (controles.length === 0) return null;
@@ -10239,6 +10795,7 @@ async function qseAjouterNC(data, user, userData) {
     dateModification: now,
     modifiePar: auteur
   });
+  journaliserEvenement({ categorie: "Qualité", action: "Non-conformité créée", acteur: auteur, role: "qualite", details: (data.numeroLot ? ("Lot " + data.numeroLot + " — ") : "") + (data.description || "") });
 }
 
 async function qseModifierNC(id, champs, user, userData) {
@@ -10247,6 +10804,7 @@ async function qseModifierNC(id, champs, user, userData) {
     dateModification: firebase.firestore.FieldValue.serverTimestamp(),
     modifiePar: auteur
   }));
+  journaliserEvenement({ categorie: "Qualité", action: "Non-conformité modifiée", acteur: auteur, role: "qualite", details: "NC " + id + (champs.statut ? (" — statut : " + champs.statut) : "") });
 }
 
 async function qseStatuerEfficaciteNC(id, efficace, user, userData) {
@@ -11663,6 +12221,7 @@ function App() {
   if (role==="chef_chantier") return <React.Fragment><DashboardChef user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
   if (role==="resp_stock") return <React.Fragment><DashboardStock user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
   if (role==="resp_production") return <React.Fragment><DashboardProduction user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
+  if (role==="livreur") return <React.Fragment><DashboardLivreur user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
   if (role==="comptable") return <React.Fragment><DashboardComptable user={user} userData={userData} />{ficheDeepLink}</React.Fragment>;
 
   return (
