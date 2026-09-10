@@ -14,5 +14,5 @@ jobs:
         with:
           repoToken: "${{ secrets.GITHUB_TOKEN }}"
           firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_BTC_MANAGER }}"
-          projectId: btc-manager-2d64f
+          projectId: btc-manager-2d64f-ae1ee
           channelId: live
