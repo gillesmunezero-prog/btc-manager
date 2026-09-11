@@ -3997,6 +3997,24 @@ function Login({ destinationEnAttente }) {
 // par le cockpit : carte KPI cliquable, barres, courbe SVG legere (aucune dependance de graphique
 // ajoutee — point 26), export CSV generique.
 // ============================================================================================
+// Point 5 (retours Phase 12) : une non-conformite constatee par le chef de chantier doit etre visible
+// de la Production et du Stock, pas seulement de la Direction/Qualite — bandeau compact reutilisable.
+function BanniereNCOuvertes({ ncs }) {
+  if (!ncs || ncs.length === 0) return null;
+  return (
+    <div style={{ background: "rgba(236,112,99,.12)", border: "1px solid rgba(236,112,99,.4)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: "#C0392B", marginBottom: 6 }}>⚠️ {ncs.length} non-conformité{ncs.length > 1 ? "s" : ""} ouverte{ncs.length > 1 ? "s" : ""}</div>
+      {ncs.slice(0, 5).map(function (nc) {
+        return (
+          <div key={nc.id} style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 3 }}>
+            {nc.numeroLot ? ("Lot " + nc.numeroLot + " — ") : ""}{nc.description || "(sans description)"}{nc.quantiteConcernee ? (" · " + nc.quantiteConcernee.toLocaleString() + " u") : ""}
+          </div>
+        );
+      })}
+      {ncs.length > 5 && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>… et {ncs.length - 5} autre(s).</div>}
+    </div>
+  );
+}
 function StatTile({ label, valeur, sousLigne, comparaison, couleur, onClick, aide }) {
   return (
     <div className={"pilotage-tile" + (onClick ? " cliquable" : "")} onClick={onClick} style={couleur ? { borderLeftColor: couleur } : {}} title={aide || ""}>
@@ -4549,7 +4567,16 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
           sans ouvrir d'autre ecran. */}
       <div className="pilotage-grid pilotage-grid-4" style={{ marginBottom: 16 }}>
         <StatTile label="Production (aujourd'hui)" valeur={resumeAujourdhui.productionRealisee.toLocaleString() + " / " + resumeAujourdhui.productionPrevue.toLocaleString() + " u"} couleur="#F39C12" />
-        <StatTile label="Stock disponible" valeur={resumeAujourdhui.stockDisponible.toLocaleString() + " u"} couleur="#5DADE2" onClick={() => ouvrirObjet("tab", "stock")} />
+        <StatTile label="Stock disponible" valeur={resumeAujourdhui.stockDisponible.toLocaleString() + " u"} couleur="#5DADE2" onClick={() => setDetail({
+          titre: "Stock disponible par type", nomExportCSV: "stock_disponible.csv",
+          colonnes: [{ label: "Type BTC", champ: "type" }, { label: "Sec (mature)", champ: "sec" }, { label: "Séchage", champ: "sechage" }, { label: "Total", champ: "total" }, { label: "Palettes", champ: "palettes" }, { label: "Statut", champ: "statut" }],
+          lignes: CATALOGUE.map(function (p) {
+            var s = stocks[p.id] || {}; var sec = s.sec || 0; var sechage = s.sechage || 0;
+            return { prod: p, sec: sec, sechage: sechage, total: sec + sechage };
+          }).sort(function (a, b) { return b.total - a.total; }).map(function (l) {
+            return { type: l.prod.nom, sec: l.sec.toLocaleString(), sechage: l.sechage.toLocaleString(), total: l.total.toLocaleString(), palettes: formatQuantitePalette(l.total, parametres.capacitePaletteDefaut), statut: libelleUrgence(l.total) };
+          })
+        })} />
         <StatTile label="Lots en séchage" valeur={resumeAujourdhui.lotsEnSechage.toLocaleString() + " u"} couleur="#E67E22" />
         <StatTile label="Commandes à risque" valeur={String(resumeAujourdhui.commandesARisque)} couleur={resumeAujourdhui.commandesARisque > 0 ? "#EC7063" : "#2ECC71"} />
         <StatTile label="Matière limitante" valeur={resumeAujourdhui.matiereLimitante ? getLibelleMatiere(resumeAujourdhui.matiereLimitante) : "—"} couleur="var(--btp-text2)" />
@@ -4592,7 +4619,13 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
           sousLigne={indicateurs.evolutionProduction.calculable ? (indicateurs.evolutionProduction.variationPct >= 0 ? "▲" : "▼") + " vs période précédente" : "période précédente non comparable"}
           onClick={() => ouvrirObjet("tab", "production")} />
         <StatTile label="Stock disponible (mature)" valeur={CATALOGUE.reduce(function (a, p) { return a + ((stocks[p.id] || {}).sec || 0); }, 0).toLocaleString() + " u"}
-          couleur="var(--btp-blue)" onClick={() => ouvrirObjet("tab", "stock")} />
+          couleur="var(--btp-blue)" onClick={() => setDetail({
+            titre: "Stock mature (sec) par type", nomExportCSV: "stock_mature.csv",
+            colonnes: [{ label: "Type BTC", champ: "type" }, { label: "Sec (mature)", champ: "sec" }, { label: "Palettes", champ: "palettes" }, { label: "Statut", champ: "statut" }],
+            lignes: CATALOGUE.map(function (p) { return { prod: p, sec: (stocks[p.id] || {}).sec || 0 }; }).sort(function (a, b) { return b.sec - a.sec; }).map(function (l) {
+              return { type: l.prod.nom, sec: l.sec.toLocaleString(), palettes: formatQuantitePalette(l.sec, parametres.capacitePaletteDefaut), statut: libelleUrgence(l.sec) };
+            })
+          })} />
         <StatTile label={"Valeur pertes — " + periode.label} valeur={indicateurs.pertes.valeurEstimee.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €"}
           comparaison={{ calculable: indicateurs.evolutionPertes.calculable, variationPct: indicateurs.evolutionPertes.variationPct }}
           couleur="var(--btp-red)" sousLigne={indicateurs.pertes.quantitePerdue.toLocaleString() + " u perdues (valeur produit estimée)"}
@@ -4808,6 +4841,16 @@ function DashboardDirection({ user, userData }) {
   React.useEffect(function () {
     var unsub = db.collection("livraisons").onSnapshot(function (snap) {
       setLivraisonsDir(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
+  // Point 2 (retours utilisateur) : les activites industrielles (concassage, changement de moule,
+  // pannes/problemes signales) n'etaient visibles nulle part cote Direction — seulement dans le
+  // tableau de bord Production lui-meme. Visibilite ajoutee ici, en lecture seule.
+  const [activitesDir, setActivitesDir] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("activites_industrielles").orderBy("dateCreation", "desc").limit(30).onSnapshot(function (snap) {
+      setActivitesDir(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
     });
     return function () { unsub(); };
   }, []);
@@ -5407,6 +5450,35 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                 <button onClick={enregistrerProductionDirection} style={{padding:"9px 18px",background:"var(--btp-green)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:"bold"}}>Enregistrer</button>
               </div>
               {dirSaisieMsg && <p style={{marginTop:10,marginBottom:0,fontSize:13,color:"var(--btp-text)"}}>{dirSaisieMsg}</p>}
+            </div>
+            <div style={{background:"var(--btp-card)",border:"1px solid var(--btp-steel)",borderRadius:12,padding:16,marginBottom:18}}>
+              <h3 style={{margin:"0 0 12px",color:"var(--btp-purple)"}}>🏭 Activités industrielles récentes</h3>
+              <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:12}}>Concassage, changements de moule, pannes et problèmes signalés par la Production — mêmes déclarations que celles vues sur le terrain.</p>
+              {activitesDir.length===0 ? <p style={{color:"var(--btp-text2)"}}>Aucune activité enregistrée.</p> : (
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:560}}>
+                    <thead><tr style={{background:"#6C3483",color:"white"}}>
+                      <th style={{padding:"7px 10px",textAlign:"left"}}>Date</th>
+                      <th style={{padding:"7px 10px",textAlign:"left"}}>Activité</th>
+                      <th style={{padding:"7px 10px",textAlign:"left"}}>Durée</th>
+                      <th style={{padding:"7px 10px",textAlign:"left"}}>Détails</th>
+                      <th style={{padding:"7px 10px",textAlign:"left"}}>Déclaré par</th>
+                    </tr></thead>
+                    <tbody>{activitesDir.map(function(a,i){
+                      var typeInfo=(TYPES_ACTIVITES_INDUSTRIELLES||[]).find(function(t){return t.id===a.type;})||{};
+                      return (
+                        <tr key={a.id} style={{background:i%2===0?"var(--btp-card)":"var(--btp-card2)",borderBottom:"1px solid #EEE"}}>
+                          <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{a.date}</td>
+                          <td style={{padding:"6px 10px",fontWeight:600}}>{typeInfo.icone||"⚡"} {libelleActivite(a.type)}</td>
+                          <td style={{padding:"6px 10px"}}>{dureeActiviteMinutes(a)} min</td>
+                          <td style={{padding:"6px 10px",color:"var(--btp-text2)"}}>{a.type==="CHANGEMENT_MOULE"&&a.nouveauMoule?("Nouveau moule : "+getProduit(a.nouveauMoule).nom):""}{a.volumeTerreConcasseeM3!=null?("Volume : "+a.volumeTerreConcasseeM3+" m³"):""}{a.motif?a.motif:""}{a.commentaire?(" — "+a.commentaire):""}</td>
+                          <td style={{padding:"6px 10px"}}>{a.creePar||"-"}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:14}}>
               <h3 style={{margin:0,color:"var(--btp-orange)"}}>Productions recentes</h3>
@@ -6067,6 +6139,17 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
         });
       try { await db.collection("evenements").add({ numBC: cmd.numBC||cmdId, chantier: chantier.nom||"", action: "Réception confirmée par chef", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+(cmd.numBC||cmdId)+" | Qté reçue: "+(cmd.quantiteLivree||0)+" BTC | NC: "+nc, statut: "Réception confirmée", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
       }catch(ep){}
+      // Point 5 (retours Phase 12) : une NC constatee par le chef de chantier doit etre visible de
+      // tous (Production, Stock, Direction) — creation d'une vraie fiche qse_nc, pas seulement un
+      // ajustement comptable (pertes/ristourne) invisible hors comptabilite.
+      try {
+        await qseAjouterNC({
+          numeroLot: "",
+          description: "Réception non conforme — " + nc + " " + (catItem ? catItem.nom : cmd.type) + " sur chantier " + chantier.nom + (cmd.numBC ? (" (BC " + cmd.numBC + ")") : ""),
+          quantiteConcernee: nc,
+          responsable: userData.nom || user.email
+        }, user, userData);
+      } catch (eNc) {}
     }
     var v={...qteNonConformeInput}; delete v[cmdId]; setQteNonConformeInput(v);
     setMsgCmd("Reception confirmee !");
@@ -6227,6 +6310,16 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, use
   const [tabFiche, setTabFiche] = useState("suivi");
   const [lotsUtilises, setLotsUtilises] = React.useState(null); // null = pas encore charge
   const [paletteOuverte, setPaletteOuverte] = React.useState(null); // Phase 7 (point 28)
+  // Point 3 (retours utilisateur) : Direction peut passer une commande directement depuis la fiche
+  // chantier, au meme titre que le chef de chantier (meme logique palette, meme journalisation).
+  const [cmdTypeDir, setCmdTypeDir] = React.useState("");
+  const [cmdPalettesDir, setCmdPalettesDir] = React.useState("");
+  const [cmdNotesDir, setCmdNotesDir] = React.useState("");
+  const [cmdDateBesoinDir, setCmdDateBesoinDir] = React.useState("");
+  const [msgCmdDir, setMsgCmdDir] = React.useState("");
+  const [paramsFicheDir, setParamsFicheDir] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  React.useEffect(function () { chargerParametresIndustriels().then(setParamsFicheDir); }, []);
+  const capPaletteFicheDir = paramsFicheDir.capacitePaletteDefaut || 100;
 
   React.useEffect(() => {
     let annule = false;
@@ -6259,6 +6352,34 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, use
   var totalMontantBesoin = lignesFinancieres.reduce(function(a,l){return a+l.montantBesoin;},0);
   var totalReste = lignesFinancieres.reduce(function(a,l){return a+l.reste;},0);
   var pctGlobal = totalBesoin>0?Math.min(100,Math.round(totalLivre/totalBesoin*100)):0;
+
+  var passerCommandeDirection = async function() {
+    if (!cmdTypeDir||!cmdPalettesDir) { setMsgCmdDir("Choisissez un type et un nombre de palettes"); return; }
+    var nbPalettesDir = parseInt(cmdPalettesDir, 10);
+    if (!(nbPalettesDir > 0)) { setMsgCmdDir("Nombre de palettes invalide."); return; }
+    var qteCmdDir = nbPalettesDir * capPaletteFicheDir;
+    try {
+      var nowCmdDir = new Date();
+      var yyyyCmdDir = nowCmdDir.getFullYear();
+      var mmCmdDir = String(nowCmdDir.getMonth()+1).padStart(2,"0");
+      var randCmdDir = Math.floor(1000+Math.random()*9000);
+      var numBCDir = "BC-"+yyyyCmdDir+mmCmdDir+"-"+randCmdDir;
+      var catItemDir = CATALOGUE.find(function(p){return p.id===cmdTypeDir;})||{};
+      await db.collection("commandes").add({
+        numBC: numBCDir,
+        type: cmdTypeDir, typNom: catItemDir.nom||cmdTypeDir, quantite: qteCmdDir, nombrePalettes: nbPalettesDir, notes: cmdNotesDir,
+        dateBesoin: cmdDateBesoinDir || null,
+        chantierId: chantier.id, chantierNom: chantier.nom, client: chantier.client,
+        chefUid: chantier.chefUid||null, chefEmail: "", chefNom: chantier.chefNom||"",
+        status: "EnAttente", quantiteLivree: 0,
+        prixUnit: catItemDir.prix||0,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      journaliserEvenement({ categorie:"Commandes", action:"Commande créée", acteur:libelleActeurCourant(user,userData), role:"direction", numBC:numBCDir, chantier:chantier.nom, details:"BTC: "+cmdTypeDir+" | "+nbPalettesDir+" palette(s) ("+qteCmdDir+" u) — créée par Direction" });
+      setMsgCmdDir("Commande envoyée ! Bon de commande "+numBCDir+" créé ("+nbPalettesDir+" palette(s) = "+qteCmdDir+" u).");
+      setCmdPalettesDir(""); setCmdNotesDir(""); setCmdDateBesoinDir(""); setCmdTypeDir("");
+    } catch(e) { setMsgCmdDir("Erreur: "+e.message); }
+  };
 
   var ts = function(t) { return { padding:"7px 14px", border:"none", cursor:"pointer", borderRadius:8, marginRight:6,
     background:tabFiche===t?"#8B1A10":"#F5E6D3", color:tabFiche===t?"white":"#2C1810", fontWeight:tabFiche===t?700:500, fontSize:13 }; };
@@ -6296,6 +6417,7 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, use
         </div>
         <div style={{padding:"12px 16px 0",display:"flex",flexWrap:"wrap"}}>
           <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>Suivi livraisons</button>
+          <button style={ts("commande")} onClick={()=>setTabFiche("commande")}>+ Passer une commande</button>
           <button style={ts("finance")} onClick={()=>setTabFiche("finance")}>💶 Fiche financiere</button>
           <button style={ts("commandes")} onClick={()=>setTabFiche("commandes")}>Historique commandes</button>
           <button style={ts("lots")} onClick={()=>setTabFiche("lots")}>🏷️ Lots livrés {lotsUtilises && lotsUtilises.length>0 ? "("+lotsUtilises.length+")" : ""}</button>
@@ -6483,6 +6605,33 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, use
                   </tbody>
                 </table>
               )}
+            </div>
+          )}
+          {tabFiche==="commande"&&(
+            <div className="fade-in">
+              <h4 style={{marginBottom:14,color:"var(--btp-blue)"}}>Nouvelle commande pour ce chantier</h4>
+              {typesChantier.length===0?
+                <p style={{color:"var(--btp-text2)",padding:12,background:"#FFF3CD",borderRadius:8}}>Aucun type de BTC renseigné. Modifiez la fiche chantier d'abord.</p>:
+                <div style={{maxWidth:440}}>
+                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Type de BTC du chantier</label>
+                  <select value={cmdTypeDir} onChange={e=>setCmdTypeDir(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid #2980B9",background:"var(--btp-card)",color:"var(--btp-text)",fontSize:14,marginBottom:12}}>
+                    <option value="">-- Choisir le type --</option>
+                    {typesChantier.map(function(p){
+                      var l = lignesFinancieres.find(function(x){return x.prod.id===p.id;});
+                      var reste = l ? l.reste : (besoins[p.id]||0);
+                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste à livrer: ≈{Math.ceil(reste/capPaletteFicheDir)} palette(s)</option>;
+                    })}
+                  </select>
+                  <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nombre de palettes à commander</label>
+                  <input type="number" min="1" placeholder="Ex : 3" value={cmdPalettesDir} onChange={e=>setCmdPalettesDir(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:4}} />
+                  <p style={{fontSize:11,color:"var(--btp-text2)",marginBottom:12}}>1 palette = {capPaletteFicheDir} BTC{cmdPalettesDir?(" — soit "+(parseInt(cmdPalettesDir,10)||0)*capPaletteFicheDir+" u au total"):""}.</p>
+                  <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de besoin sur chantier (optionnel)</label>
+                  <input type="date" value={cmdDateBesoinDir} onChange={e=>setCmdDateBesoinDir(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:12,boxSizing:"border-box"}} />
+                  <textarea placeholder="Notes (optionnel)" value={cmdNotesDir} onChange={e=>setCmdNotesDir(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,resize:"vertical",minHeight:50,marginBottom:12}} />
+                  {msgCmdDir && <div style={{padding:"8px 12px",borderRadius:8,marginBottom:10,fontSize:13,fontWeight:600,background:msgCmdDir.indexOf("envoyée")>=0?"#EAFAF1":"#FFECEC",color:msgCmdDir.indexOf("envoyée")>=0?"#1E8449":"#C0392B"}}>{msgCmdDir}</div>}
+                  <button onClick={passerCommandeDirection} style={{width:"100%",padding:"11px",background:"#2980B9",color:"white",border:"none",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:14}}>Envoyer la commande ↗</button>
+                </div>
+              }
             </div>
           )}
         </div>
@@ -6888,22 +7037,30 @@ function DashboardLivreur({ user, userData }) {
   var CarteLivraison = function (props) {
     var liv = props.liv;
     var etapeSuivante = prochaineEtapeLivraison(liv.statut);
+    var nonSignee = liv.statut === "Planifiee"; // point 5 : rien n'est possible avant la signature du bon
     return (
-      <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginBottom: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderLeft: "4px solid #117864" }}>
+      <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginBottom: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderLeft: "4px solid " + (nonSignee ? "#F39C12" : "#117864") }}>
+        {liv.numeroBL && <div style={{ fontSize: 11, color: "var(--btp-text2)", fontFamily: "monospace", marginBottom: 4 }}>Bon de livraison {liv.numeroBL}</div>}
         <div style={{ fontWeight: 700, fontSize: 15 }}>{getProduit(liv.typeBTC).nom} — {(liv.quantite || 0).toLocaleString()} u</div>
         <div style={{ fontSize: 13, color: "var(--btp-text)", marginTop: 4 }}>🏗️ {liv.chantierNom || "-"}</div>
         {liv.adresse && <div style={{ fontSize: 13, color: "var(--btp-text2)", marginTop: 2 }}>📍 {liv.adresse}</div>}
         {liv.datePrevue && <div style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 2 }}>📅 Prévue le {liv.datePrevue}</div>}
         <div style={{ marginTop: 8, fontSize: 12, color: "var(--btp-text2)" }}>
-          Statut : <span style={{ fontWeight: 700, color: "#117864" }}>{libelleStatutLivraison(liv.statut)}</span>
+          Statut : <span style={{ fontWeight: 700, color: nonSignee ? "#F39C12" : "#117864" }}>{libelleStatutLivraison(liv.statut)}</span>
         </div>
+        {formatHeure(liv.horaireBonSigne) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>✍️ Bon signé : {formatHeure(liv.horaireBonSigne)}</div>}
         {formatHeure(liv.horaireDepartEntrepot) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🚚 Départ entrepôt : {formatHeure(liv.horaireDepartEntrepot)}</div>}
         {formatHeure(liv.horaireArriveeChantier) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>📍 Arrivée chantier : {formatHeure(liv.horaireArriveeChantier)}</div>}
         {formatHeure(liv.horaireDepartChantier) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🔙 Départ chantier : {formatHeure(liv.horaireDepartChantier)}</div>}
         {formatHeure(liv.horaireArriveeEntrepot) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🏁 Arrivée entrepôt : {formatHeure(liv.horaireArriveeEntrepot)}</div>}
         {msgParLivraison[liv.id] && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#C0392B" }}>{msgParLivraison[liv.id]}</div>}
+        {nonSignee && (
+          <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(243,156,18,.12)", border: "1px solid rgba(243,156,18,.4)", borderRadius: 8, fontSize: 12 }}>
+            En signant, vous confirmez avoir chargé le camion avec exactement {(liv.quantite || 0).toLocaleString()} u de {getProduit(liv.typeBTC).nom} pour {liv.chantierNom || "ce chantier"}. Vous ne pourrez pas partir sans signer.
+          </div>
+        )}
         {etapeSuivante && (
-          <button className="btn btn-lg btn-full" style={{ marginTop: 12, background: "#117864", color: "white", fontWeight: 800 }}
+          <button className="btn btn-lg btn-full" style={{ marginTop: 12, background: nonSignee ? "#F39C12" : "#117864", color: "white", fontWeight: 800 }}
             disabled={enCoursId === liv.id || !enLigne} onClick={() => avancer(liv, etapeSuivante)}>
             {enCoursId === liv.id ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : libelleStatutLivraison(etapeSuivante))}
           </button>
@@ -6965,7 +7122,12 @@ function DashboardChef({ user, userData }) {
   // Formulaire commande
   const [cmdChantierId, setCmdChantierId] = useState("");
   const [cmdType, setCmdType] = useState("");
-  const [cmdQte, setCmdQte] = useState("");
+  // Point 6 (retours Phase 11) : commande en PALETTES ici aussi — ce formulaire est un second point
+  // d'entree (chantier-agnostique) vers passerCommande, deja corrige dans FicheChantierChef.
+  const [cmdPalettes, setCmdPalettes] = useState("");
+  const [paramsChefDash, setParamsChefDash] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  React.useEffect(function () { chargerParametresIndustriels().then(setParamsChefDash); }, []);
+  const capPaletteChefDash = paramsChefDash.capacitePaletteDefaut || 100;
   const [cmdNotes, setCmdNotes] = useState("");
   const [cmdDateBesoin, setCmdDateBesoin] = useState(""); // Phase 10 (point 11/19) : echeance optionnelle, jamais inventee si absente
   const [msgCmd, setMsgCmd] = useState("");
@@ -7089,7 +7251,10 @@ function DashboardChef({ user, userData }) {
   };
 
   const passerCommande = async () => {
-    if (!cmdChantierId||!cmdType||!cmdQte) { setMsgCmd("Choisissez un chantier, un type et une quantite"); return; }
+    if (!cmdChantierId||!cmdType||!cmdPalettes) { setMsgCmd("Choisissez un chantier, un type et un nombre de palettes"); return; }
+    var nbPalettesChefDash = parseInt(cmdPalettes, 10);
+    if (!(nbPalettesChefDash > 0)) { setMsgCmd("Nombre de palettes invalide."); return; }
+    var qteCmdChefDash = nbPalettesChefDash * capPaletteChefDash;
     var ch = chantiers.find(function(c){return c.id===cmdChantierId;});
     try {
       var nowCmd = new Date();
@@ -7100,7 +7265,7 @@ function DashboardChef({ user, userData }) {
       var catItemCmd = CATALOGUE.find(function(p){return p.id===cmdType;})||{};
       await db.collection("commandes").add({
         numBC: numBC,
-        type: cmdType, typNom: catItemCmd.nom||cmdType, quantite: parseInt(cmdQte), notes: cmdNotes,
+        type: cmdType, typNom: catItemCmd.nom||cmdType, quantite: qteCmdChefDash, nombrePalettes: nbPalettesChefDash, notes: cmdNotes,
         dateBesoin: cmdDateBesoin || null,
         chantierId: cmdChantierId, chantierNom: ch?ch.nom:"", client: ch?ch.client:"",
         chefUid: user.uid, chefEmail: user.email, chefNom: userData.nom||user.email,
@@ -7108,9 +7273,9 @@ function DashboardChef({ user, userData }) {
         prixUnit: catItemCmd.prix||0,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
-      try { await db.collection("evenements").add({ numBC: numBC, chantier: ch?ch.nom:"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | Qté: "+cmdQte+" | Chantier: "+(ch?ch.nom:""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
-      setMsgCmd("Commande envoyee ! Bon de commande "+numBC+" créé. En attente de validation Direction.");
-      setCmdQte(""); setCmdNotes(""); setCmdDateBesoin("");
+      try { await db.collection("evenements").add({ numBC: numBC, chantier: ch?ch.nom:"", action: "Commande créée", acteur: userData.nom||user.email, role: "chef_chantier", details: "N°"+numBC+" | BTC: "+cmdType+" | "+nbPalettesChefDash+" palette(s) ("+qteCmdChefDash+" u) | Chantier: "+(ch?ch.nom:""), statut: "En attente validation Direction", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
+      setMsgCmd("Commande envoyee ! Bon de commande "+numBC+" créé ("+nbPalettesChefDash+" palette(s) = "+qteCmdChefDash+" u). En attente de validation Direction.");
+      setCmdPalettes(""); setCmdNotes(""); setCmdDateBesoin("");
     } catch(e) { setMsgCmd("Erreur: "+e.message); }
   };
 
@@ -7301,13 +7466,14 @@ function DashboardChef({ user, userData }) {
                           var dejaCmde = commandes.filter(function(c){return c.chantierId===cmdChantierId&&c.type===p.id;}).reduce(function(a,c){return a+(c.quantite||0);},0);
                           var dejaRecu = commandes.filter(function(c){return c.chantierId===cmdChantierId&&c.type===p.id;}).reduce(function(a,c){return a+(c.quantiteLivree||0);},0);
                           var reste = Math.max(0, besoin - dejaRecu);
-                          return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) | besoin: {besoin.toLocaleString()} | reste: {reste.toLocaleString()}</option>;
+                          return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) | besoin: {besoin.toLocaleString()} | reste: ≈{Math.ceil(reste/capPaletteChefDash)} palette(s)</option>;
                         })}
                       </select>
                     </div>
                     <div style={{marginBottom:12}}>
-                      <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Quantite a commander</label>
-                      <input type="number" placeholder="Quantite" value={cmdQte} onChange={e=>setCmdQte(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14}} />
+                      <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nombre de palettes à commander</label>
+                      <input type="number" min="1" placeholder="Ex : 3" value={cmdPalettes} onChange={e=>setCmdPalettes(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",fontSize:14,marginBottom:4}} />
+                      <p style={{fontSize:11,color:"var(--btp-text2)",margin:0}}>1 palette = {capPaletteChefDash} BTC{cmdPalettes?(" — soit "+(parseInt(cmdPalettes,10)||0)*capPaletteChefDash+" u au total"):""}.</p>
                     </div>
                     <label style={{display:"block",fontSize:12,color:"var(--btp-text2)",marginBottom:4}}>Date de besoin sur chantier (optionnel)</label>
                     <input type="date" value={cmdDateBesoin} onChange={e=>setCmdDateBesoin(e.target.value)} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--btp-border)",marginBottom:12,fontSize:14,boxSizing:"border-box"}} />
@@ -7361,6 +7527,20 @@ function HistoriqueMouvementsType({ prod, onClose }) {
         <h3 style={{ margin: "0 0 4px", color: "var(--btp-orange)" }}>📜 Historique — {prod.nom}</h3>
         <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>{prod.dim}</p>
         {mouvements === null && <p style={{ color: "var(--btp-text2)" }}>Chargement…</p>}
+        {mouvements !== null && (function () {
+          // Point 1 (retours utilisateur) : date de la derniere production de ce type de BTC — la
+          // liste est deja triee du plus recent au plus ancien, donc le premier ENTREE_PRODUCTION
+          // trouve est le plus recent (pas de requete/tri supplementaire).
+          var derniereProd = mouvements.find(function (m) { return m.type === "ENTREE_PRODUCTION"; });
+          var totalEntrees = mouvements.filter(function (m) { return (m.quantite || 0) > 0; }).reduce(function (a, m) { return a + m.quantite; }, 0);
+          var totalSorties = mouvements.filter(function (m) { return (m.quantite || 0) < 0; }).reduce(function (a, m) { return a + m.quantite; }, 0);
+          return (
+            <div style={{ background: "var(--btp-card2)", borderRadius: 8, padding: "10px 12px", marginBottom: 14, fontSize: 12 }}>
+              <div>🏭 Dernière production : <strong>{derniereProd ? derniereProd.date : "aucune production enregistrée"}</strong></div>
+              <div style={{ marginTop: 4, color: "var(--btp-text2)" }}>Entrées : <strong style={{ color: "#1E8449" }}>+{totalEntrees.toLocaleString()} u</strong> · Sorties : <strong style={{ color: "#C0392B" }}>{totalSorties.toLocaleString()} u</strong> (sur les {mouvements.length} derniers mouvements)</div>
+            </div>
+          );
+        })()}
         {mouvements !== null && mouvements.length === 0 && <p style={{ color: "var(--btp-text2)" }}>Aucun mouvement enregistré pour ce type de BTC.</p>}
         {mouvements !== null && mouvements.length > 0 && (
           <div>
@@ -7412,6 +7592,23 @@ function DashboardStock({ user, userData }) {
   const [formPlanifLivraison, setFormPlanifLivraison] = React.useState(null);
   const [msgPlanifLivraison, setMsgPlanifLivraison] = React.useState("");
   const [planifLivraisonEnCours, setPlanifLivraisonEnCours] = React.useState(false);
+  // Point 5 (retours Phase 12) : collaboration Stock <-> Livreur — le responsable stock voit en
+  // direct quand le bon de livraison est signe et suit l'avancement, sans ressaisie ni echange manuel :
+  // meme document Firestore lu des deux cotes.
+  const [livraisonsStock, setLivraisonsStock] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("livraisons").onSnapshot(function (snap) {
+      setLivraisonsStock(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
+  const [ncOuvertesStock, setNcOuvertesStock] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("qse_nc").where("statut", "==", "Ouverte").onSnapshot(function (snap) {
+      setNcOuvertesStock(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
   React.useEffect(function () {
     var unsub = db.collection("users").where("role", "==", "livreur").onSnapshot(function (snap) {
       setLivreurs(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
@@ -7784,6 +7981,7 @@ function DashboardStock({ user, userData }) {
           {compteurPrioritesStock > 0 && <span className="btp-badge-compteur">{compteurPrioritesStock}</span>}
         </div>
 
+        <BanniereNCOuvertes ncs={ncOuvertesStock} />
         <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
         <div style={{ marginBottom: 24 }}>
           <ModeAujourdhui donnees={prioriteDonneesStock} ouvrirObjet={ouvrirObjetStock} role="resp_stock" />
@@ -7913,6 +8111,14 @@ function DashboardStock({ user, userData }) {
                     <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>{getProduit(cmd.type).dim}</div>
                     <div style={{fontSize:13,color:"var(--btp-text)",marginTop:4}}>Chantier: <strong>{cmd.chantierNom||cmd.client||"-"}</strong></div>
                     <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Valide par: {cmd.validePar||"Direction"}</div>
+                    {livraisonsStock.filter(function(l){return l.commandeId===cmd.id;}).map(function(l){
+                      var nonSignee=l.statut==="Planifiee";
+                      return (
+                        <div key={l.id} style={{marginTop:4,fontSize:11,padding:"3px 8px",borderRadius:6,display:"inline-block",background:nonSignee?"#FFF3CD":"#EAFAF1",color:nonSignee?"#7D5A00":"#1E8449",fontWeight:600}}>
+                          🚚 {l.numeroBL||"Livraison"} — {l.livreurNom} — {libelleStatutLivraison(l.statut)}
+                        </div>
+                      );
+                    })}
                     <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
                       <button className="btn btn-sm btn-ghost" onClick={()=>ouvrirEditCmd(cmd)}>✏️ Modifier la commande</button>
                       {livreurs.length>0 && <button className="btn btn-sm" style={{background:"#117864",color:"white"}} onClick={()=>ouvrirPlanifLivraison(cmd)}>🚚 Planifier une livraison</button>}
@@ -8115,6 +8321,14 @@ function DashboardProduction({ user, userData }) {
   // Phase 10B : parametres industriels (recette matieres, capacite reelle) et cache matieres_stock —
   // charges une fois (parametres) / en ecoute legere (4 docs, meme cout qu'un ecouteur "stocks").
   const [parametresProd, setParametresProd] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
+  // Point 5 (retours Phase 12) : NC constatees par le chef de chantier visibles ici aussi.
+  const [ncOuvertesProd, setNcOuvertesProd] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("qse_nc").where("statut", "==", "Ouverte").onSnapshot(function (snap) {
+      setNcOuvertesProd(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
   const [matieresStockProd, setMatieresStockProd] = React.useState({});
   const [activitesJourProd, setActivitesJourProd] = React.useState([]);
   // Phase finale (points 3/10-12/17-18) : ecran "Aujourd'hui" ultra simple + 4 boutons -> une seule
@@ -8543,6 +8757,7 @@ function DashboardProduction({ user, userData }) {
             )}
           </div>
         )}
+        <BanniereNCOuvertes ncs={ncOuvertesProd} />
         <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
         <div style={{ marginBottom: 18 }}>
           <ModeAujourdhui donnees={prioriteDonneesProd} ouvrirObjet={ouvrirObjetProd} role="resp_production" />
@@ -10427,15 +10642,32 @@ async function modifierCommandeStock(cmd, nouveauType, nouvelleQuantite, nouveau
 // sequence stricte de 4 etapes a un seul bouton chacune (aucune saisie de date/heure manuelle, le
 // serveur horodate). Direction suit tout depuis le meme document, en lecture seule.
 // ============================================================================================
-var ETAPES_LIVRAISON = ["Planifiee", "DepartEntrepot", "ArriveeChantier", "DepartChantier", "Terminee"];
-var CHAMP_HORAIRE_PAR_ETAPE = { DepartEntrepot: "horaireDepartEntrepot", ArriveeChantier: "horaireArriveeChantier", DepartChantier: "horaireDepartChantier", Terminee: "horaireArriveeEntrepot" };
-var LIBELLE_ETAPE_LIVRAISON = { Planifiee: "Planifiée", DepartEntrepot: "🚚 Départ entrepôt Kaweni", ArriveeChantier: "📍 Arrivée chantier", DepartChantier: "🔙 Départ chantier", Terminee: "🏁 Arrivée entrepôt" };
+// Point 5 (retours Phase 12) : le livreur doit signer le bon de livraison (reconnaitre avoir charge
+// le camion) AVANT de pouvoir partir — "BonSigne" est une etape obligatoire entre la planification
+// et le depart, jamais sautable (meme mecanisme sequentiel strict que les autres etapes).
+var ETAPES_LIVRAISON = ["Planifiee", "BonSigne", "DepartEntrepot", "ArriveeChantier", "DepartChantier", "Terminee"];
+var CHAMP_HORAIRE_PAR_ETAPE = { BonSigne: "horaireBonSigne", DepartEntrepot: "horaireDepartEntrepot", ArriveeChantier: "horaireArriveeChantier", DepartChantier: "horaireDepartChantier", Terminee: "horaireArriveeEntrepot" };
+var LIBELLE_ETAPE_LIVRAISON = { Planifiee: "Planifiée", BonSigne: "✍️ Signer le bon de livraison", DepartEntrepot: "🚚 Départ entrepôt Kaweni", ArriveeChantier: "📍 Arrivée chantier", DepartChantier: "🔙 Départ chantier", Terminee: "🏁 Arrivée entrepôt" };
 function libelleStatutLivraison(statut) { return LIBELLE_ETAPE_LIVRAISON[statut] || statut; }
 // Etape suivante attendue pour une livraison au vu de son statut courant (null si deja terminee).
 function prochaineEtapeLivraison(statutActuel) {
   var idx = ETAPES_LIVRAISON.indexOf(statutActuel);
   if (idx < 0 || idx >= ETAPES_LIVRAISON.length - 1) return null;
   return ETAPES_LIVRAISON[idx + 1];
+}
+
+// Numero de bon de livraison lisible (BL-annee-00001), compteur transactionnel — meme principe que
+// stockProchainNumeroPalette/qseProchainNumeroLot. Jamais consomme sur un doublon (voir appel ci-dessous,
+// apres verification d'idempotence).
+async function livraisonsProchainNumeroBL(annee) {
+  const compteurRef = db.collection("livraisons_index").doc("_compteur_" + annee);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(compteurRef);
+    const dernier = (snap.exists && snap.data().dernier) || 0;
+    const suivant = dernier + 1;
+    tx.set(compteurRef, { dernier: suivant });
+    return "BL-" + annee + "-" + String(suivant).padStart(5, "0");
+  });
 }
 
 // Cree la livraison planifiee par le responsable stock — jamais choisie par le livreur (point 6).
@@ -10445,17 +10677,19 @@ async function planifierLivraison(champs, token, user, userData) {
   var ref = db.collection("livraisons").doc(token);
   var existe = await ref.get();
   if (existe.exists) return token; // idempotence (double-clic)
+  var numeroBL = await livraisonsProchainNumeroBL(new Date().getFullYear());
   await ref.set({
+    numeroBL: numeroBL,
     commandeId: champs.commandeId || null, numBC: champs.numBC || "",
     chantierId: champs.chantierId || null, chantierNom: champs.chantierNom || "", adresse: champs.adresse || "",
     typeBTC: champs.typeBTC, quantite: champs.quantite,
     livreurUid: champs.livreurUid, livreurNom: champs.livreurNom,
     datePrevue: champs.datePrevue || null,
     statut: "Planifiee",
-    horaireDepartEntrepot: null, horaireArriveeChantier: null, horaireDepartChantier: null, horaireArriveeEntrepot: null,
+    horaireBonSigne: null, horaireDepartEntrepot: null, horaireArriveeChantier: null, horaireDepartChantier: null, horaireArriveeEntrepot: null,
     creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
   });
-  journaliserEvenement({ categorie: "Livraisons", action: "Livraison planifiée", acteur: auteur, role: "resp_stock", numBC: champs.numBC || "", chantier: champs.chantierNom || "", details: (champs.quantite || 0).toLocaleString() + " u " + champs.typeBTC + " → " + champs.livreurNom + (champs.datePrevue ? (" le " + champs.datePrevue) : "") + (champs.adresse ? (" | " + champs.adresse) : "") });
+  journaliserEvenement({ categorie: "Livraisons", action: "Livraison planifiée", acteur: auteur, role: "resp_stock", numBC: champs.numBC || "", chantier: champs.chantierNom || "", details: numeroBL + " — " + (champs.quantite || 0).toLocaleString() + " u " + champs.typeBTC + " → " + champs.livreurNom + (champs.datePrevue ? (" le " + champs.datePrevue) : "") + (champs.adresse ? (" | " + champs.adresse) : "") });
   return token;
 }
 
