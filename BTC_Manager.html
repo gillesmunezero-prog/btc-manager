@@ -936,7 +936,23 @@ function useMiseAJourServiceWorker() {
     return function () { annule = true; navigator.serviceWorker.removeEventListener("controllerchange", surChangementControleur); };
   }, []);
   const actualiser = function () { if (attenteRef.current) attenteRef.current.postMessage({ type: "SKIP_WAITING" }); };
-  return { disponible: disponible, actualiser: actualiser };
+  // Point 1 (retours utilisateur, Phase 13) : bouton manuel "Actualiser l'app" — ne pas attendre la
+  // detection automatique (parfois lente/tardive sur tablette) : on force une verification immediate
+  // aupres du service worker, puis on active la nouvelle version si elle existe ; sinon on recharge
+  // simplement la page (repli toujours utile : vide le cache memoire du navigateur).
+  const verifierMaintenant = async function () {
+    try {
+      if ("serviceWorker" in navigator) {
+        var reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.update();
+          if (reg.waiting) { reg.waiting.postMessage({ type: "SKIP_WAITING" }); return; } // le listener controllerchange recharge proprement
+        }
+      }
+    } catch (e) {}
+    window.location.reload();
+  };
+  return { disponible: disponible, actualiser: actualiser, verifierMaintenant: verifierMaintenant };
 }
 
 // Invite d'installation PWA (point 34) : Chrome/Edge Android emettent "beforeinstallprompt" ; on le
@@ -989,20 +1005,32 @@ function lireRecents() {
 }
 
 // CATALOGUE COMPLET TERRE ET EAU
+// Point 5 (retours utilisateur, Phase 13) : la taille d'une palette N'EST PAS uniforme — 100 BTC par
+// palette pour tous les types, SAUF le Bloc Poteaux 33x22 (le plus grand/lourd) qui n'en tient que 54.
+// "parPalette" est la source de verite unique pour toute conversion palette<->unites dans l'app —
+// ne jamais utiliser un chiffre global unique a la place (voir capacitePaletteType).
 const CATALOGUE = [
-  { id: "BTC Bloc Poteaux 33x22", nom: "BTC Bloc Poteaux", dim: "33x22x9,5 cm", prix: 2.31, usage: "Construction de poteaux ou colonnes" },
-  { id: "BTC Bloc Poteaux 22x22", nom: "BTC Bloc Poteaux (compact)", dim: "22x22x9,5 cm", prix: 1.94, usage: "Petits poteaux, angles, renforts verticaux" },
-  { id: "BTC Bloc Passage Gaine", nom: "BTC Bloc Passage de gaine", dim: "22x22x9,5 cm", prix: 1.94, usage: "Passage de gaines electriques ou plomberie" },
-  { id: "BTC Bloc Chainage 29x14", nom: "BTC Bloc Chainage", dim: "29x14x9,5 cm", prix: 1.83, usage: "Chainages horizontaux, ferraillage + beton" },
-  { id: "BTC Bloc Chainage 22x22", nom: "BTC Bloc Chainage (22cm)", dim: "22x22x9,5 cm", prix: 1.94, usage: "Renforts ou passages techniques" },
-  { id: "BTC Bloc Parement 22x11", nom: "BTC Bloc Parement", dim: "22x11x9,5 cm", prix: 1.40, usage: "Parement de facade ou murs fins" },
-  { id: "BTC Bloc Parement 29x14", nom: "BTC Bloc Parement (mince)", dim: "29x14x6 cm", prix: 1.83, usage: "Revetements de murs interieurs ou exterieurs" },
-  { id: "BTC Bloc Parement 22x14", nom: "BTC Bloc de Parement", dim: "22x14x9,5 cm", prix: 1.45, usage: "Murs apparents ou decoratifs, finition esthetique" },
-  { id: "BTC Bloc Remplissage 29x14", nom: "BTC Bloc Remplissage", dim: "29x14x9,5 cm", prix: 1.94, usage: "Murs porteurs ou remplissage" },
-  { id: "BTC Bloc Remplissage 22x22", nom: "BTC Bloc Remplissage (carre)", dim: "22x22x9,5 cm", prix: 1.83, usage: "Construction standard, remplissage de mur" },
-  { id: "BTC Bloc Remplissage 30x22", nom: "BTC Bloc Remplissage (grand)", dim: "30x22x9,5 cm", prix: 2.83, usage: "Murs porteurs, cloisons et elevations diverses" },
-  { id: "BTC Bloc a Maconner", nom: "BTC Bloc a Maconner", dim: "29x14x9,5 cm", prix: 1.35, usage: "Maconnerie speciale, passage ou beton arme" }
+  { id: "BTC Bloc Poteaux 33x22", nom: "BTC Bloc Poteaux", dim: "33x22x9,5 cm", prix: 2.31, usage: "Construction de poteaux ou colonnes", parPalette: 54 },
+  { id: "BTC Bloc Poteaux 22x22", nom: "BTC Bloc Poteaux (compact)", dim: "22x22x9,5 cm", prix: 1.94, usage: "Petits poteaux, angles, renforts verticaux", parPalette: 100 },
+  { id: "BTC Bloc Passage Gaine", nom: "BTC Bloc Passage de gaine", dim: "22x22x9,5 cm", prix: 1.94, usage: "Passage de gaines electriques ou plomberie", parPalette: 100 },
+  { id: "BTC Bloc Chainage 29x14", nom: "BTC Bloc Chainage", dim: "29x14x9,5 cm", prix: 1.83, usage: "Chainages horizontaux, ferraillage + beton", parPalette: 100 },
+  { id: "BTC Bloc Chainage 22x22", nom: "BTC Bloc Chainage (22cm)", dim: "22x22x9,5 cm", prix: 1.94, usage: "Renforts ou passages techniques", parPalette: 100 },
+  { id: "BTC Bloc Parement 22x11", nom: "BTC Bloc Parement", dim: "22x11x9,5 cm", prix: 1.40, usage: "Parement de facade ou murs fins", parPalette: 100 },
+  { id: "BTC Bloc Parement 29x14", nom: "BTC Bloc Parement (mince)", dim: "29x14x6 cm", prix: 1.83, usage: "Revetements de murs interieurs ou exterieurs", parPalette: 100 },
+  { id: "BTC Bloc Parement 22x14", nom: "BTC Bloc de Parement", dim: "22x14x9,5 cm", prix: 1.45, usage: "Murs apparents ou decoratifs, finition esthetique", parPalette: 100 },
+  { id: "BTC Bloc Remplissage 29x14", nom: "BTC Bloc Remplissage", dim: "29x14x9,5 cm", prix: 1.94, usage: "Murs porteurs ou remplissage", parPalette: 100 },
+  { id: "BTC Bloc Remplissage 22x22", nom: "BTC Bloc Remplissage (carre)", dim: "22x22x9,5 cm", prix: 1.83, usage: "Construction standard, remplissage de mur", parPalette: 100 },
+  { id: "BTC Bloc Remplissage 30x22", nom: "BTC Bloc Remplissage (grand)", dim: "30x22x9,5 cm", prix: 2.83, usage: "Murs porteurs, cloisons et elevations diverses", parPalette: 100 },
+  { id: "BTC Bloc a Maconner", nom: "BTC Bloc a Maconner", dim: "29x14x9,5 cm", prix: 1.35, usage: "Maconnerie speciale, passage ou beton arme", parPalette: 100 }
 ];
+// Fonction pure, source de verite unique : capacite d'une palette pour UN type de BTC donne.
+// Ne jamais utiliser parametres.capacitePaletteDefaut directement pour une conversion liee a un
+// type precis — ce parametre ne sert plus que de repli si un type est absent du catalogue.
+function capacitePaletteType(typeId, parametres) {
+  var p = CATALOGUE.find(function (c) { return c.id === typeId; });
+  if (p && p.parPalette) return p.parPalette;
+  return (parametres && parametres.capacitePaletteDefaut) || 100;
+}
 
 // Point 6 (retours utilisateur) : affichage en palettes — Stock et Production (hors Direction) ne
 // voient que des palettes, jamais l'unite brute ; Direction voit les deux (palettes ET unites).
@@ -4574,7 +4602,7 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
             var s = stocks[p.id] || {}; var sec = s.sec || 0; var sechage = s.sechage || 0;
             return { prod: p, sec: sec, sechage: sechage, total: sec + sechage };
           }).sort(function (a, b) { return b.total - a.total; }).map(function (l) {
-            return { type: l.prod.nom, sec: l.sec.toLocaleString(), sechage: l.sechage.toLocaleString(), total: l.total.toLocaleString(), palettes: formatQuantitePalette(l.total, parametres.capacitePaletteDefaut), statut: libelleUrgence(l.total) };
+            return { type: l.prod.nom, sec: l.sec.toLocaleString(), sechage: l.sechage.toLocaleString(), total: l.total.toLocaleString(), palettes: formatQuantitePalette(l.total, capacitePaletteType(l.prod.id, parametres)), statut: libelleUrgence(l.total) };
           })
         })} />
         <StatTile label="Lots en séchage" valeur={resumeAujourdhui.lotsEnSechage.toLocaleString() + " u"} couleur="#E67E22" />
@@ -4623,7 +4651,7 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
             titre: "Stock mature (sec) par type", nomExportCSV: "stock_mature.csv",
             colonnes: [{ label: "Type BTC", champ: "type" }, { label: "Sec (mature)", champ: "sec" }, { label: "Palettes", champ: "palettes" }, { label: "Statut", champ: "statut" }],
             lignes: CATALOGUE.map(function (p) { return { prod: p, sec: (stocks[p.id] || {}).sec || 0 }; }).sort(function (a, b) { return b.sec - a.sec; }).map(function (l) {
-              return { type: l.prod.nom, sec: l.sec.toLocaleString(), palettes: formatQuantitePalette(l.sec, parametres.capacitePaletteDefaut), statut: libelleUrgence(l.sec) };
+              return { type: l.prod.nom, sec: l.sec.toLocaleString(), palettes: formatQuantitePalette(l.sec, capacitePaletteType(l.prod.id, parametres)), statut: libelleUrgence(l.sec) };
             })
           })} />
         <StatTile label={"Valeur pertes — " + periode.label} valeur={indicateurs.pertes.valeurEstimee.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) + " €"}
@@ -4792,7 +4820,7 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
             <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Logistique</div>
             <label className="btp-label">Capacité benne par défaut (m³)</label>
             <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.capaciteBenneDefautM3 || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { capaciteBenneDefautM3: e.target.value ? parseFloat(e.target.value) : 15 }))} />
-            <label className="btp-label">BTC par palette standard (u) — sert aux saisies en palettes (commandes, production)</label>
+            <label className="btp-label">BTC par palette — valeur par défaut (u). Chaque type a sa propre capacité dans le catalogue (100, sauf Bloc Poteaux 33x22 : 54) ; ce champ ne sert que de repli si un type n'en a pas.</label>
             <input type="number" className="btp-input" style={{ marginBottom: 14, width: "100%" }} value={formParametres.capacitePaletteDefaut || ""} onChange={(e) => setFormParametres(Object.assign({}, formParametres, { capacitePaletteDefaut: e.target.value ? parseInt(e.target.value, 10) : 100 }))} />
 
             <div style={{ fontWeight: 800, fontSize: 13, color: "var(--btp-orange)", marginBottom: 8 }}>Stock</div>
@@ -5360,7 +5388,7 @@ const [showPwdUid, setShowPwdUid] = useState(null);
                       </span>
                     </div>
                     <div className="kpi-card-value" style={{color:statusColor}}>{total.toLocaleString()}</div>
-                    <div className="kpi-card-label">Unités disponibles · {formatQuantitePalette(total,parametresDir.capacitePaletteDefaut)}</div>
+                    <div className="kpi-card-label">Unités disponibles · {formatQuantitePalette(total,capacitePaletteType(prod.id,parametresDir))}</div>
                     <div style={{marginTop:12}}>
                       <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--btp-text2)',marginBottom:4}}>
                         <span>Progression</span><span style={{color:statusColor,fontWeight:700}}>{pct}%</span>
@@ -5681,7 +5709,7 @@ return(
 <div style={{flex:1,minWidth:140}}>
 <div style={{fontWeight:700,fontSize:13}}>{prod.nom}</div>
 <div style={{fontSize:11,color:"#BDC3C7"}}>{prod.dim}</div>
-<div style={{fontSize:11,color:couleur,fontWeight:600,marginTop:2}}>Actuel: {((s.sec||0)+(s.sechage||0)).toLocaleString()} u <span style={{fontWeight:400,color:"var(--btp-text2)"}}>({formatQuantitePalette((s.sec||0)+(s.sechage||0),parametresDir.capacitePaletteDefaut)})</span></div>
+<div style={{fontSize:11,color:couleur,fontWeight:600,marginTop:2}}>Actuel: {((s.sec||0)+(s.sechage||0)).toLocaleString()} u <span style={{fontWeight:400,color:"var(--btp-text2)"}}>({formatQuantitePalette((s.sec||0)+(s.sechage||0),capacitePaletteType(prod.id,parametresDir))})</span></div>
 </div>
 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
 <div>
@@ -6061,16 +6089,48 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
   const [tabFiche, setTabFiche] = useState("suivi");
   const [cmdType, setCmdType] = useState("");
   // Point 6 (retours utilisateur) : le chef de chantier commande en PALETTES, jamais a l'unite —
-  // la conversion se fait via le parametre capacitePaletteDefaut, la commande reste stockee en
-  // unites (quantite) exactement comme avant, aucun autre module n'est affecte.
+  // la conversion se fait via la capacite propre au type choisi (capacitePaletteType, point 5 Phase
+  // 13 : 54 BTC/palette pour le Bloc Poteaux 33x22, 100 pour tous les autres) ; la commande reste
+  // stockee en unites (quantite) exactement comme avant, aucun autre module n'est affecte.
   const [cmdPalettes, setCmdPalettes] = useState("");
   const [paramsChef, setParamsChef] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
   React.useEffect(function () { chargerParametresIndustriels().then(setParamsChef); }, []);
-  const capPalette = paramsChef.capacitePaletteDefaut || 100;
+  const capPalette = capacitePaletteType(cmdType, paramsChef);
   const [cmdNotes, setCmdNotes] = useState("");
   const [cmdDateBesoin, setCmdDateBesoin] = useState(""); // Phase 10 (point 11/19) : echeance optionnelle, jamais inventee si absente
   const [msgCmd, setMsgCmd] = useState("");
   const [qteNonConformeInput, setQteNonConformeInput] = React.useState({});
+  // Point 4 (retours utilisateur, Phase 13) : suivi complet de la livraison en cours pour CE chantier
+  // (validee, date prevue, bon de livraison signe par le livreur, statut) + notification clignotante.
+  const [livraisonsChef, setLivraisonsChef] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("livraisons").where("chantierId", "==", chantier.id).onSnapshot(function (snap) {
+      setLivraisonsChef(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, [chantier.id]);
+  var livraisonsActivesChef = livraisonsChef.filter(function (l) { return l.statut !== "Terminee"; })
+    .sort(function (a, b) { return qseTsMs(b.dateCreation) - qseTsMs(a.dateCreation); });
+  var livraisonAConfirmerChef = livraisonsChef.find(function (l) { return l.statut === "ArriveeChantier" && !l.receptionSigneeChef; });
+  const [palettesRecuesInput, setPalettesRecuesInput] = React.useState({});
+  const [msgReceptionLivraison, setMsgReceptionLivraison] = React.useState({});
+  const [receptionLivraisonEnCours, setReceptionLivraisonEnCours] = React.useState(null);
+  var confirmerReceptionLivraison = async function (liv) {
+    if (receptionLivraisonEnCours) return;
+    var capPaletteLiv = capacitePaletteType(liv.typeBTC);
+    var defaut = Math.round((liv.quantite || 0) / capPaletteLiv);
+    var palettes = parseInt(palettesRecuesInput[liv.id] != null ? palettesRecuesInput[liv.id] : defaut, 10);
+    if (!(palettes >= 0)) { setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "Nombre de palettes invalide." }); }); return; }
+    setReceptionLivraisonEnCours(liv.id);
+    try {
+      await signerReceptionChef(liv.id, palettes, user, userData);
+      setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "✓ Réception confirmée (" + palettes + " palette(s))." }); });
+    } catch (e) {
+      setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "❌ " + e.message }); });
+    } finally {
+      setReceptionLivraisonEnCours(null);
+    }
+  };
 
   var cmdCh = commandes.filter(function(c){ return c.chantierId === chantier.id; });
   var besoins = chantier.besoins || {};
@@ -6169,10 +6229,23 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
           </div>
           <button onClick={onClose} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"white",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>✕ Fermer</button>
         </div>
-        <div style={{padding:"12px 16px 0",display:"flex",flexWrap:"wrap"}}>
-          <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>📊 Suivi</button>
+        <div style={{padding:"12px 16px 0",display:"flex",flexWrap:"wrap",alignItems:"center"}}>
+          <button style={ts("suivi")} onClick={()=>setTabFiche("suivi")}>📊 Suivi
+            {livraisonsActivesChef.length>0 && <span className="pulse" style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:"#F39C12",marginLeft:6}}></span>}
+          </button>
           <button style={ts("commande")} onClick={()=>setTabFiche("commande")}>+ Passer une commande</button>
-          {(function(){var hasLiv=cmdCh.some(function(c){return (c.quantiteLivree||0)>0;});return(<button style={ts("reception")} onClick={()=>{if(hasLiv)setTabFiche("reception");}} disabled={!hasLiv} title={hasLiv?"":"En attente de livraison par le stock"} >{hasLiv?"✅ Valider réception":"🔒 Valider réception (en attente livraison)"}</button>);})()}
+          {(function(){
+            // Point 4 (retours utilisateur, Phase 13) : l'onglet reception se debloque aussi bien via
+            // l'ancien flux (stock livre directement, quantiteLivree) que via une livraison suivie par
+            // un livreur (arrivee chantier, en attente de signature du chef).
+            var hasLiv=cmdCh.some(function(c){return (c.quantiteLivree||0)>0;});
+            var hasLivraisonEnCours=livraisonsActivesChef.length>0;
+            var debloque=hasLiv||hasLivraisonEnCours;
+            return(<button style={ts("reception")} onClick={()=>{if(debloque)setTabFiche("reception");}} disabled={!debloque} title={debloque?"":"En attente de livraison par le stock"} >
+              {debloque?"✅ Valider réception":"🔒 Valider réception (en attente livraison)"}
+              {livraisonAConfirmerChef && <span className="pulse" style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:"#EC7063",marginLeft:6}}></span>}
+            </button>);
+          })()}
         </div>
 
         <div style={{padding:20}}>
@@ -6252,7 +6325,7 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                     {typesChantier.map(function(p){
                       var l = lignes.find(function(x){return x.prod.id===p.id;});
                       var reste = l ? l.reste : (besoins[p.id]||0);
-                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste a livrer: ≈{Math.ceil(reste/capPalette)} palette(s)</option>;
+                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste a livrer: ≈{Math.ceil(reste/capacitePaletteType(p.id,paramsChef))} palette(s)</option>;
                     })}
                   </select>
                   <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nombre de palettes à commander</label>
@@ -6269,7 +6342,53 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
 
           {tabFiche==="reception"&&(
             <div className="fade-in">
-              <h4 style={{marginBottom:12,color:"var(--btp-blue)"}}>Confirmer la reception des BTC sur le chantier</h4>
+              {livraisonsChef.length>0 && (
+                <div style={{marginBottom:20}}>
+                  <h4 style={{marginBottom:10,color:"var(--btp-blue)"}}>🚚 Suivi de la livraison</h4>
+                  {livraisonsChef.slice().sort(function(a,b){return qseTsMs(b.dateCreation)-qseTsMs(a.dateCreation);}).slice(0,5).map(function(liv){
+                    var etapes=[
+                      {cle:"Planifiee",label:"Commande validée"},
+                      {cle:"BonSigne",label:"Bon de livraison signé (livreur)"},
+                      {cle:"DepartEntrepot",label:"Départ entrepôt"},
+                      {cle:"ArriveeChantier",label:"Arrivée sur le chantier"},
+                      {cle:"DepartChantier",label:"Départ du chantier"},
+                      {cle:"Terminee",label:"Livraison terminée"}
+                    ];
+                    var idxActuel=ETAPES_LIVRAISON.indexOf(liv.statut);
+                    var defaut=Math.round((liv.quantite||0)/capacitePaletteType(liv.typeBTC,paramsChef));
+                    var peutConfirmer=liv.statut==="ArriveeChantier"&&!liv.receptionSigneeChef;
+                    return (
+                      <div key={liv.id} style={{background:"var(--btp-card)",borderRadius:10,padding:14,marginBottom:10,border:"1px solid #EEE",borderLeft:"4px solid "+(liv.statut==="Terminee"?"#27AE60":"#F39C12")}}>
+                        <div style={{fontWeight:700,fontSize:14}}>{liv.numeroBL||"Livraison"} — {getProduit(liv.typeBTC).nom} — {(liv.quantite||0).toLocaleString()} u</div>
+                        <div style={{fontSize:12,color:"var(--btp-text2)",marginTop:2}}>Livreur: {liv.livreurNom||"-"}{liv.datePrevue?(" · Prévue le "+liv.datePrevue):""}</div>
+                        <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:4}}>
+                          {etapes.map(function(e,i){
+                            var fait=i<=idxActuel;
+                            return <div key={e.cle} style={{fontSize:12,color:fait?"#1E8449":"var(--btp-text2)",fontWeight:fait?700:400}}>{fait?"✅":"⬜"} {e.label}</div>;
+                          })}
+                        </div>
+                        {peutConfirmer && (
+                          <div style={{marginTop:12,padding:"10px 14px",background:"#EAF6FF",borderRadius:8}}>
+                            <div style={{fontSize:13,color:"#2471A3",fontWeight:600,marginBottom:8}}>Le livreur est arrivé — confirmez ce que vous avez reçu :</div>
+                            <label style={{fontSize:12,color:"var(--btp-text2)",display:"block",marginBottom:4}}>Nombre de palettes reçues (1 palette = {capacitePaletteType(liv.typeBTC,paramsChef)} BTC)</label>
+                            <input type="number" min="0" value={palettesRecuesInput[liv.id]!=null?palettesRecuesInput[liv.id]:defaut}
+                              onChange={e=>setPalettesRecuesInput(Object.assign({},palettesRecuesInput,{[liv.id]:e.target.value}))}
+                              style={{width:100,padding:"6px 10px",border:"1px solid var(--btp-border)",borderRadius:6,fontSize:14,marginBottom:8}} />
+                            {msgReceptionLivraison[liv.id] && <div style={{fontSize:12,marginBottom:8,color:msgReceptionLivraison[liv.id].indexOf("✓")===0?"#1E8449":"#C0392B",fontWeight:600}}>{msgReceptionLivraison[liv.id]}</div>}
+                            <button onClick={()=>confirmerReceptionLivraison(liv)} disabled={receptionLivraisonEnCours===liv.id} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
+                              {receptionLivraisonEnCours===liv.id?"Enregistrement…":"✍️ Confirmer la réception"}
+                            </button>
+                          </div>
+                        )}
+                        {liv.statut==="ArriveeChantier"&&liv.receptionSigneeChef&&!liv.receptionSigneeLivreur && (
+                          <div style={{marginTop:10,fontSize:12,color:"#F39C12",fontWeight:600}}>✅ Vous avez signé — en attente de la confirmation du livreur avant son départ.</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <h4 style={{marginBottom:12,color:"var(--btp-blue)"}}>{livraisonsChef.length>0?"Autres réceptions (livraison directe, sans livreur)":"Confirmer la reception des BTC sur le chantier"}</h4>
               {cmdCh.filter(function(c){return c.status==="Livree"||(c.quantiteLivree||0)>0;}).length===0?
                 <p style={{color:"var(--btp-text2)"}}>Aucune livraison a confirmer pour l'instant.</p>:
                 cmdCh.filter(function(c){return (c.quantiteLivree||0)>0;}).map(function(c){
@@ -6319,7 +6438,7 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, use
   const [msgCmdDir, setMsgCmdDir] = React.useState("");
   const [paramsFicheDir, setParamsFicheDir] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
   React.useEffect(function () { chargerParametresIndustriels().then(setParamsFicheDir); }, []);
-  const capPaletteFicheDir = paramsFicheDir.capacitePaletteDefaut || 100;
+  const capPaletteFicheDir = capacitePaletteType(cmdTypeDir, paramsFicheDir);
 
   React.useEffect(() => {
     let annule = false;
@@ -6619,7 +6738,7 @@ function FicheChantierDirection({ chantier, commandes, onClose, onOuvrirLot, use
                     {typesChantier.map(function(p){
                       var l = lignesFinancieres.find(function(x){return x.prod.id===p.id;});
                       var reste = l ? l.reste : (besoins[p.id]||0);
-                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste à livrer: ≈{Math.ceil(reste/capPaletteFicheDir)} palette(s)</option>;
+                      return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) — reste à livrer: ≈{Math.ceil(reste/capacitePaletteType(p.id,paramsFicheDir))} palette(s)</option>;
                     })}
                   </select>
                   <label style={{fontSize:13,fontWeight:600,color:"var(--btp-blue)",display:"block",marginBottom:4}}>Nombre de palettes à commander</label>
@@ -7026,6 +7145,22 @@ function DashboardLivreur({ user, userData }) {
     }
   };
 
+  // Point 4/5 (retours utilisateur, Phase 13) : moitie livreur du bon de reception mutuel — sans ce
+  // clic, "Départ chantier" ne peut jamais s'activer, meme si le chef a deja signe de son cote.
+  var confirmerLivraison = async function (liv) {
+    if (enCoursId) return;
+    if (!enLigne) { setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "🚫 Connexion requise." }); }); return; }
+    setEnCoursId(liv.id);
+    try {
+      await signerReceptionLivreur(liv.id, user, userData);
+      setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "" }); });
+    } catch (e) {
+      setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "❌ " + e.message }); });
+    } finally {
+      setEnCoursId(null);
+    }
+  };
+
   var formatHeure = function (ts) {
     if (!ts) return null;
     var ms = qseTsMs(ts);
@@ -7038,6 +7173,9 @@ function DashboardLivreur({ user, userData }) {
     var liv = props.liv;
     var etapeSuivante = prochaineEtapeLivraison(liv.statut);
     var nonSignee = liv.statut === "Planifiee"; // point 5 : rien n'est possible avant la signature du bon
+    // Point 4/5 : "Départ chantier" est gele tant que les DEUX signatures de reception (chef + livreur)
+    // ne sont pas faites — le livreur doit d'abord confirmer sa propre moitie ici.
+    var attenteReception = etapeSuivante === "DepartChantier" && !(liv.receptionSigneeChef && liv.receptionSigneeLivreur);
     return (
       <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginBottom: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderLeft: "4px solid " + (nonSignee ? "#F39C12" : "#117864") }}>
         {liv.numeroBL && <div style={{ fontSize: 11, color: "var(--btp-text2)", fontFamily: "monospace", marginBottom: 4 }}>Bon de livraison {liv.numeroBL}</div>}
@@ -7051,6 +7189,12 @@ function DashboardLivreur({ user, userData }) {
         {formatHeure(liv.horaireBonSigne) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>✍️ Bon signé : {formatHeure(liv.horaireBonSigne)}</div>}
         {formatHeure(liv.horaireDepartEntrepot) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🚚 Départ entrepôt : {formatHeure(liv.horaireDepartEntrepot)}</div>}
         {formatHeure(liv.horaireArriveeChantier) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>📍 Arrivée chantier : {formatHeure(liv.horaireArriveeChantier)}</div>}
+        {attenteReception && (
+          <div style={{ marginTop: 6, fontSize: 11 }}>
+            <div style={{ color: liv.receptionSigneeChef ? "#117864" : "var(--btp-text2)" }}>{liv.receptionSigneeChef ? "✅" : "⏳"} Réception signée par le chef de chantier{formatHeure(liv.horaireReceptionChef) ? (" — " + formatHeure(liv.horaireReceptionChef)) : ""}</div>
+            <div style={{ color: liv.receptionSigneeLivreur ? "#117864" : "var(--btp-text2)" }}>{liv.receptionSigneeLivreur ? "✅" : "⏳"} Livraison confirmée par vous{formatHeure(liv.horaireReceptionLivreur) ? (" — " + formatHeure(liv.horaireReceptionLivreur)) : ""}</div>
+          </div>
+        )}
         {formatHeure(liv.horaireDepartChantier) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🔙 Départ chantier : {formatHeure(liv.horaireDepartChantier)}</div>}
         {formatHeure(liv.horaireArriveeEntrepot) && <div style={{ fontSize: 11, color: "var(--btp-text2)" }}>🏁 Arrivée entrepôt : {formatHeure(liv.horaireArriveeEntrepot)}</div>}
         {msgParLivraison[liv.id] && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#C0392B" }}>{msgParLivraison[liv.id]}</div>}
@@ -7059,7 +7203,18 @@ function DashboardLivreur({ user, userData }) {
             En signant, vous confirmez avoir chargé le camion avec exactement {(liv.quantite || 0).toLocaleString()} u de {getProduit(liv.typeBTC).nom} pour {liv.chantierNom || "ce chantier"}. Vous ne pourrez pas partir sans signer.
           </div>
         )}
-        {etapeSuivante && (
+        {attenteReception && !liv.receptionSigneeLivreur && (
+          <button className="btn btn-lg btn-full" style={{ marginTop: 12, background: "#F39C12", color: "white", fontWeight: 800 }}
+            disabled={enCoursId === liv.id || !enLigne} onClick={() => confirmerLivraison(liv)}>
+            {enCoursId === liv.id ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : "✍️ Je confirme avoir livré la commande")}
+          </button>
+        )}
+        {attenteReception && liv.receptionSigneeLivreur && !liv.receptionSigneeChef && (
+          <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(93,173,226,.12)", border: "1px solid rgba(93,173,226,.4)", borderRadius: 8, fontSize: 12, textAlign: "center", fontWeight: 600, color: "#2471A3" }}>
+            ⏳ En attente de la confirmation du chef de chantier — vous ne pouvez pas encore repartir.
+          </div>
+        )}
+        {!attenteReception && etapeSuivante && (
           <button className="btn btn-lg btn-full" style={{ marginTop: 12, background: nonSignee ? "#F39C12" : "#117864", color: "white", fontWeight: 800 }}
             disabled={enCoursId === liv.id || !enLigne} onClick={() => avancer(liv, etapeSuivante)}>
             {enCoursId === liv.id ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : libelleStatutLivraison(etapeSuivante))}
@@ -7105,6 +7260,18 @@ function DashboardChef({ user, userData }) {
   const [commandes, setCommandes] = useState([]);
   const [chantiers, setChantiers] = useState([]);
   const [ficheOuverte, setFicheOuverte] = useState(null);
+  // Point 4 (retours utilisateur, Phase 13) : notification clignotante sur la liste des chantiers,
+  // avant meme d'ouvrir la fiche, pour savoir lequel a une livraison en cours. Pas de filtre "!=" cote
+  // serveur (evite un index compose et incompatibilite mock) : filtrage "Terminee" fait cote client,
+  // meme principe que livraisonsDir cote Direction.
+  const [livraisonsToutesChefListe, setLivraisonsToutesChefListe] = React.useState([]);
+  React.useEffect(function () {
+    var unsub = db.collection("livraisons").onSnapshot(function (snap) {
+      setLivraisonsToutesChefListe(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+    });
+    return function () { unsub(); };
+  }, []);
+  var livraisonsActivesChefListe = livraisonsToutesChefListe.filter(function (l) { return l.statut !== "Terminee"; });
 
   // Formulaire nouveau/modif chantier
   const [editChantier, setEditChantier] = useState(null); // null = nouveau, objet = modification
@@ -7127,7 +7294,7 @@ function DashboardChef({ user, userData }) {
   const [cmdPalettes, setCmdPalettes] = useState("");
   const [paramsChefDash, setParamsChefDash] = React.useState(PARAMETRES_INDUSTRIELS_DEFAUT);
   React.useEffect(function () { chargerParametresIndustriels().then(setParamsChefDash); }, []);
-  const capPaletteChefDash = paramsChefDash.capacitePaletteDefaut || 100;
+  const capPaletteChefDash = capacitePaletteType(cmdType, paramsChefDash);
   const [cmdNotes, setCmdNotes] = useState("");
   const [cmdDateBesoin, setCmdDateBesoin] = useState(""); // Phase 10 (point 11/19) : echeance optionnelle, jamais inventee si absente
   const [msgCmd, setMsgCmd] = useState("");
@@ -7381,7 +7548,10 @@ function DashboardChef({ user, userData }) {
                         <div style={{fontSize:11,color:"var(--btp-text2)",marginTop:2}}>{pct}% livre</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        <button onClick={()=>setFicheOuverte(ch)} style={{background:"#2980B9",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>📋 Fiche</button>
+                        <button onClick={()=>setFicheOuverte(ch)} style={{background:"#2980B9",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                          📋 Fiche
+                          {livraisonsActivesChefListe.some(function(l){return l.chantierId===ch.id;}) && <span className="pulse" style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#F39C12"}}></span>}
+                        </button>
                         <button onClick={()=>ouvrirModifChantier(ch)} style={{background:"#E67E22",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>✏️ Modifier</button>
                         <button onClick={()=>demanderSuppression(ch)} style={{background:"#E74C3C",color:"white",border:"none",padding:"7px 12px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:12}}>🗑️ Supprimer</button>
                       </div>
@@ -7466,7 +7636,7 @@ function DashboardChef({ user, userData }) {
                           var dejaCmde = commandes.filter(function(c){return c.chantierId===cmdChantierId&&c.type===p.id;}).reduce(function(a,c){return a+(c.quantite||0);},0);
                           var dejaRecu = commandes.filter(function(c){return c.chantierId===cmdChantierId&&c.type===p.id;}).reduce(function(a,c){return a+(c.quantiteLivree||0);},0);
                           var reste = Math.max(0, besoin - dejaRecu);
-                          return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) | besoin: {besoin.toLocaleString()} | reste: ≈{Math.ceil(reste/capPaletteChefDash)} palette(s)</option>;
+                          return <option key={p.id} value={p.id}>{p.nom} ({p.dim}) | besoin: {besoin.toLocaleString()} | reste: ≈{Math.ceil(reste/capacitePaletteType(p.id,paramsChefDash))} palette(s)</option>;
                         })}
                       </select>
                     </div>
@@ -7566,6 +7736,56 @@ function HistoriqueMouvementsType({ prod, onClose }) {
   );
 }
 
+// Point 3 (retours utilisateur, Phase 13) : historique complet des commandes cote Stock — qui a
+// commande, qui a valide, quand — en lecture seule (aucune action ici, juste de la visibilite).
+function HistoriqueCommandes({ commandes, onClose }) {
+  var fmt = function (ts) { if (!ts) return "—"; var ms = qseTsMs(ts); if (!ms) return "—"; var d = new Date(ms); return d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); };
+  var libelleStatut = { EnAttente: "⏳ En attente validation", Validee: "✅ Validée", Refusee: "❌ Refusée", Livree: "🚚 Livrée" };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 22, width: "95%", maxWidth: 900, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 8px 30px rgba(0,0,0,0.3)" }} onClick={function (e) { e.stopPropagation(); }}>
+        <h3 style={{ margin: "0 0 4px", color: "var(--btp-orange)" }}>📜 Historique des commandes</h3>
+        <p style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>Qui a commandé, qui a validé, et quand — {commandes.length} commande(s) les plus récentes.</p>
+        {commandes.length === 0 ? <p style={{ color: "var(--btp-text2)" }}>Aucune commande enregistrée.</p> : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 820 }}>
+              <thead>
+                <tr style={{ background: "#34495E", color: "white" }}>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>N° BC</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>Type / Chantier</th>
+                  <th style={{ padding: "7px 10px", textAlign: "right" }}>Quantité</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>Commandé par</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>Le</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>Statut</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>Validé par</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left" }}>Le</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commandes.map(function (c, i) {
+                  return (
+                    <tr key={c.id} style={{ background: i % 2 === 0 ? "var(--btp-card)" : "var(--btp-card2)", borderBottom: "1px solid #EEE" }}>
+                      <td style={{ padding: "6px 10px", fontFamily: "monospace", fontWeight: 700, color: "var(--btp-orange)", whiteSpace: "nowrap" }}>{c.numBC || c.id}</td>
+                      <td style={{ padding: "6px 10px" }}>{getProduit(c.type).nom}<div style={{ fontSize: 10, color: "var(--btp-text2)" }}>{c.chantierNom || "-"}</div></td>
+                      <td style={{ padding: "6px 10px", textAlign: "right" }}>{(c.quantite || 0).toLocaleString()} u{c.nombrePalettes ? (" (" + c.nombrePalettes + " pal.)") : ""}</td>
+                      <td style={{ padding: "6px 10px" }}>{c.chefNom || "-"}</td>
+                      <td style={{ padding: "6px 10px", whiteSpace: "nowrap", color: "var(--btp-text2)" }}>{fmt(c.timestamp)}</td>
+                      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>{libelleStatut[c.status] || c.status}</td>
+                      <td style={{ padding: "6px 10px" }}>{c.validePar || "—"}</td>
+                      <td style={{ padding: "6px 10px", whiteSpace: "nowrap", color: "var(--btp-text2)" }}>{fmt(c.valideAt)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <button className="btn" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>Fermer</button>
+      </div>
+    </div>
+  );
+}
+
 function DashboardStock({ user, userData }) {
   const { enLigne } = useConnexion();
   const [commandes, setCommandes] = useState([]);
@@ -7603,6 +7823,9 @@ function DashboardStock({ user, userData }) {
     return function () { unsub(); };
   }, []);
   const [ncOuvertesStock, setNcOuvertesStock] = React.useState([]);
+  const [commandesEnAttenteStock, setCommandesEnAttenteStock] = React.useState([]);
+  const [commandesHistoriqueStock, setCommandesHistoriqueStock] = React.useState([]);
+  const [showHistoriqueCommandes, setShowHistoriqueCommandes] = React.useState(false);
   React.useEffect(function () {
     var unsub = db.collection("qse_nc").where("statut", "==", "Ouverte").onSnapshot(function (snap) {
       setNcOuvertesStock(snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
@@ -7747,7 +7970,19 @@ function DashboardStock({ user, userData }) {
     var u6 = db.collection("stock_palettes").orderBy("dateCreation", "desc").limit(300).onSnapshot(snap => {
       setPalettesList(snap.docs.map(d => Object.assign({ id: d.id }, d.data())));
     });
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); };
+    // Point 2 (retours utilisateur, Phase 13) : Stock doit savoir quand une commande attend une
+    // validation Direction, pour pouvoir relancer — jusqu'ici invisible (seules les commandes deja
+    // "Validee" etaient chargees ici).
+    var u7 = db.collection("commandes").where("status", "==", "EnAttente").onSnapshot(snap => {
+      setCommandesEnAttenteStock(snap.docs.map(d => Object.assign({ id: d.id }, d.data())));
+    });
+    // Point 3 (retours utilisateur, Phase 13) : Stock doit pouvoir consulter l'historique complet des
+    // commandes recues (qui a commande, qui a valide, dates/heures) — pas seulement les commandes
+    // actives (u1, filtrees sur "Validee" pour les reservations).
+    var u8 = db.collection("commandes").orderBy("timestamp", "desc").limit(300).onSnapshot(snap => {
+      setCommandesHistoriqueStock(snap.docs.map(d => Object.assign({ id: d.id }, d.data())));
+    });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); };
   }, []);
 
   var ouvrirObjetStock = function (type, idOuObjet) {
@@ -7978,9 +8213,19 @@ function DashboardStock({ user, userData }) {
           {/* Point 3 (retours utilisateur) : le scanner n'est pas encore utilise sur le terrain —
               methode classique toujours accessible en parallele, sans dependre de la camera. */}
           <button className="btn btn-lg" style={{ background: "#7F8C8D", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowInventaireManuel(true)}>📝 Inventaire manuel</button>
+          <button className="btn btn-lg" style={{ background: "#34495E", color: "white", fontWeight: 800, fontSize: 16 }} onClick={() => setShowHistoriqueCommandes(true)}>📜 Historique des commandes</button>
           {compteurPrioritesStock > 0 && <span className="btp-badge-compteur">{compteurPrioritesStock}</span>}
         </div>
 
+        {commandesEnAttenteStock.length > 0 && (
+          <div style={{ background: "rgba(93,173,226,.12)", border: "1px solid rgba(93,173,226,.4)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#2471A3" }}>🔔 {commandesEnAttenteStock.length} commande{commandesEnAttenteStock.length > 1 ? "s" : ""} en attente de validation Direction</div>
+            <div style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 4 }}>Ces commandes ne peuvent pas être livrées tant que la Direction ne les a pas validées — pensez à relancer si besoin.</div>
+            {commandesEnAttenteStock.slice(0, 5).map(function (c) {
+              return <div key={c.id} style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 3 }}>{c.numBC || c.id} — {getProduit(c.type).nom} — {c.chantierNom || "-"}</div>;
+            })}
+          </div>
+        )}
         <BanniereNCOuvertes ncs={ncOuvertesStock} />
         <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
         <div style={{ marginBottom: 24 }}>
@@ -7992,16 +8237,17 @@ function DashboardStock({ user, userData }) {
           {CATALOGUE.map(prod=>{
             var s=stocks[prod.id]||{}; var sec=s.sec||0; var sechage=s.sechage||0; var total=sec+sechage;
             var couleur=couleurUrgence(total);
+            var capPaletteCard=capacitePaletteType(prod.id,parametresStock);
             return(
               <div key={prod.id} onClick={()=>setHistoriqueTypeOuvert(prod)} title="Voir l'historique des mouvements" style={{background:"var(--btp-card)",borderRadius:12,padding:12,boxShadow:"0 2px 6px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,cursor:"pointer"}}>
                 <div style={{fontWeight:700,fontSize:12,marginBottom:2}}>{prod.nom}</div>
 <div style={{fontSize:11,color:"#BDC3C7",marginBottom:4}}>{prod.dim}</div>
 <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:2}}>
-<span style={{color:"var(--btp-green)"}}>Mature: <strong>{formatQuantitePalette(sec,parametresStock.capacitePaletteDefaut)}</strong></span>
-<span style={{color:"#E67E22"}}>Sechage: <strong>{formatQuantitePalette(sechage,parametresStock.capacitePaletteDefaut)}</strong></span>
+<span style={{color:"var(--btp-green)"}}>Mature: <strong>{formatQuantitePalette(sec,capPaletteCard)}</strong></span>
+<span style={{color:"#E67E22"}}>Sechage: <strong>{formatQuantitePalette(sechage,capPaletteCard)}</strong></span>
 </div>
-{calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {formatQuantitePalette(calcSechageActif(productions,prod.id),parametresStock.capacitePaletteDefaut)} pas encore matures</div>}
-<div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:2}}>Total: {formatQuantitePalette(total,parametresStock.capacitePaletteDefaut)}</div>
+{calcSechageActif(productions,prod.id)>0&&<div style={{fontSize:10,color:"#B7770D",background:"#FFF3CD",borderRadius:4,padding:"2px 6px",marginBottom:3}}>⏳ {formatQuantitePalette(calcSechageActif(productions,prod.id),capPaletteCard)} pas encore matures</div>}
+<div style={{fontSize:12,fontWeight:700,color:couleur,marginTop:2}}>Total: {formatQuantitePalette(total,capPaletteCard)}</div>
 {(s.historiqueReserve||0) > 0 && <div style={{fontSize:10,color:"var(--btp-text2)",marginTop:2}}>dont {(s.historiqueReserve||0).toLocaleString()} u historique réservées</div>}
               </div>
             );
@@ -8250,6 +8496,7 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
       )}
       {historiqueTypeOuvert && <HistoriqueMouvementsType prod={historiqueTypeOuvert} onClose={() => setHistoriqueTypeOuvert(null)} />}
       {showInventaireManuel && <InventaireManuel stocks={stocks} user={user} userData={userData} onFermer={() => setShowInventaireManuel(false)} />}
+      {showHistoriqueCommandes && <HistoriqueCommandes commandes={commandesHistoriqueStock} onClose={() => setShowHistoriqueCommandes(false)} />}
       {planifLivraisonCmd && (
         <div className="btp-modal-overlay" onClick={()=>setPlanifLivraisonCmd(null)}>
           <div className="btp-modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
@@ -8517,8 +8764,10 @@ function DashboardProduction({ user, userData }) {
     }
   };
   // Point 6 (retours utilisateur) : saisieQte (le total, source unique pour le reste du formulaire)
-  // est deduite automatiquement des palettes + complement — jamais retapee par l'operateur.
-  var capPaletteProd = parametresProd.capacitePaletteDefaut || 100;
+  // est deduite automatiquement des palettes + complement — jamais retapee par l'operateur. La
+  // capacite depend du type SELECTIONNE (point 5, Phase 13) : 54 BTC/palette pour le Bloc Poteaux
+  // 33x22, 100 pour tous les autres — jamais un chiffre global unique.
+  var capPaletteProd = capacitePaletteType(saisieType, parametresProd);
   React.useEffect(function () {
     var nbPal = parseInt(saisiePalettes, 10) || 0;
     var comp = parseInt(saisieComplement, 10) || 0;
@@ -8769,22 +9018,23 @@ function DashboardProduction({ user, userData }) {
             var couleur = couleurUrgence(item.total);
             var pct = Math.min(100, Math.round(item.total/STOCK_CIBLE*100));
             var manque = Math.max(0, STOCK_CIBLE-item.total);
+            var capPaletteItem = capacitePaletteType(item.prod.id, parametresProd);
             return (
               <div key={item.prod.id} style={{background:"var(--btp-card)",borderRadius:12,padding:14,boxShadow:"0 2px 8px rgba(0,0,0,0.08)",borderLeft:"4px solid "+couleur,position:"relative"}}>
                 <div style={{position:"absolute",top:10,right:10,background:couleur,color:"white",borderRadius:16,padding:"2px 8px",fontSize:11,fontWeight:700}}>{"#"+(idx+1)}</div>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:2,paddingRight:40}}>{item.prod.nom}</div>
                 <div style={{fontSize:11,color:"#BDC3C7",marginBottom:6}}>{item.prod.dim}</div>
-                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sec: <strong>{formatQuantitePalette(item.sec,parametresProd.capacitePaletteDefaut)}</strong></div>
-                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sechage: <strong>{formatQuantitePalette(item.sechage,parametresProd.capacitePaletteDefaut)}</strong></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sec: <strong>{formatQuantitePalette(item.sec,capPaletteItem)}</strong></div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>Sechage: <strong>{formatQuantitePalette(item.sechage,capPaletteItem)}</strong></div>
                 <div style={{margin:"6px 0 3px",background:"#EEE",borderRadius:4,height:6}}>
                   <div style={{height:6,borderRadius:4,background:couleur,width:pct+"%"}}></div>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:3}}>
-                  <span style={{fontSize:12,fontWeight:700,color:couleur}}>{formatQuantitePalette(item.total,parametresProd.capacitePaletteDefaut)} / {formatQuantitePalette(STOCK_CIBLE,parametresProd.capacitePaletteDefaut)}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:couleur}}>{formatQuantitePalette(item.total,capPaletteItem)} / {formatQuantitePalette(STOCK_CIBLE,capPaletteItem)}</span>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:10,background:couleur,color:"white"}}>{libelleUrgence(item.total)}</span>
                 </div>
-                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>A produire: <strong style={{color:couleur}}>{formatQuantitePalette(manque,parametresProd.capacitePaletteDefaut)}</strong></div>}
-{(function(){var sa=calcSechageActif(productions,item.prod.id);if(sa>0)return<div style={{fontSize:10,color:"#B7770D",marginTop:2}}>⏳ {formatQuantitePalette(sa,parametresProd.capacitePaletteDefaut)} en sechage actif</div>;return null;})()}
+                {item.total<STOCK_CIBLE&&<div style={{fontSize:11,color:"var(--btp-text2)",marginTop:3}}>A produire: <strong style={{color:couleur}}>{formatQuantitePalette(manque,capPaletteItem)}</strong></div>}
+{(function(){var sa=calcSechageActif(productions,item.prod.id);if(sa>0)return<div style={{fontSize:10,color:"#B7770D",marginTop:2}}>⏳ {formatQuantitePalette(sa,capPaletteItem)} en sechage actif</div>;return null;})()}
               </div>
             );
           })}
@@ -8907,7 +9157,7 @@ return(
 <div key={p.id} style={{background:"var(--btp-card)",borderRadius:10,padding:"10px 16px",marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+(p.phase==="sechage"?"#E67E22":"#27AE60")}}>
               <div>
                 <div style={{fontWeight:600}}>{getProduit(p.type).nom} <span style={{fontSize:12,color:"var(--btp-text2)"}}>({p.phase==="sec"?"Sec":"Sechage"})</span></div>
-                <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?formatQuantitePalette(p.quantite,parametresProd.capacitePaletteDefaut):"-"}</div>
+                <div style={{fontSize:12,color:"var(--btp-text2)"}}>+{p.quantite?formatQuantitePalette(p.quantite,capacitePaletteType(p.type,parametresProd)):"-"}</div>
                 {p.phase==="sechage"&&jrR>0&&<div style={{fontSize:11,color:"#B7770D",marginTop:2}}>⏳ Mature dans {jrR} jour{jrR>1?"s":""}</div>}
                 {p.phase==="sechage"&&jrR===0&&<div style={{fontSize:11,color:"var(--btp-green)",marginTop:2}}>✅ Mature (seche)</div>}
                 {qseLotsParProdId[p.id] && <div style={{marginTop:4}}><button className="btn btn-sm btn-ghost" onClick={()=>setLotOuvert(qseLotsParProdId[p.id])}>🏷️ {qseLotsParProdId[p.id]}</button></div>}
@@ -10687,6 +10937,11 @@ async function planifierLivraison(champs, token, user, userData) {
     datePrevue: champs.datePrevue || null,
     statut: "Planifiee",
     horaireBonSigne: null, horaireDepartEntrepot: null, horaireArriveeChantier: null, horaireDepartChantier: null, horaireArriveeEntrepot: null,
+    // Point 4/5 (retours utilisateur, Phase 13) : double signature obligatoire a l'arrivee chantier —
+    // le chef confirme la reception (en palettes), le livreur confirme avoir livre. Aucun des deux
+    // seul ne suffit : voir la garde dans avancerEtapeLivraison (etape DepartChantier).
+    receptionSigneeChef: false, horaireReceptionChef: null, palettesRecuesChef: null, quantiteRecueChef: null,
+    receptionSigneeLivreur: false, horaireReceptionLivreur: null,
     creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
   });
   journaliserEvenement({ categorie: "Livraisons", action: "Livraison planifiée", acteur: auteur, role: "resp_stock", numBC: champs.numBC || "", chantier: champs.chantierNom || "", details: numeroBL + " — " + (champs.quantite || 0).toLocaleString() + " u " + champs.typeBTC + " → " + champs.livreurNom + (champs.datePrevue ? (" le " + champs.datePrevue) : "") + (champs.adresse ? (" | " + champs.adresse) : "") });
@@ -10708,6 +10963,12 @@ async function avancerEtapeLivraison(livraisonId, etapeCible, user, userData) {
     var idxCible = ETAPES_LIVRAISON.indexOf(etapeCible);
     if (idxActuel >= idxCible) { dejaFait = true; livraisonApres = liv; return; } // deja passee cette etape (idempotence)
     if (idxCible !== idxActuel + 1) throw new Error("Étape invalide : impossible de passer directement de " + libelleStatutLivraison(liv.statut) + " à " + libelleStatutLivraison(etapeCible) + ".");
+    // Point 4/5 : depart du chantier impossible tant que le chef ET le livreur n'ont pas chacun
+    // signe la reception — jamais l'un sans l'autre (le livreur ne peut pas partir sans que le chef
+    // ait reconnu avoir recu, et inversement rien ne se passe sans la confirmation du livreur).
+    if (etapeCible === "DepartChantier" && !(liv.receptionSigneeChef && liv.receptionSigneeLivreur)) {
+      throw new Error("Départ impossible : la réception doit être signée par le chef de chantier ET par le livreur.");
+    }
     var champHoraire = CHAMP_HORAIRE_PAR_ETAPE[etapeCible];
     var upd = { statut: etapeCible };
     upd[champHoraire] = firebase.firestore.FieldValue.serverTimestamp();
@@ -10716,6 +10977,80 @@ async function avancerEtapeLivraison(livraisonId, etapeCible, user, userData) {
   });
   if (!dejaFait) {
     journaliserEvenement({ categorie: "Livraisons", action: libelleStatutLivraison(etapeCible), acteur: auteur, role: "livreur", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "", details: (livraisonApres ? ((livraisonApres.quantite || 0).toLocaleString() + " u " + livraisonApres.typeBTC) : "") });
+  }
+  return livraisonApres;
+}
+
+// Le LIVREUR confirme avoir livre la commande sur place (sa moitie du "bon de reception" mutuel,
+// point 4/5). N'avance pas le statut lui-meme — c'est avancerEtapeLivraison("DepartChantier") qui
+// exige ensuite les deux signatures pour debloquer le depart. Possible seulement une fois arrive.
+async function signerReceptionLivreur(livraisonId, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(livraisonId);
+  var deja = false, livraisonApres = null;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Livraison introuvable.");
+    var liv = snap.data();
+    if (ETAPES_LIVRAISON.indexOf(liv.statut) < ETAPES_LIVRAISON.indexOf("ArriveeChantier")) {
+      throw new Error("Impossible de confirmer la livraison avant l'arrivée sur le chantier.");
+    }
+    if (liv.receptionSigneeLivreur) { deja = true; livraisonApres = liv; return; } // idempotence
+    var upd = { receptionSigneeLivreur: true, horaireReceptionLivreur: firebase.firestore.FieldValue.serverTimestamp() };
+    tx.update(ref, upd);
+    livraisonApres = Object.assign({}, liv, upd);
+  });
+  if (!deja) {
+    journaliserEvenement({ categorie: "Livraisons", action: "✍️ Livraison confirmée par le livreur", acteur: auteur, role: "livreur", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "" });
+  }
+  return livraisonApres;
+}
+
+// Le CHEF DE CHANTIER confirme la reception (l'autre moitie du bon mutuel), en PALETTES (point 6 —
+// jamais un comptage unite par unite). Met a jour quantiteConfirmeeChef sur la commande liee, EXACTEMENT
+// comme l'ancien flux manuel (validerReception) pour ne rien casser cote comptabilite/finance chantier.
+// Un ecart (moins recu que livre) cree automatiquement une non-conformite visible partout (Phase 12).
+async function signerReceptionChef(livraisonId, palettesRecues, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(livraisonId);
+  var deja = false, livraisonApres = null, quantiteRecue = 0;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Livraison introuvable.");
+    var liv = snap.data();
+    if (ETAPES_LIVRAISON.indexOf(liv.statut) < ETAPES_LIVRAISON.indexOf("ArriveeChantier")) {
+      throw new Error("Impossible de confirmer la réception avant l'arrivée du livreur sur le chantier.");
+    }
+    if (liv.receptionSigneeChef) { deja = true; livraisonApres = liv; return; } // idempotence
+    var capPalette = capacitePaletteType(liv.typeBTC);
+    quantiteRecue = Math.max(0, palettesRecues) * capPalette;
+    var upd = { receptionSigneeChef: true, horaireReceptionChef: firebase.firestore.FieldValue.serverTimestamp(), palettesRecuesChef: palettesRecues, quantiteRecueChef: quantiteRecue };
+    tx.update(ref, upd);
+    if (liv.commandeId) {
+      var cmdRef = db.collection("commandes").doc(liv.commandeId);
+      var cmdSnap = await tx.get(cmdRef);
+      if (cmdSnap.exists) {
+        var cmd = cmdSnap.data();
+        var nouveauTotal = Math.min((cmd.quantiteConfirmeeChef || 0) + quantiteRecue, cmd.quantite || quantiteRecue);
+        var newStatus = (nouveauTotal >= (cmd.quantite || 0)) ? "Livree" : cmd.status;
+        tx.update(cmdRef, { quantiteConfirmeeChef: nouveauTotal, chefConfirmeAt: firebase.firestore.FieldValue.serverTimestamp(), status: newStatus });
+      }
+    }
+    livraisonApres = Object.assign({}, liv, upd);
+  });
+  if (!deja) {
+    journaliserEvenement({ categorie: "Livraisons", action: "✍️ Réception confirmée par le chef de chantier", acteur: auteur, role: "chef_chantier", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "", details: palettesRecues + " palette(s) = " + quantiteRecue.toLocaleString() + " u" });
+    if (livraisonApres && quantiteRecue < (livraisonApres.quantite || 0)) {
+      var manque = livraisonApres.quantite - quantiteRecue;
+      try {
+        await qseAjouterNC({
+          numeroLot: "",
+          description: "Réception inférieure à la livraison annoncée — " + manque.toLocaleString() + " u manquantes sur " + (livraisonApres.numeroBL || livraisonId) + " (" + getProduit(livraisonApres.typeBTC).nom + ", chantier " + (livraisonApres.chantierNom || "-") + ")",
+          quantiteConcernee: manque,
+          responsable: auteur
+        }, user, userData);
+      } catch (eNc) {}
+    }
   }
   return livraisonApres;
 }
@@ -12358,6 +12693,14 @@ function IndicateurConnexion() {
 function AppRacine() {
   const maj = useMiseAJourServiceWorker();
   const install = useInvitationInstallationPWA();
+  // Point 1 (retours utilisateur, Phase 13) : bouton manuel toujours visible (desktop et tablette),
+  // independant de la detection automatique — l'utilisateur peut forcer une mise a jour a tout moment.
+  const [verifEnCours, setVerifEnCours] = React.useState(false);
+  const surClicActualiser = async function () {
+    if (verifEnCours) return;
+    setVerifEnCours(true);
+    try { await maj.verifierMaintenant(); } finally { setTimeout(function () { setVerifEnCours(false); }, 1500); }
+  };
   return (
     <ConnexionProvider>
       {maj.disponible && (
@@ -12367,6 +12710,10 @@ function AppRacine() {
         </div>
       )}
       <IndicateurConnexion />
+      <button onClick={surClicActualiser} disabled={verifEnCours} title="Actualiser l'application vers la dernière version"
+        style={{ position: "fixed", right: 12, bottom: 12, zIndex: 1500, background: "#243447", color: "white", border: "1px solid rgba(255,255,255,.2)", borderRadius: 24, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: verifEnCours ? "default" : "pointer", boxShadow: "0 2px 10px rgba(0,0,0,.3)", opacity: verifEnCours ? 0.7 : 1 }}>
+        {verifEnCours ? "⏳ Vérification…" : "🔄 Actualiser l'app"}
+      </button>
       <App />
       {install.proposer && (
         <div className="btp-bandeau-install">
