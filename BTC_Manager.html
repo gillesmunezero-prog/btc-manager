@@ -136,6 +136,17 @@ input,select,textarea,button{font-family:inherit;}
   border-bottom-color:var(--btp-orange);
   background:rgba(232,96,28,.08);
 }
+/* Point 1 (retours utilisateur, Phase 14) : avec l'ancien overflow-x:auto seul, rien n'indiquait a
+   l'oeil qu'il y avait d'autres onglets caches a droite (scrollbar volontairement invisible). Des
+   fleches de defilement + un degrade sur les bords rendent la barre explicitement "deroulable". */
+.btp-nav-wrap{position:relative;}
+.btp-nav-scroll-btn{
+  position:absolute;top:0;bottom:0;width:34px;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;font-weight:800;color:white;z-index:5;
+}
+.btp-nav-scroll-left{left:0;background:linear-gradient(90deg, var(--btp-navy) 45%, transparent);}
+.btp-nav-scroll-right{right:0;background:linear-gradient(270deg, var(--btp-navy) 45%, transparent);}
 
 /* CARDS */
 .btp-card{
@@ -4851,6 +4862,44 @@ function PilotageDirection({ user, userData, stocks, commandes, productions, lot
   );
 }
 
+// Point 1 (retours utilisateur, Phase 14) : barre d'onglets avec fleches de defilement visibles des
+// qu'il y a plus d'onglets que de place (ex. Direction, 14 onglets) — remplace le simple overflow-x
+// invisible qui laissait des fonctionnalites "cachees" a droite sans aucun indice a l'ecran.
+function NavDefilante({ items, actif, onSelect }) {
+  const scrollRef = React.useRef(null);
+  const [peutGauche, setPeutGauche] = React.useState(false);
+  const [peutDroite, setPeutDroite] = React.useState(false);
+  const verifierScroll = function () {
+    var el = scrollRef.current; if (!el) return;
+    setPeutGauche(el.scrollLeft > 4);
+    setPeutDroite(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  };
+  React.useEffect(function () {
+    verifierScroll();
+    var el = scrollRef.current; if (!el) return function () {};
+    el.addEventListener("scroll", verifierScroll, { passive: true });
+    window.addEventListener("resize", verifierScroll);
+    return function () { el.removeEventListener("scroll", verifierScroll); window.removeEventListener("resize", verifierScroll); };
+  }, [items.length]);
+  var defiler = function (sens) { var el = scrollRef.current; if (!el) return; el.scrollBy({ left: sens * 220, behavior: "smooth" }); };
+  return (
+    <div className="btp-nav-wrap">
+      <div className="btp-nav" ref={scrollRef}>
+        {items.map(function (it) {
+          return (
+            <button key={it.key} className={"btp-nav-btn " + (actif === it.key ? "active" : "")} onClick={() => onSelect(it.key)}>
+              {it.icon} {it.label}
+              {it.pulse && <span className="pulse" style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: it.pulseColor || "#F39C12", marginLeft: 2 }}></span>}
+            </button>
+          );
+        })}
+      </div>
+      {peutGauche && <button type="button" className="btp-nav-scroll-btn btp-nav-scroll-left" onClick={() => defiler(-1)} aria-label="Défiler à gauche">‹</button>}
+      {peutDroite && <button type="button" className="btp-nav-scroll-btn btp-nav-scroll-right" onClick={() => defiler(1)} aria-label="Défiler à droite">›</button>}
+    </div>
+  );
+}
+
 function DashboardDirection({ user, userData }) {
   const [tab, setTab] = useState("stock");
   const [modeDemo, setModeDemo] = React.useState(true);
@@ -5170,7 +5219,9 @@ const [showPwdUid, setShowPwdUid] = useState(null);
   }
 
   const validerCmd = async (id) => {
-    await db.collection("commandes").doc(id).update({ status:"Validee", validePar: userData.nom||user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp() });
+    // Point 3 (retours utilisateur, Phase 14) : vueParStock:false declenche la notification clignotante
+    // "commande validee, prete a preparer" cote Stock (DashboardStock) tant qu'elle n'a pas ete vue.
+    await db.collection("commandes").doc(id).update({ status:"Validee", validePar: userData.nom||user.email, valideAt: firebase.firestore.FieldValue.serverTimestamp(), vueParStock: false });
     var cmdObjVal = commandes.find(function(c){return c.id===id;}) || {};
 
     try { await db.collection("evenements").add({ numBC: cmdObjVal.numBC||id, chantier: cmdObjVal.chantierNom||"", action: "Commande validée par Direction", acteur: userData.nom||user.email, role: "direction", details: "N°"+(cmdObjVal.numBC||id)+" | Qté: "+(cmdObjVal.quantite||0)+" BTC | Chantier: "+(cmdObjVal.chantierNom||""), statut: "Validée - En attente livraison", timestamp: firebase.firestore.FieldValue.serverTimestamp() }); } catch(e) {}
@@ -5325,13 +5376,15 @@ const [showPwdUid, setShowPwdUid] = useState(null);
       )}
 
       {/* NAV TABS */}
-      <div className="btp-nav">
-        {[
+      <NavDefilante
+        actif={tab}
+        onSelect={setTab}
+        items={[
           {key:"pilotage",icon:"🎛️",label:"Pilotage"},
           {key:"stock",icon:"📦",label:"Stock"},
           {key:"matieres",icon:"🧱",label:"Matières 1ères"},
           {key:"production",icon:"⚙️",label:"Production"},
-          {key:"commandes",icon:"📋",label:"Commandes"},
+          {key:"commandes",icon:"📋",label:"Commandes", pulse: cmdAttente.length>0},
           {key:"finances",icon:"💰",label:"Finances"},
           {key:"catalogue",icon:"🏷️",label:"Catalogue"},
           {key:"chantiers",icon:"🏗️",label:"Chantiers"},
@@ -5341,14 +5394,8 @@ const [showPwdUid, setShowPwdUid] = useState(null);
           {key:"historique",icon:"🕐",label:"Historique"},
           {key:"comptabilite",icon:"💼",label:"Comptabilité"},
           {key:"qse",icon:"✅",label:"QSE"},
-        ].map(({key,icon,label}) => (
-          <button key={key} 
-            className={"btp-nav-btn " + (tab===key?"active":"")}
-            onClick={()=>setTab(key)}>
-            {icon} {label}
-          </button>
-        ))}
-      </div>
+        ]}
+      />
 
       {/* CONTENT */}
       <div className="btp-content">
@@ -6113,6 +6160,9 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
     .sort(function (a, b) { return qseTsMs(b.dateCreation) - qseTsMs(a.dateCreation); });
   var livraisonAConfirmerChef = livraisonsChef.find(function (l) { return l.statut === "ArriveeChantier" && !l.receptionSigneeChef; });
   const [palettesRecuesInput, setPalettesRecuesInput] = React.useState({});
+  // Point 7 (retours utilisateur, Phase 14) : quantite NC declaree separement du "manque" — des BTC
+  // effectivement livres mais defectueux, a retourner physiquement a l'entrepot (bon de retour).
+  const [palettesNCInput, setPalettesNCInput] = React.useState({});
   const [msgReceptionLivraison, setMsgReceptionLivraison] = React.useState({});
   const [receptionLivraisonEnCours, setReceptionLivraisonEnCours] = React.useState(null);
   var confirmerReceptionLivraison = async function (liv) {
@@ -6120,11 +6170,13 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
     var capPaletteLiv = capacitePaletteType(liv.typeBTC);
     var defaut = Math.round((liv.quantite || 0) / capPaletteLiv);
     var palettes = parseInt(palettesRecuesInput[liv.id] != null ? palettesRecuesInput[liv.id] : defaut, 10);
+    var palettesNC = parseInt(palettesNCInput[liv.id] || "0", 10) || 0;
     if (!(palettes >= 0)) { setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "Nombre de palettes invalide." }); }); return; }
+    if (palettesNC < 0) { setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "Nombre de palettes non conformes invalide." }); }); return; }
     setReceptionLivraisonEnCours(liv.id);
     try {
-      await signerReceptionChef(liv.id, palettes, user, userData);
-      setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "✓ Réception confirmée (" + palettes + " palette(s))." }); });
+      await signerReceptionChef(liv.id, palettes, palettesNC, user, userData);
+      setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "✓ Réception confirmée (" + palettes + " palette(s))." + (palettesNC > 0 ? " ⚠️ N'oubliez pas de faire charger les " + palettesNC + " palette(s) non conforme(s) dans le camion au retour à l'entrepôt." : "") }); });
     } catch (e) {
       setMsgReceptionLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "❌ " + e.message }); });
     } finally {
@@ -6374,6 +6426,13 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                             <input type="number" min="0" value={palettesRecuesInput[liv.id]!=null?palettesRecuesInput[liv.id]:defaut}
                               onChange={e=>setPalettesRecuesInput(Object.assign({},palettesRecuesInput,{[liv.id]:e.target.value}))}
                               style={{width:100,padding:"6px 10px",border:"1px solid var(--btp-border)",borderRadius:6,fontSize:14,marginBottom:8}} />
+                            {/* Point 7 (retours utilisateur, Phase 14) : distinct du manque — des BTC bien livres mais
+                                defectueux, que le livreur devra rapporter a l'entrepot (bon de retour). */}
+                            <label style={{fontSize:12,color:"var(--btp-text2)",display:"block",marginBottom:4}}>Dont palettes non conformes à retourner à l'entrepôt (optionnel)</label>
+                            <input type="number" min="0" value={palettesNCInput[liv.id]!=null?palettesNCInput[liv.id]:""}
+                              placeholder="0"
+                              onChange={e=>setPalettesNCInput(Object.assign({},palettesNCInput,{[liv.id]:e.target.value}))}
+                              style={{width:100,padding:"6px 10px",border:"1px solid var(--btp-border)",borderRadius:6,fontSize:14,marginBottom:8}} />
                             {msgReceptionLivraison[liv.id] && <div style={{fontSize:12,marginBottom:8,color:msgReceptionLivraison[liv.id].indexOf("✓")===0?"#1E8449":"#C0392B",fontWeight:600}}>{msgReceptionLivraison[liv.id]}</div>}
                             <button onClick={()=>confirmerReceptionLivraison(liv)} disabled={receptionLivraisonEnCours===liv.id} style={{padding:"8px 16px",background:"#27AE60",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
                               {receptionLivraisonEnCours===liv.id?"Enregistrement…":"✍️ Confirmer la réception"}
@@ -6382,6 +6441,11 @@ function FicheChantierChef({ chantier, commandes, onClose, user, userData }) {
                         )}
                         {liv.statut==="ArriveeChantier"&&liv.receptionSigneeChef&&!liv.receptionSigneeLivreur && (
                           <div style={{marginTop:10,fontSize:12,color:"#F39C12",fontWeight:600}}>✅ Vous avez signé — en attente de la confirmation du livreur avant son départ.</div>
+                        )}
+                        {liv.ncARetourner>0 && !liv.ncRetourneeCamion && (
+                          <div style={{marginTop:10,padding:"8px 12px",background:"rgba(231,76,60,.12)",border:"1px solid rgba(231,76,60,.4)",borderRadius:8,fontSize:12,color:"#C0392B",fontWeight:600}}>
+                            ⚠️ {liv.ncARetourner.toLocaleString()} u non conformes à faire charger dans le camion avant son départ, pour retour à l'entrepôt.
+                          </div>
                         )}
                       </div>
                     );
@@ -7161,6 +7225,22 @@ function DashboardLivreur({ user, userData }) {
     }
   };
 
+  // Point 7 (retours utilisateur, Phase 14) : le livreur confirme avoir charge les BTC non conformes
+  // dans le camion pour le retour — sans ce clic, "Arrivée entrepôt" reste bloquee.
+  var confirmerChargementRetourNC = async function (liv) {
+    if (enCoursId) return;
+    if (!enLigne) { setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "🚫 Connexion requise." }); }); return; }
+    setEnCoursId(liv.id);
+    try {
+      await livreurConfirmerChargementRetourNC(liv.id, user, userData);
+      setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "" }); });
+    } catch (e) {
+      setMsgParLivraison(function (p) { return Object.assign({}, p, { [liv.id]: "❌ " + e.message }); });
+    } finally {
+      setEnCoursId(null);
+    }
+  };
+
   var formatHeure = function (ts) {
     if (!ts) return null;
     var ms = qseTsMs(ts);
@@ -7176,6 +7256,12 @@ function DashboardLivreur({ user, userData }) {
     // Point 4/5 : "Départ chantier" est gele tant que les DEUX signatures de reception (chef + livreur)
     // ne sont pas faites — le livreur doit d'abord confirmer sa propre moitie ici.
     var attenteReception = etapeSuivante === "DepartChantier" && !(liv.receptionSigneeChef && liv.receptionSigneeLivreur);
+    // Point 5 (retours utilisateur, Phase 14) : "Départ entrepôt" est gele tant que le Stock n'a pas
+    // ressaisi de son cote le code communique par le livreur a la signature du bon.
+    var attenteCodeDepart = etapeSuivante === "DepartEntrepot" && !liv.stockConfirmeDepart;
+    // Point 7 (retours utilisateur, Phase 14) : le chef a declare des BTC non conformes a la reception —
+    // ils doivent etre charges dans le camion avant que la livraison ne puisse etre cloturee.
+    var attenteChargementRetourNC = liv.ncARetourner > 0 && !liv.ncRetourneeCamion;
     return (
       <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginBottom: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)", borderLeft: "4px solid " + (nonSignee ? "#F39C12" : "#117864") }}>
         {liv.numeroBL && <div style={{ fontSize: 11, color: "var(--btp-text2)", fontFamily: "monospace", marginBottom: 4 }}>Bon de livraison {liv.numeroBL}</div>}
@@ -7214,7 +7300,22 @@ function DashboardLivreur({ user, userData }) {
             ⏳ En attente de la confirmation du chef de chantier — vous ne pouvez pas encore repartir.
           </div>
         )}
-        {!attenteReception && etapeSuivante && (
+        {attenteCodeDepart && (
+          <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(155,89,182,.12)", border: "2px solid #9B59B6", borderRadius: 8, fontSize: 13, textAlign: "center" }}>
+            <div style={{ fontWeight: 700, color: "#6C3483", marginBottom: 4 }}>🔑 Donnez ce code au responsable Stock pour pouvoir partir :</div>
+            <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: 4, color: "#6C3483" }}>{liv.codeDepart}</div>
+          </div>
+        )}
+        {attenteChargementRetourNC && (
+          <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(231,76,60,.12)", border: "2px solid #E74C3C", borderRadius: 8, fontSize: 13 }}>
+            <div style={{ fontWeight: 700, color: "#C0392B", marginBottom: 6 }}>⚠️ {(liv.ncARetourner || 0).toLocaleString()} u non conformes à charger dans le camion pour le retour à l'entrepôt.</div>
+            <button className="btn btn-sm btn-full" style={{ background: "#C0392B", color: "white", fontWeight: 700 }}
+              disabled={enCoursId === liv.id || !enLigne} onClick={() => confirmerChargementRetourNC(liv)}>
+              {enCoursId === liv.id ? "Enregistrement…" : "📦 J'ai chargé le retour non conforme"}
+            </button>
+          </div>
+        )}
+        {!attenteReception && !attenteCodeDepart && !(attenteChargementRetourNC && etapeSuivante === "Terminee") && etapeSuivante && (
           <button className="btn btn-lg btn-full" style={{ marginTop: 12, background: nonSignee ? "#F39C12" : "#117864", color: "white", fontWeight: 800 }}
             disabled={enCoursId === liv.id || !enLigne} onClick={() => avancer(liv, etapeSuivante)}>
             {enCoursId === liv.id ? "Enregistrement…" : (!enLigne ? "🚫 Hors connexion" : libelleStatutLivraison(etapeSuivante))}
@@ -7843,6 +7944,9 @@ function DashboardStock({ user, userData }) {
     var resteCmd2 = Math.max(0, (cmd.quantite || 0) - (cmd.quantiteLivree || 0));
     setFormPlanifLivraison({ livreurUid: "", quantite: String(resteCmd2), datePrevue: "", adresse: (chantierCmd && chantierCmd.adresse) || "" });
     setPlanifLivraisonCmd(cmd); setMsgPlanifLivraison("");
+    // Point 3 (retours utilisateur, Phase 14) : le Stock qui commence a preparer une livraison a
+    // implicitement "vu" la validation Direction — coupe la notification clignotante correspondante.
+    if (cmd.vueParStock === false) marquerCommandeVue(cmd.id);
   };
   var validerPlanifLivraison = async function () {
     if (planifLivraisonEnCours) return;
@@ -7867,6 +7971,42 @@ function DashboardStock({ user, userData }) {
     } catch (e) {
       setPlanifLivraisonEnCours(false);
       setMsgPlanifLivraison("❌ Échec — " + e.message);
+    }
+  };
+  // Point 5 (retours utilisateur, Phase 14) : le responsable Stock ressaisit le code a 4 chiffres que
+  // le livreur lui communique de vive voix a la signature du bon — sans ce code, "Départ entrepôt"
+  // reste inaccessible cote livreur (voir avancerEtapeLivraison).
+  const [codeDepartInput, setCodeDepartInput] = React.useState({}); // livraisonId -> code saisi
+  const [msgCodeDepart, setMsgCodeDepart] = React.useState({}); // livraisonId -> message
+  const [codeDepartEnCours, setCodeDepartEnCours] = React.useState(null);
+  var confirmerCodeDepart = async function (livId) {
+    if (codeDepartEnCours) return;
+    if (!enLigne) { setMsgCodeDepart(function (p) { return Object.assign({}, p, { [livId]: "🚫 Connexion requise." }); }); return; }
+    setCodeDepartEnCours(livId);
+    try {
+      await stockConfirmerDepart(livId, codeDepartInput[livId], user, userData);
+      setMsgCodeDepart(function (p) { return Object.assign({}, p, { [livId]: "✓ Départ confirmé." }); });
+    } catch (e) {
+      setMsgCodeDepart(function (p) { return Object.assign({}, p, { [livId]: "❌ " + e.message }); });
+    } finally {
+      setCodeDepartEnCours(null);
+    }
+  };
+  // Point 7 (retours utilisateur, Phase 14) : reception physique du retour NC a l'entrepot —
+  // comptabilise reellement en perte (collection "pertes"), meme principe que l'ancien flux manuel.
+  const [retourNCEnCours, setRetourNCEnCours] = React.useState(null);
+  const [msgRetourNC, setMsgRetourNC] = React.useState({});
+  var confirmerReceptionRetourNC = async function (livId) {
+    if (retourNCEnCours) return;
+    if (!enLigne) { setMsgRetourNC(function (p) { return Object.assign({}, p, { [livId]: "🚫 Connexion requise." }); }); return; }
+    setRetourNCEnCours(livId);
+    try {
+      await stockReceptionnerRetourNC(livId, user, userData);
+      setMsgRetourNC(function (p) { return Object.assign({}, p, { [livId]: "✓ Comptabilisé en perte." }); });
+    } catch (e) {
+      setMsgRetourNC(function (p) { return Object.assign({}, p, { [livId]: "❌ " + e.message }); });
+    } finally {
+      setRetourNCEnCours(null);
     }
   };
   const [scanVerifPourCmd, setScanVerifPourCmd] = React.useState(null); // cmdId en cours de verification
@@ -7992,6 +8132,31 @@ function DashboardStock({ user, userData }) {
   };
   var prioriteDonneesStock = { stocks: stocks, commandes: commandes, maintenant: Date.now() };
   var compteurPrioritesStock = useCompteurPriorites(prioriteDonneesStock, "resp_stock");
+
+  // Point 3 (retours utilisateur, Phase 14) : commandes tout juste validees par la Direction, pas
+  // encore "vues" par le Stock — vueParStock:false est pose au moment de la validation (DashboardDirection).
+  var commandesNouvellementValidees = commandes.filter(function (c) { return c.vueParStock === false; });
+  var marquerCommandeVue = async function (cmdId) {
+    try { await db.collection("commandes").doc(cmdId).update({ vueParStock: true }); } catch (e) {}
+  };
+
+  // Point 4 (retours utilisateur, Phase 14) : feuille de route du jour (derivee des donnees deja
+  // chargees, aucun nouvel ecouteur permanent).
+  var ajdISO = React.useMemo(function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }, []);
+  var estAujourdhuiTs = function (ts) {
+    var ms = qseTsMs(ts); if (!ms) return false;
+    var d = new Date(ms); var n = new Date();
+    return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  };
+  var livraisonsAujourdhui = livraisonsStock.filter(function (l) { return l.datePrevue === ajdISO && l.statut !== "Terminee"; });
+  // Point 5 (retours utilisateur, Phase 14) : livraisons dont le livreur a signe le bon mais qui
+  // attendent encore que le Stock ressaisisse le code de confirmation avant de pouvoir partir.
+  var livraisonsEnAttenteCodeDepart = livraisonsStock.filter(function (l) { return l.horaireBonSigne && !l.stockConfirmeDepart; });
+  // Point 7 (retours utilisateur, Phase 14) : retours NC charges par le livreur, a receptionner
+  // physiquement a l'entrepot pour etre comptabilises reellement en perte.
+  var livraisonsRetourNCAReceptionner = livraisonsStock.filter(function (l) { return l.ncARetourner > 0 && l.ncRetourneeCamion && !l.ncRetourneeEntrepot; });
+  var commandesAPreparerAujourdhui = commandes.filter(function (c) { return (c.quantiteLivree || 0) < (c.quantite || 0); });
+  var commandesRecuesAujourdhui = commandesHistoriqueStock.filter(function (c) { return estAujourdhuiTs(c.timestamp); });
 
   // Charge les reservations d'une commande precise (requete CIBLEE, pas d'ecouteur permanent sur
   // tout le grand livre — discipline de performance, point 34). Regenere un token de livraison
@@ -8217,8 +8382,11 @@ function DashboardStock({ user, userData }) {
           {compteurPrioritesStock > 0 && <span className="btp-badge-compteur">{compteurPrioritesStock}</span>}
         </div>
 
+        {/* Point 3 (retours utilisateur, Phase 14) : les deux bandeaux clignotent explicitement (classe
+            "pulse") — une commande en attente de validation Direction, et une commande tout juste
+            validée qui peut maintenant etre preparee, tant qu'elle n'a pas ete marquee "vue". */}
         {commandesEnAttenteStock.length > 0 && (
-          <div style={{ background: "rgba(93,173,226,.12)", border: "1px solid rgba(93,173,226,.4)", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+          <div className="pulse" style={{ background: "rgba(93,173,226,.12)", border: "2px solid #5DADE2", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
             <div style={{ fontWeight: 700, fontSize: 13, color: "#2471A3" }}>🔔 {commandesEnAttenteStock.length} commande{commandesEnAttenteStock.length > 1 ? "s" : ""} en attente de validation Direction</div>
             <div style={{ fontSize: 12, color: "var(--btp-text2)", marginTop: 4 }}>Ces commandes ne peuvent pas être livrées tant que la Direction ne les a pas validées — pensez à relancer si besoin.</div>
             {commandesEnAttenteStock.slice(0, 5).map(function (c) {
@@ -8226,7 +8394,90 @@ function DashboardStock({ user, userData }) {
             })}
           </div>
         )}
+        {commandesNouvellementValidees.length > 0 && (
+          <div className="pulse" style={{ background: "rgba(39,174,96,.12)", border: "2px solid #27AE60", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#1E8449" }}>✅ {commandesNouvellementValidees.length} commande{commandesNouvellementValidees.length > 1 ? "s" : ""} validée{commandesNouvellementValidees.length > 1 ? "s" : ""} par la Direction — prête{commandesNouvellementValidees.length > 1 ? "s" : ""} à préparer</div>
+            {commandesNouvellementValidees.slice(0, 5).map(function (c) {
+              return (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "var(--btp-text2)", marginTop: 3, gap: 8 }}>
+                  <span>{c.numBC || c.id} — {getProduit(c.type).nom} — {c.chantierNom || "-"}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => marquerCommandeVue(c.id)}>✓ Vu</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Point 5 (retours utilisateur, Phase 14) : le livreur a signe le bon et attend en face de
+            vous — vous devez ressaisir le code qu'il vous communique pour debloquer son depart. */}
+        {livraisonsEnAttenteCodeDepart.length > 0 && (
+          <div className="pulse" style={{ background: "rgba(155,89,182,.12)", border: "2px solid #9B59B6", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#6C3483", marginBottom: 6 }}>🔑 {livraisonsEnAttenteCodeDepart.length} livreur{livraisonsEnAttenteCodeDepart.length > 1 ? "s" : ""} en attente de confirmation de départ</div>
+            {livraisonsEnAttenteCodeDepart.map(function (l) {
+              return (
+                <div key={l.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 12, marginTop: 6 }}>
+                  <span>{l.numeroBL} — {l.livreurNom} → {l.chantierNom || "-"}</span>
+                  <input type="text" inputMode="numeric" maxLength={4} placeholder="Code à 4 chiffres" value={codeDepartInput[l.id] || ""}
+                    onChange={e => setCodeDepartInput(Object.assign({}, codeDepartInput, { [l.id]: e.target.value }))}
+                    style={{ width: 110, padding: "6px 10px", border: "1px solid var(--btp-border)", borderRadius: 6, fontSize: 14, textAlign: "center" }} />
+                  <button className="btn btn-sm" style={{ background: "#6C3483", color: "white" }} disabled={codeDepartEnCours === l.id} onClick={() => confirmerCodeDepart(l.id)}>
+                    {codeDepartEnCours === l.id ? "…" : "Confirmer"}
+                  </button>
+                  {msgCodeDepart[l.id] && <span style={{ fontWeight: 600, color: msgCodeDepart[l.id].indexOf("✓") === 0 ? "#1E8449" : "#C0392B" }}>{msgCodeDepart[l.id]}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Point 7 (retours utilisateur, Phase 14) : le livreur a rapporte des BTC non conformes a
+            l'entrepot — a receptionner et comptabiliser reellement en perte. */}
+        {livraisonsRetourNCAReceptionner.length > 0 && (
+          <div className="pulse" style={{ background: "rgba(231,76,60,.12)", border: "2px solid #E74C3C", borderRadius: 10, padding: "10px 14px", marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#C0392B", marginBottom: 6 }}>📦 {livraisonsRetourNCAReceptionner.length} retour{livraisonsRetourNCAReceptionner.length > 1 ? "s" : ""} non conforme{livraisonsRetourNCAReceptionner.length > 1 ? "s" : ""} à réceptionner</div>
+            {livraisonsRetourNCAReceptionner.map(function (l) {
+              return (
+                <div key={l.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 12, marginTop: 6 }}>
+                  <span>{l.numeroBL} — {(l.ncARetourner || 0).toLocaleString()} u {getProduit(l.typeBTC).nom} — retour chantier {l.chantierNom || "-"}</span>
+                  <button className="btn btn-sm" style={{ background: "#C0392B", color: "white" }} disabled={retourNCEnCours === l.id} onClick={() => confirmerReceptionRetourNC(l.id)}>
+                    {retourNCEnCours === l.id ? "…" : "✅ Reçu — comptabiliser en perte"}
+                  </button>
+                  {msgRetourNC[l.id] && <span style={{ fontWeight: 600, color: msgRetourNC[l.id].indexOf("✓") === 0 ? "#1E8449" : "#C0392B" }}>{msgRetourNC[l.id]}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <BanniereNCOuvertes ncs={ncOuvertesStock} />
+
+        {/* Point 4 (retours utilisateur, Phase 14) : feuille de route du jour — Stock doit savoir d'un
+            coup d'oeil quoi preparer, pour quel livreur, et ce qui a ete commande aujourd'hui, sans
+            avoir a reconstituer l'information depuis les listes plus bas. */}
+        <div style={{ background: "var(--btp-card)", borderRadius: 12, padding: 16, marginBottom: 20, border: "1px solid var(--btp-border)" }}>
+          <h3 style={{ marginBottom: 12, color: "var(--btp-blue)" }}>📅 Aujourd'hui — feuille de route</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🚚 Livraisons prévues aujourd'hui ({livraisonsAujourdhui.length})</div>
+              {livraisonsAujourdhui.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucune livraison prévue aujourd'hui.</p> :
+                livraisonsAujourdhui.map(function (l) {
+                  return <div key={l.id} style={{ fontSize: 12, marginBottom: 4 }}>{l.numeroBL} — {l.livreurNom} → {l.chantierNom} <span style={{ color: "var(--btp-text2)" }}>({libelleStatutLivraison(l.statut)})</span></div>;
+                })}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>📦 Commandes à préparer ({commandesAPreparerAujourdhui.length})</div>
+              {commandesAPreparerAujourdhui.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Rien en attente de préparation.</p> :
+                commandesAPreparerAujourdhui.slice(0, 6).map(function (c) {
+                  return <div key={c.id} style={{ fontSize: 12, marginBottom: 4 }}>{c.numBC || c.id} — {getProduit(c.type).nom} → {c.chantierNom || "-"}{c.dateBesoin ? (" · besoin le " + c.dateBesoin) : ""}</div>;
+                })}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🆕 Commandes reçues aujourd'hui ({commandesRecuesAujourdhui.length})</div>
+              {commandesRecuesAujourdhui.length === 0 ? <p style={{ fontSize: 12, color: "var(--btp-text2)" }}>Aucune commande passée aujourd'hui.</p> :
+                commandesRecuesAujourdhui.slice(0, 6).map(function (c) {
+                  return <div key={c.id} style={{ fontSize: 12, marginBottom: 4 }}>{c.numBC || c.id} — {c.chefNom || "-"} — {getProduit(c.type).nom}</div>;
+                })}
+            </div>
+          </div>
+        </div>
+
         <h3 style={{marginBottom:10,color:"var(--btp-orange)"}}>Mon travail</h3>
         <div style={{ marginBottom: 24 }}>
           <ModeAujourdhui donnees={prioriteDonneesStock} ouvrirObjet={ouvrirObjetStock} role="resp_stock" />
@@ -8502,6 +8753,10 @@ return <div style={{marginTop:6,padding:"6px 8px",background:"#FFF3CD",border:"1
           <div className="btp-modal" style={{maxWidth:440}} onClick={e=>e.stopPropagation()}>
             <div className="btp-modal-title" style={{marginBottom:4}}>🚚 Planifier une livraison</div>
             <p style={{fontSize:12,color:"var(--btp-text2)",marginBottom:14}}>{getProduit(planifLivraisonCmd.type).nom} — {planifLivraisonCmd.chantierNom||planifLivraisonCmd.client||"-"}</p>
+            {/* Point 8/9 (retours utilisateur, Phase 14) : ce clic EST la validation de la preparation —
+                il enregistre le bon de commande et genere le bon de livraison ; le livreur ne pourra
+                signer ce dernier qu'une fois ce formulaire envoye, jamais avant. */}
+            <p style={{fontSize:11,color:"var(--btp-text2)",background:"var(--btp-card2)",padding:"6px 10px",borderRadius:6,marginBottom:12}}>ℹ️ En validant, vous confirmez que la commande est préparée : le bon de livraison est généré et le livreur pourra le signer.</p>
             <label className="btp-label">Livreur</label>
             <select className="btp-select" value={formPlanifLivraison.livreurUid} onChange={e=>setFormPlanifLivraison(Object.assign({},formPlanifLivraison,{livreurUid:e.target.value}))} style={{marginBottom:10}}>
               <option value="">-- Choisir --</option>
@@ -10942,6 +11197,16 @@ async function planifierLivraison(champs, token, user, userData) {
     // seul ne suffit : voir la garde dans avancerEtapeLivraison (etape DepartChantier).
     receptionSigneeChef: false, horaireReceptionChef: null, palettesRecuesChef: null, quantiteRecueChef: null,
     receptionSigneeLivreur: false, horaireReceptionLivreur: null,
+    // Point 8/9 (retours utilisateur, Phase 14) : ce document N'EXISTE QUE si le Stock a valide la
+    // preparation — c'est cet appel lui-meme qui "genere le bon de livraison" (aucun etat intermediaire
+    // ou le livreur verrait une livraison qu'il ne peut pas encore signer). preparationValideeParStock
+    // reste donc toujours vrai ici ; il documente explicitement cette regle plutot que de la laisser
+    // implicite dans l'existence du document.
+    preparationValideeParStock: true,
+    // Point 5 (retours utilisateur, Phase 14) : depart entrepot bloque tant que le Stock n'a pas
+    // confirme, via le code que le livreur lui communique a la signature du bon, que la remise du
+    // camion s'est bien faite en face a face (voir avancerEtapeLivraison, etape BonSigne/DepartEntrepot).
+    codeDepart: null, stockConfirmeDepart: false, horaireStockConfirmeDepart: null,
     creePar: auteur, dateCreation: firebase.firestore.FieldValue.serverTimestamp()
   });
   journaliserEvenement({ categorie: "Livraisons", action: "Livraison planifiée", acteur: auteur, role: "resp_stock", numBC: champs.numBC || "", chantier: champs.chantierNom || "", details: numeroBL + " — " + (champs.quantite || 0).toLocaleString() + " u " + champs.typeBTC + " → " + champs.livreurNom + (champs.datePrevue ? (" le " + champs.datePrevue) : "") + (champs.adresse ? (" | " + champs.adresse) : "") });
@@ -10969,14 +11234,64 @@ async function avancerEtapeLivraison(livraisonId, etapeCible, user, userData) {
     if (etapeCible === "DepartChantier" && !(liv.receptionSigneeChef && liv.receptionSigneeLivreur)) {
       throw new Error("Départ impossible : la réception doit être signée par le chef de chantier ET par le livreur.");
     }
+    // Point 5 (retours utilisateur, Phase 14) : depart entrepot impossible tant que le Stock n'a pas
+    // confirme, avec le code remis par le livreur, la signature mutuelle du bon de livraison.
+    if (etapeCible === "DepartEntrepot" && !liv.stockConfirmeDepart) {
+      throw new Error("Départ impossible : le responsable Stock doit d'abord confirmer, avec le code que vous lui avez donné, la signature du bon de livraison.");
+    }
+    // Point 6 (retours utilisateur, Phase 14) : une commande prevue pour une date ne peut pas partir
+    // avant cette date (comparaison de chaines ISO "AAAA-MM-JJ", triable lexicographiquement).
+    if (etapeCible === "DepartEntrepot" && liv.datePrevue) {
+      var nMaintenant = new Date();
+      var ajdISOLiv = nMaintenant.getFullYear() + "-" + String(nMaintenant.getMonth() + 1).padStart(2, "0") + "-" + String(nMaintenant.getDate()).padStart(2, "0");
+      if (ajdISOLiv < liv.datePrevue) {
+        throw new Error("Départ impossible avant la date prévue de livraison (" + liv.datePrevue + ").");
+      }
+    }
+    // Point 7 (retours utilisateur, Phase 14) : impossible de clore la livraison (arrivée entrepôt)
+    // sans avoir charge dans le camion les BTC non conformes a retourner — ils doivent "absolument"
+    // revenir a l'entrepot, jamais rester sur le chantier.
+    if (etapeCible === "Terminee" && liv.ncARetourner > 0 && !liv.ncRetourneeCamion) {
+      throw new Error("Retour impossible : les BTC non conformes doivent d'abord être chargés dans le camion pour le retour à l'entrepôt.");
+    }
     var champHoraire = CHAMP_HORAIRE_PAR_ETAPE[etapeCible];
     var upd = { statut: etapeCible };
     upd[champHoraire] = firebase.firestore.FieldValue.serverTimestamp();
+    // Point 5 : a la signature du bon, un code a 4 chiffres est genere — le livreur le communique de
+    // vive voix au responsable Stock, qui le ressaisit de son cote pour debloquer le depart.
+    if (etapeCible === "BonSigne") {
+      upd.codeDepart = String(Math.floor(1000 + Math.random() * 9000));
+    }
     tx.update(ref, upd);
     livraisonApres = Object.assign({}, liv, upd);
   });
   if (!dejaFait) {
     journaliserEvenement({ categorie: "Livraisons", action: libelleStatutLivraison(etapeCible), acteur: auteur, role: "livreur", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "", details: (livraisonApres ? ((livraisonApres.quantite || 0).toLocaleString() + " u " + livraisonApres.typeBTC) : "") });
+  }
+  return livraisonApres;
+}
+
+// Le STOCK confirme, en ressaisissant le code a 4 chiffres que le livreur lui a communique de vive
+// voix a la signature du bon (point 5, retours utilisateur Phase 14), que la remise du camion s'est
+// bien faite en face a face. Sans cette confirmation, "Départ entrepôt" reste bloque cote livreur
+// (voir la garde dans avancerEtapeLivraison).
+async function stockConfirmerDepart(livraisonId, codeSaisi, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(livraisonId);
+  var deja = false, livraisonApres = null;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Livraison introuvable.");
+    var liv = snap.data();
+    if (!liv.horaireBonSigne) throw new Error("Le livreur n'a pas encore signé le bon de livraison.");
+    if (liv.stockConfirmeDepart) { deja = true; livraisonApres = liv; return; } // idempotence
+    if (String(codeSaisi || "").trim() !== String(liv.codeDepart || "")) throw new Error("Code incorrect — vérifiez le code communiqué par le livreur.");
+    var upd = { stockConfirmeDepart: true, horaireStockConfirmeDepart: firebase.firestore.FieldValue.serverTimestamp() };
+    tx.update(ref, upd);
+    livraisonApres = Object.assign({}, liv, upd);
+  });
+  if (!deja) {
+    journaliserEvenement({ categorie: "Livraisons", action: "🔑 Départ confirmé par le Stock", acteur: auteur, role: "resp_stock", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "" });
   }
   return livraisonApres;
 }
@@ -11010,10 +11325,10 @@ async function signerReceptionLivreur(livraisonId, user, userData) {
 // jamais un comptage unite par unite). Met a jour quantiteConfirmeeChef sur la commande liee, EXACTEMENT
 // comme l'ancien flux manuel (validerReception) pour ne rien casser cote comptabilite/finance chantier.
 // Un ecart (moins recu que livre) cree automatiquement une non-conformite visible partout (Phase 12).
-async function signerReceptionChef(livraisonId, palettesRecues, user, userData) {
+async function signerReceptionChef(livraisonId, palettesRecues, palettesNC, user, userData) {
   var auteur = libelleActeurCourant(user, userData);
   var ref = db.collection("livraisons").doc(livraisonId);
-  var deja = false, livraisonApres = null, quantiteRecue = 0;
+  var deja = false, livraisonApres = null, quantiteRecue = 0, quantiteNC = 0;
   await db.runTransaction(async function (tx) {
     var snap = await tx.get(ref);
     if (!snap.exists) throw new Error("Livraison introuvable.");
@@ -11024,17 +11339,25 @@ async function signerReceptionChef(livraisonId, palettesRecues, user, userData) 
     if (liv.receptionSigneeChef) { deja = true; livraisonApres = liv; return; } // idempotence
     var capPalette = capacitePaletteType(liv.typeBTC);
     quantiteRecue = Math.max(0, palettesRecues) * capPalette;
+    // Point 7 (retours utilisateur, Phase 14) : "bon de retour marchandise non conforme" — quantite
+    // livree mais defectueuse que le livreur doit RAPPORTER a l'entrepot au retour, distincte du simple
+    // manque (quantite jamais livree, gere ci-dessous comme avant). Stockee sur la livraison elle-meme
+    // pour pouvoir bloquer "Arrivée entrepôt" (etape Terminee) tant qu'elle n'est pas chargee au retour.
+    quantiteNC = Math.max(0, palettesNC || 0) * capPalette;
     var upd = { receptionSigneeChef: true, horaireReceptionChef: firebase.firestore.FieldValue.serverTimestamp(), palettesRecuesChef: palettesRecues, quantiteRecueChef: quantiteRecue };
+    if (quantiteNC > 0) {
+      upd.ncARetourner = quantiteNC; upd.ncPalettesARetourner = palettesNC; upd.ncRetourneeCamion = false; upd.ncRetourneeEntrepot = false;
+    }
+    // --- LECTURES (toutes avant les ecritures : contrainte des transactions Firestore) ---
+    var cmdRef = liv.commandeId ? db.collection("commandes").doc(liv.commandeId) : null;
+    var cmdSnap = cmdRef ? await tx.get(cmdRef) : null;
+    // --- ECRITURES ---
     tx.update(ref, upd);
-    if (liv.commandeId) {
-      var cmdRef = db.collection("commandes").doc(liv.commandeId);
-      var cmdSnap = await tx.get(cmdRef);
-      if (cmdSnap.exists) {
-        var cmd = cmdSnap.data();
-        var nouveauTotal = Math.min((cmd.quantiteConfirmeeChef || 0) + quantiteRecue, cmd.quantite || quantiteRecue);
-        var newStatus = (nouveauTotal >= (cmd.quantite || 0)) ? "Livree" : cmd.status;
-        tx.update(cmdRef, { quantiteConfirmeeChef: nouveauTotal, chefConfirmeAt: firebase.firestore.FieldValue.serverTimestamp(), status: newStatus });
-      }
+    if (cmdRef && cmdSnap && cmdSnap.exists) {
+      var cmd = cmdSnap.data();
+      var nouveauTotal = Math.min((cmd.quantiteConfirmeeChef || 0) + quantiteRecue, cmd.quantite || quantiteRecue);
+      var newStatus = (nouveauTotal >= (cmd.quantite || 0)) ? "Livree" : cmd.status;
+      tx.update(cmdRef, { quantiteConfirmeeChef: nouveauTotal, chefConfirmeAt: firebase.firestore.FieldValue.serverTimestamp(), status: newStatus });
     }
     livraisonApres = Object.assign({}, liv, upd);
   });
@@ -11051,6 +11374,71 @@ async function signerReceptionChef(livraisonId, palettesRecues, user, userData) 
         }, user, userData);
       } catch (eNc) {}
     }
+    if (quantiteNC > 0 && livraisonApres) {
+      try {
+        await qseAjouterNC({
+          numeroLot: "",
+          description: "BTC non conformes à la réception — " + quantiteNC.toLocaleString() + " u à RETOURNER à l'entrepôt sur " + (livraisonApres.numeroBL || livraisonId) + " (" + getProduit(livraisonApres.typeBTC).nom + ", chantier " + (livraisonApres.chantierNom || "-") + "). Production : merci de fournir une explication (cause probable / action corrective).",
+          quantiteConcernee: quantiteNC,
+          responsable: auteur
+        }, user, userData);
+      } catch (eNc) {}
+    }
+  }
+  return livraisonApres;
+}
+
+// Le LIVREUR confirme avoir charge les BTC non conformes dans le camion pour le retour a l'entrepot
+// (point 7, retours utilisateur Phase 14) — sans cette confirmation, "Arrivée entrepôt" (fin de
+// livraison) reste bloquee (voir la garde dans avancerEtapeLivraison, etape Terminee).
+async function livreurConfirmerChargementRetourNC(livraisonId, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(livraisonId);
+  var deja = false, livraisonApres = null;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Livraison introuvable.");
+    var liv = snap.data();
+    if (!(liv.ncARetourner > 0)) throw new Error("Aucun retour non-conforme à charger sur cette livraison.");
+    if (liv.ncRetourneeCamion) { deja = true; livraisonApres = liv; return; } // idempotence
+    var upd = { ncRetourneeCamion: true, horaireChargementRetourNC: firebase.firestore.FieldValue.serverTimestamp() };
+    tx.update(ref, upd);
+    livraisonApres = Object.assign({}, liv, upd);
+  });
+  if (!deja) {
+    journaliserEvenement({ categorie: "Livraisons", action: "📦 Retour NC chargé dans le camion", acteur: auteur, role: "livreur", numBC: (livraisonApres && livraisonApres.numBC) || "", chantier: (livraisonApres && livraisonApres.chantierNom) || "", details: (livraisonApres ? ((livraisonApres.ncARetourner || 0).toLocaleString() + " u") : "") });
+  }
+  return livraisonApres;
+}
+
+// Le STOCK receptionne physiquement le retour NC a l'entrepot et le comptabilise reellement en perte
+// (point 7) — meme collection "pertes" que l'ancien flux manuel (validerReception), pour ne rien
+// casser cote comptabilite/finance.
+async function stockReceptionnerRetourNC(livraisonId, user, userData) {
+  var auteur = libelleActeurCourant(user, userData);
+  var ref = db.collection("livraisons").doc(livraisonId);
+  var deja = false, livraisonApres = null;
+  await db.runTransaction(async function (tx) {
+    var snap = await tx.get(ref);
+    if (!snap.exists) throw new Error("Livraison introuvable.");
+    var liv = snap.data();
+    if (!(liv.ncARetourner > 0)) throw new Error("Aucun retour non-conforme sur cette livraison.");
+    if (!liv.ncRetourneeCamion) throw new Error("Le livreur n'a pas encore chargé le retour dans le camion.");
+    if (liv.ncRetourneeEntrepot) { deja = true; livraisonApres = liv; return; } // idempotence
+    var upd = { ncRetourneeEntrepot: true, horaireReceptionRetourNC: firebase.firestore.FieldValue.serverTimestamp() };
+    tx.update(ref, upd);
+    livraisonApres = Object.assign({}, liv, upd);
+  });
+  if (!deja && livraisonApres) {
+    try {
+      await db.collection("pertes").add({
+        type: livraisonApres.typeBTC, quantite: livraisonApres.ncARetourner || 0, raison: "retour_nc",
+        responsable: auteur, responsableUid: (user && user.uid) || "",
+        source: "chantier", chantierNom: livraisonApres.chantierNom || "", numeroBL: livraisonApres.numeroBL || "",
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (eP) {}
+    journaliserEvenement({ categorie: "Stock", action: "📦 Retour NC réceptionné et comptabilisé en perte", acteur: auteur, role: "resp_stock", numBC: livraisonApres.numBC || "", chantier: livraisonApres.chantierNom || "", details: (livraisonApres.ncARetourner || 0).toLocaleString() + " u" });
   }
   return livraisonApres;
 }
