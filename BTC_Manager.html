@@ -3258,6 +3258,48 @@ function ModaleQREtiquettesLot({ titre, type, items, onClose }) {
   );
 }
 
+// QR code "installer l'app" (retour utilisateur) : contrairement aux QR de lot/palette, encode
+// simplement l'URL racine de l'application (jamais une donnee metier) — le scanner d'un telephone
+// standard l'ouvre dans le navigateur, qui propose alors nativement (Chrome/Edge Android) ou via
+// l'invite maison (useInvitationInstallationPWA) d'ajouter BTC Manager a l'ecran d'accueil. Sur iOS
+// Safari (pas de "beforeinstallprompt"), le pas manuel est explicite ci-dessous.
+function urlRacineApp() {
+  try { return window.location.origin + window.location.pathname; }
+  catch (e) { return window.location.href; }
+}
+function ModaleInstallerApp({ onClose }) {
+  const url = urlRacineApp();
+  const imprimer = () => {
+    document.body.classList.add("impression-etiquette");
+    window.print();
+    setTimeout(function () { document.body.classList.remove("impression-etiquette"); }, 300);
+  };
+  return (
+    <div className="btp-modal-overlay" onClick={onClose}>
+      <div className="btp-modal etiquette-print-zone" style={{ maxWidth: 380, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+        <div className="btp-modal-title no-print" style={{ marginBottom: 4 }}>📲 Installer BTC Manager</div>
+        <p className="no-print" style={{ fontSize: 12, color: "var(--btp-text2)", marginBottom: 14 }}>Scannez ce code avec l'appareil photo de votre téléphone pour ouvrir puis installer l'application.</p>
+        <div className="etiquette-carte" style={{ width: "auto", margin: "0 auto" }}>
+          <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 6 }}>🧱 BTC Manager</div>
+          <QRCodeAffichage valeur={url} taille={220} />
+          <div style={{ fontSize: 11, color: "#555", marginTop: 8 }}>Scannez pour installer l'app</div>
+        </div>
+        <div className="no-print" style={{ fontSize: 11, color: "var(--btp-text2)", marginTop: 10, wordBreak: "break-all" }}>{url}</div>
+        <div className="no-print" style={{ textAlign: "left", fontSize: 12, color: "var(--btp-text2)", background: "var(--btp-card2)", borderRadius: 8, padding: "10px 12px", marginTop: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Android (Chrome/Edge)</div>
+          <div style={{ marginBottom: 8 }}>Une fois la page ouverte, appuyez sur « Installer » dans le bandeau proposé.</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>iPhone/iPad (Safari)</div>
+          <div>Appuyez sur 📤 Partager, puis « Sur l'écran d'accueil ».</div>
+        </div>
+        <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button className="btn btn-full" style={{ background: "#1E8449", color: "white" }} onClick={imprimer}>🖨️ Imprimer l'affiche</button>
+          <button className="btn btn-ghost btn-full" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Recherche globale : filtre cote client les donnees deja chargees par l'application (aucune
 // lecture Firestore supplementaire declenchee par la frappe). Tolerante a la casse/aux accents/
 // a la saisie partielle via normTxt, avec une correspondance "tous les mots tapes doivent se
@@ -3974,6 +4016,8 @@ function Login({ destinationEnAttente }) {
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  // Retour utilisateur : QR code "installer l'app", accessible meme sans compte (poster a scanner).
+  const [showInstallerApp, setShowInstallerApp] = React.useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -4022,10 +4066,12 @@ function Login({ destinationEnAttente }) {
             </span> : "🔐 Se connecter"}
           </button>
         </form>
+        <button type="button" className="btn btn-ghost btn-full" style={{ marginTop: 16 }} onClick={() => setShowInstallerApp(true)}>📲 Installer l'app sur votre téléphone</button>
         <div style={{marginTop:20,textAlign:'center',fontSize:12,color:'var(--btp-text2)'}}>
           Version 2.0 · © 2025 Terre et Eau
         </div>
       </div>
+      {showInstallerApp && <ModaleInstallerApp onClose={() => setShowInstallerApp(false)} />}
     </div>
   );
 }
@@ -13089,6 +13135,9 @@ function AppRacine() {
     setVerifEnCours(true);
     try { await maj.verifierMaintenant(); } finally { setTimeout(function () { setVerifEnCours(false); }, 1500); }
   };
+  // Retour utilisateur : QR "installer l'app" accessible aussi une fois connecte, pour le montrer ou
+  // l'imprimer a l'intention d'un collegue qui n'a pas encore l'app.
+  const [showInstallerApp, setShowInstallerApp] = React.useState(false);
   return (
     <ConnexionProvider>
       {maj.disponible && (
@@ -13098,10 +13147,21 @@ function AppRacine() {
         </div>
       )}
       <IndicateurConnexion />
-      <button onClick={surClicActualiser} disabled={verifEnCours} title="Actualiser l'application vers la dernière version"
-        style={{ position: "fixed", right: 12, bottom: 12, zIndex: 1500, background: "#243447", color: "white", border: "1px solid rgba(255,255,255,.2)", borderRadius: 24, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: verifEnCours ? "default" : "pointer", boxShadow: "0 2px 10px rgba(0,0,0,.3)", opacity: verifEnCours ? 0.7 : 1 }}>
-        {verifEnCours ? "⏳ Vérification…" : "🔄 Actualiser l'app"}
-      </button>
+      {/* Rangee unique (jamais empilee verticalement) : deux boutons fixes qui se chevauchent sur des
+          lignes differentes agrandissent la zone qui peut intercepter un clic sur un element normal
+          juste en-dessous (regression constatee, corrigee ici) — une seule ligne garde la meme
+          empreinte que l'ancien bouton seul. */}
+      <div style={{ position: "fixed", right: 12, bottom: 12, zIndex: 1500, display: "flex", gap: 8 }}>
+        <button onClick={() => setShowInstallerApp(true)} title="Afficher le QR code pour installer l'app"
+          style={{ background: "#243447", color: "white", border: "1px solid rgba(255,255,255,.2)", borderRadius: 24, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 10px rgba(0,0,0,.3)" }}>
+          📲 Installer l'app
+        </button>
+        <button onClick={surClicActualiser} disabled={verifEnCours} title="Actualiser l'application vers la dernière version"
+          style={{ background: "#243447", color: "white", border: "1px solid rgba(255,255,255,.2)", borderRadius: 24, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: verifEnCours ? "default" : "pointer", boxShadow: "0 2px 10px rgba(0,0,0,.3)", opacity: verifEnCours ? 0.7 : 1 }}>
+          {verifEnCours ? "⏳ Vérification…" : "🔄 Actualiser l'app"}
+        </button>
+      </div>
+      {showInstallerApp && <ModaleInstallerApp onClose={() => setShowInstallerApp(false)} />}
       <App />
       {install.proposer && (
         <div className="btp-bandeau-install">
